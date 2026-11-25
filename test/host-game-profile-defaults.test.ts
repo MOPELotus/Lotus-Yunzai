@@ -83,7 +83,7 @@ test("默认档与本人的账号身份绑定，换号、清除和归档后失�
   }
 });
 
-test("OneBot 与 Milky 切三游本人账号档案，重启保留，指定档案1与分游戏归档正确", async () => {
+test("OneBot 与 Milky 显式切三游档案，选角不切档，重启与分游戏归档保留路由", async () => {
   const preload = `
 Bun.env.LOTUS_PROFILE_DIR = "./profiles";
 Bun.env.LOTUS_PASSPORT_QR_RESOURCES = "./missing-render-fixture";
@@ -152,9 +152,10 @@ globalThis.fetch = Object.assign(async (input, options) => {
       await one("#面板", gameRoles.gs[0]);
       await milkyReply("*面板", gameRoles.sr[0]);
       await one("%面板", gameRoles.zzz[0]);
-      await one("#UID2", "原神默认档案为 2");
-      await milkyReply("*UID2", "星铁默认档案为 3");
-      await one("%UID2", "绝区零默认档案为 4");
+      await one("#切换档案2", "原神默认档案已切换为 2。");
+      await milkyReply("*切换档案3", "星铁默认档案已切换为 3。");
+      await one("%切换档案4", "绝区零默认档案已切换为 4。");
+      await milkyReply("#UID1", "档案 2 · 原神当前角色已选为");
       await milkyReply("#面板", gameRoles.gs[1]);
       await one("*面板", gameRoles.sr[1]);
       await milkyReply("/zzz面板", gameRoles.zzz[1]);
@@ -190,9 +191,9 @@ globalThis.fetch = Object.assign(async (input, options) => {
       await one("#原神面板", gameRoles.gs[0]);
       await one("#面板2", "请先登录档案 2");
       await one("#星铁面板", gameRoles.sr[1]);
-      expect((await sendMilky("%UID1", { sender_id: 42, peer_id: 42 })).status).toBe(200);
+      expect((await sendMilky("%切换档案1", { sender_id: 42, peer_id: 42 })).status).toBe(200);
       const reset = await milky.next("send_private_message");
-      expect(JSON.stringify(reset.params)).toContain("绝区零默认档案为 1");
+      expect(JSON.stringify(reset.params)).toContain("绝区零默认档案已切换为 1。");
       reset.respond({ message_seq: sequence++ });
       await one("#绝区零面板", gameRoles.zzz[0]);
       expect(await Bun.file(join(root, "unexpected-network.txt")).exists()).toBe(false);

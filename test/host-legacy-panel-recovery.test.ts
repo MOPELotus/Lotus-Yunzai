@@ -107,6 +107,18 @@ test("正式原铁首次更新须在好友私聊确认后才读旧私人面板",
         .toMatchObject({ "10000046": { name: "胡桃" } });
 
       await sendMilky("*更新面板3", friend);
+      expect(await replyFromMilky()).toContain("请先登录档案 3");
+      expect(accesses.filter(call => call.path === "/panel/data")).toHaveLength(1);
+      const thirdProfilePath = join(root, "profiles/42-3.yaml");
+      const thirdProfile = Bun.YAML.parse(await readFile(thirdProfilePath, "utf8")) as {
+        account: Record<string, unknown>;
+      };
+      thirdProfile.account = { ...thirdProfile.account,
+        cookie: "account_id=13;cookie_token=isolated;ltuid=13;ltoken=isolated",
+        stuid: "13", stoken: "isolated" };
+      await writeFile(thirdProfilePath, Bun.YAML.stringify(thirdProfile));
+      await Bun.sleep(1_020);
+      await sendMilky("*更新面板3", friend);
       expect(await replyFromMilky()).toContain(`*确认恢复旧面板 ${sr} 档案3`);
       expect(requests()).toHaveLength(1);
       await sendMilky(`*确认恢复旧面板 ${sr} 档案3`, friend);

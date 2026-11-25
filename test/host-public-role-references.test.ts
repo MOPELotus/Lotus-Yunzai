@@ -6,16 +6,43 @@ import { basename, join } from "node:path";
 import { lockFile } from "../lib/file-lock.ts";
 import { createPublicRoleReferences, matchPublicRoleReferenceCommand } from "../lib/public-role-references.ts";
 import { createPublicRoleRegistration, matchPublicRoleRegistrationFollowup } from "../lib/public-role-registration.ts";
-import { matchPanelSignatureCommand } from "../lib/panel-signature.ts";
+import { createPublicUidQuery, matchPublicUidQuery, matchRetiredUidCommand } from "../lib/uid-commands.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
-test("手工引用和旧序号提示不接管已存在的签名及账号指令", () => {
-  expect(matchPublicRoleReferenceCommand("#星铁登记UID 800000042")).toEqual({ game: "sr", action: "登记uid", value: "800000042" });
-  expect(matchPublicRoleReferenceCommand("#删除UID2")).toEqual({ game: "gs", action: "删除uid", value: "2" });
-  for (const command of ["#绑定UID", "#绑定UID100000042", "#验证UID100000042", "#UID2", "#原神删除CK", "#删除UID100000042", "#导出面板 100000042"]) {
-    expect(matchPublicRoleReferenceCommand(command)).toBeUndefined();
+test("旧 UID 绑定入口退役，显式公开查询与档案选角分开", () => {
+  for (const command of ["#绑定UID", "#绑定UID100000042", "#验证UID100000042", "#取消验证原神UID 100000042",
+    "#原神设置UID 100000042", "#切换星铁UID2 100000043", "%绑定UID 82000042", "#登记UID100000042",
+    "#公开UID列表", "*切换公开UID1", "#删除公开UID1", "#解绑UID2"]) {
+    expect(matchRetiredUidCommand(command)).toBe(true);
   }
-  expect(matchPanelSignatureCommand("#绑定UID100000042")).toMatchObject({ action: "begin" });
+  for (const command of ["#UID2", "#角色列表", "#切换角色2", "#原神导出面板 100000042", "#原神删除CK", "#查询公开UID 100000042"]) {
+    expect(matchRetiredUidCommand(command)).toBe(false);
+  }
+  expect(matchPublicUidQuery("#查询公开UID 100000042")).toEqual({ game: "gs", uid: "100000042" });
+  expect(matchPublicUidQuery("*查询公开UID 100000043")).toEqual({ game: "sr", uid: "100000043" });
+  expect(matchPublicUidQuery("#绝区零查询公开UID82000042")).toEqual({ game: "zzz", uid: "82000042" });
+  expect(matchPublicUidQuery("#查询公开UID2")).toEqual({ game: "gs", uid: undefined });
+});
+
+test("临时公开查询每次要求真实 UID，取消后不返回旧请求结果", async () => {
+  const read = Promise.withResolvers<number>();
+  const started = Promise.withResolvers<void>();
+  const requests: string[] = [];
+  const controller = new AbortController();
+  let current = true;
+  const query = createPublicUidQuery(async (game, uid) => async signal => {
+    requests.push(`${game}:${uid}`); expect(signal).toBe(controller.signal); started.resolve(); return read.promise;
+  });
+  const scope = { user: 42, signal: controller.signal, isCurrent: () => current };
+  expect(await query(matchPublicUidQuery("#查询公开UID1")!, scope)).toContain("游戏UID");
+  expect(requests).toEqual([]);
+  const pending = query(matchPublicUidQuery("#查询公开UID 100000042")!, scope);
+  await started.promise;
+  current = false; read.resolve(3);
+  expect(await pending).toBeUndefined();
+  expect(requests).toEqual(["gs:100000042"]);
+  expect(await query({ game: "gs", uid: "100000042" }, { ...scope, isCurrent: () => true, signal: AbortSignal.abort() })).toBeUndefined();
+  expect(requests).toHaveLength(1);
 });
 
 test("公开引用的原子修改、分用户和撤权，等待公开请求时删除会压住旧结果", async () => {
@@ -120,7 +147,7 @@ globalThis.fetch = async (input, init) => {
   return Response.json(null, { status: 404 });
 };`;
 
-test("两个真实宿主网关只让好友管理自身公开引用，三游戏实际请求无凭据", async () => {
+test("双协议旧绑定只说明档案用法，公开查询不读写历史引用也不附账号凭据", async () => {
   await withDualGatewayFixture("public-role-refs", "disablePrivate: false\n", async ({ root, sendOneBot, sendMilky, onebot, milky }) => {
     let id = 100;
     const one = async (text: string, expected: string, fields?: object) => {
@@ -128,6 +155,7 @@ test("两个真实宿主网关只让好友管理自身公开引用，三游戏�
       const outbound = await onebot.next("send_msg").catch(error => { throw new Error(text, { cause: error }); });
       expect(JSON.stringify(outbound.params)).toContain(expected);
       expect(JSON.stringify(outbound.params)).not.toContain("fixture-secret");
+      expect(JSON.stringify(outbound.params)).not.toMatch(/LY-[a-f0-9]{16}/u);
       outbound.respond({ message_id: ++id });
       return JSON.stringify(outbound.params);
     };
@@ -136,55 +164,34 @@ test("两个真实宿主网关只让好友管理自身公开引用，三游戏�
       const outbound = await milky.next("send_private_message").catch(error => { throw new Error(text, { cause: error }); });
       expect(outbound.params).toMatchObject({ user_id: 43 });
       expect(JSON.stringify(outbound.params)).toContain(expected);
+      expect(JSON.stringify(outbound.params)).not.toMatch(/LY-[a-f0-9]{16}/u);
       outbound.respond({ message_seq: ++id });
       return JSON.stringify(outbound.params);
     };
     const profile = join(root, "profiles", "42.yaml");
     const bytes = await readFile(profile);
-    await one("#登记UID100000042", "请私聊机器人", { message_type: "group", sub_type: "normal", group_id: 701 });
-    expect(await Bun.file(join(root, "data/public-role-references/42/1.json")).exists()).toBe(false);
-    await one("#登记公开UID", "两分钟内发送");
-    await one("100000042", "原神当前公开 UID 为 100000042");
-    await one("%登记UID", "两分钟内发送");
-    await one("82000042", "绝区零当前公开 UID 为 82000042");
-    await other("*登记公开UID", "两分钟内发送");
-    await Bun.sleep(40);
-    await other("100000043", "星铁当前公开 UID 为 100000043");
+    const oldArchive = join(root, "data/public-role-references/42/1.json");
+    const oldBytes = await readFile(oldArchive);
+    await one("#登记UID100000042", "UID 独立绑定已停用", { message_type: "group", sub_type: "normal", group_id: 701 });
+    await one("#绑定原神UID 100000042", "#角色列表");
+    await other("*验证UID 100000043", "UID 独立绑定已停用");
+    await one("#公开UID列表", "UID 独立绑定已停用");
     expect(await Bun.file(join(root, "public-reads.json")).exists()).toBe(false);
-    expect(await other("#公开UID列表", "100000043")).not.toContain("100000042");
-    expect(await one("#原神公开UID列表", "100000042")).not.toContain("100000043");
-    await one("#查询公开UID1", "Enka 公开展板可见 1 个角色");
-    await other("*查询公开UID", "Mihomo 公开展板可见 1 个角色");
-    await one("%查询公开UID", "Enka 公开展板可见 0 个角色");
-    await other("*导出面板 100000043", "请先签名验证本人 UID 100000043");
-    await other("*体力", "正在查询");
-    const note = await milky.next("send_private_message");
-    expect(JSON.stringify(note.params)).toContain("没有找到可查询的档案");
-    note.respond({ message_seq: ++id });
-    const mixed = await one("#UID", "公开当前 1");
-    expect(mixed.match(/100000042/gu)).toHaveLength(1);
-    expect(mixed).toContain("82000042");
-    expect(await other("#UID", "公开 1. 100000043")).not.toContain("100000042");
-    await other("*UID1", "未找到本人档案");
-    await other("#登记UID100000044", "原神当前公开 UID 为 100000044");
-    await other("#展板更新面板 档案1", "档案");
-    await other("#展板更新面板", "正在通过 MiniGG 查询公开展板");
-    const rendered = await milky.next("send_private_message");
-    expect(JSON.stringify(rendered.params)).toContain("没有可读取的公开展板角色");
-    rendered.respond({ message_seq: ++id });
-    await one("#登记UID100000046", "原神当前公开 UID 为 100000046");
-    await one("#展板更新面板", "正在通过 MiniGG 查询公开展板");
-    const boundReply = await onebot.next("send_msg");
-    expect(JSON.stringify(boundReply.params)).toContain("没有可读取的公开展板角色");
-    boundReply.respond({ message_id: ++id });
-    await one("#删除UID1", "公开UID列表");
-    await one("#删除公开UID1", "已删除原神公开 UID 引用 100000042");
-    expect(await one("#绝区零公开UID列表", "82000042")).not.toContain("100000042");
+    await one("#查询公开UID1", "游戏UID");
+    await other("*查询公开UID", "游戏UID");
+    await one("#查询公开UID 100000042", "Enka 公开展柜可见 1 个角色", { message_type: "group", sub_type: "normal", group_id: 701 });
+    await other("*查询公开UID 100000043", "Mihomo 公开展柜可见 1 个角色");
+    await one("%查询公开UID 82000042", "Enka 公开展柜可见 0 个角色");
+    expect(await one("#UID", "本人游戏角色")).not.toContain("777777777");
     expect(await readFile(profile)).toEqual(bytes);
+    expect(await readFile(oldArchive)).toEqual(oldBytes);
+    expect(await Bun.file(join(root, "data/panel-signatures")).exists()).toBe(false);
     expect(JSON.parse(await readFile(join(root, "public-reads.json"), "utf8"))).toEqual([
       "https://enka.network/api/uid/100000042/", "https://api.mihomo.me/sr_info/100000043",
-      "https://enka.network/api/zzz/uid/82000042", "https://profile.microgg.cn/api/uid/100000044", "https://profile.microgg.cn/api/uid/100000042",
+      "https://enka.network/api/zzz/uid/82000042",
     ]);
+    expect(onebot.calls).toEqual([]);
+    expect(milky.calls).toEqual([]);
   }, 3_000, preload, async root => {
     await linkHostPackages(root);
     for (const plugin of ["genshin", "starrail", "zzz"]) {
@@ -199,5 +206,9 @@ test("两个真实宿主网关只让好友管理自身公开引用，三游戏�
       stuid: "42", stoken: "fixture-secret", cookie: "cookie_token=fixture-secret", current_uid: { gs: "100000042" },
       game_roles: { gs: [{ uid: "100000042", region: "cn_gf01", game_biz: "hk4e_cn" }] },
     } }));
+    const archive = join(root, "data/public-role-references/42");
+    await mkdir(archive, { recursive: true });
+    await writeFile(join(archive, "1.json"), JSON.stringify({ version: 1,
+      gs: { uid: "777777777", data: ["777777777"] }, sr: { uid: "", data: [] }, zzz: { uid: "", data: [] } }));
   });
 }, 12_000);

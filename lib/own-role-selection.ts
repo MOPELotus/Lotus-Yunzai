@@ -1,17 +1,16 @@
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
-import type { PublicRoleReferenceCatalogue } from "./public-role-references.ts";
-import { gameRegionDisplayName, MAX_PROFILE_ID, ProfileError, type createProfileStore, type Game, type GameRole } from "@lotus-yunzai/account";
+import { gameCommandProfileId, gameRegionDisplayName, MAX_PROFILE_ID, ProfileError, type createProfileStore, type Game, type GameRole } from "@lotus-yunzai/account";
 import type { createOwnRoleLegacyArtwork } from "./own-role-legacy-artwork.ts";
-import type { createGameProfileDefaults } from "./game-profile-defaults.ts";
 import { segment } from "./messages.ts";
 import type { ProfileCardRole } from "@lotus-yunzai/skia/profile";
 
-const command = /^#(原神|星铁|绝区零)?(?:我的)?uid([0-9]{1,3})?(?:[ \t]+档案[ \t]*([1-9][0-9]{0,2}))?$/iu;
-const directUidCommand = /^#(?:(?:设置|切换)(原神|星铁|崩铁|绝区零|绝)|绑定(绝区零|绝))(?:uid|UID)(?:([1-9]\d{0,2})?\s+)?([1-9]\d{7,9})$/u;
-const gameCodes = { 原神: "gs", 星铁: "sr", 崩铁: "sr", 绝区零: "zzz", 绝: "zzz" } as const;
-const gameLabels = { gs: $t("lib.own-role-selection.text_d1597c51ed"), sr: $t("lib.own-role-selection.text_a2927891f0"), zzz: $t("lib.own-role-selection.text_b1110352c9") } as const;
+const command = /^#(原神|星铁|绝区零)?(?:(?:我的)?uid([0-9]{1,3})?|角色列表)(?:[ \t　]+档案[ \t　]*([1-9][0-9]{0,2}))?$/iu;
+const choose = /^#(原神|星铁|绝区零)?切换角色[ \t　]*([0-9]{1,10})(?:[ \t　]+档案[ \t　]*([1-9][0-9]{0,2}))?$/u;
+const gameCodes = { 原神: "gs", 星铁: "sr", 绝区零: "zzz" } as const;
+const gameLabelKeys = { gs: "lib.own-role-selection.text_d1597c51ed", sr: "lib.own-role-selection.text_a2927891f0", zzz: "lib.own-role-selection.text_b1110352c9" } as const;
+const gameLabel = (game: Game) => $t(gameLabelKeys[game]);
 const prefixes = { gs: "#", sr: "*", zzz: "%" } as const;
 const games = ["gs", "sr", "zzz"] as const;
 const maxSlot = 99;
@@ -20,138 +19,73 @@ export const ownRoleSelectionFeatures = [$t("lib.own-role-selection.text_04f9bd1
 type Selection = { readonly game: Game; readonly slot?: number; readonly profileId?: number; readonly uid?: string };
 
 export function matchOwnRoleSelection(message: string): Selection | undefined {
-  const match = command.exec(message.trim());
-  if (match) {
-    const game = gameCodes[match[1] as keyof typeof gameCodes] ?? "gs";
-    return { game, slot: match[2] === undefined ? undefined : Number(match[2]), profileId: match[3] === undefined ? undefined : Number(match[3]) };
-  }
-  const direct = directUidCommand.exec(message.trim());
-  if (!direct) return;
-  const label = (direct[1] ?? direct[2]) as keyof typeof gameCodes;
-  return { game: gameCodes[label], profileId: Number(direct[3] ?? 1), uid: direct[4]! };
+  const input = message.trim();
+  const match = command.exec(input);
+  if (match) return { game: gameCodes[match[1] as keyof typeof gameCodes] ?? "gs",
+    slot: match[2] === undefined ? undefined : Number(match[2]), profileId: match[3] === undefined ? undefined : Number(match[3]) };
+  const choice = choose.exec(input);
+  if (!choice) return;
+  const target = choice[2]!;
+  if (target.length > 3 && !/^[1-9]\d{7,9}$/u.test(target)) return;
+  return { game: gameCodes[choice[1] as keyof typeof gameCodes] ?? "gs",
+    profileId: choice[3] === undefined ? undefined : Number(choice[3]),
+    ...(target.length <= 3 ? { slot: Number(target) } : { uid: target }) };
 }
 
 type Scope = { readonly user: number; readonly signal: AbortSignal; readonly isCurrent: () => boolean };
-type Roles = Pick<ReturnType<typeof createProfileStore>, "listIds" | "roleCatalog" | "selectCatalogRole" | "requestContext">;
-type Catalog = Awaited<ReturnType<Roles["roleCatalog"]>>;
-type Catalogs = ReadonlyMap<number, Catalog>;
-
+type Roles = Pick<ReturnType<typeof createProfileStore>, "roleCatalog" | "selectCatalogRole" | "requestContext">;
 function roleInfo(game: Game, role: GameRole) {
   const name = role.nickname.replace(/[\p{Cc}\p{Cf}]/gu, " ").trim().slice(0, 40);
   return [name, gameRegionDisplayName(game, role.region, role.regionName), role.level && `Lv.${role.level}`].filter(Boolean).join(" · ");
 }
 
-function collectRoles(profiles: Catalogs, game: Game) {
-  const rows = new Map<string, { profileId: number; role: GameRole; revision: string; activeIn: number[] }>();
-  for (const [profileId, profile] of profiles) {
-    const roles = profile.catalog[game];
-    const active = roles.find(role => role.uid === profile.active[game]) ?? roles.find(role => role.chosen) ?? roles[0];
-    for (const role of roles) {
-      let row = rows.get(role.uid);
-      if (!row) {
-        row = { profileId, role, revision: profile.revision, activeIn: [] };
-        rows.set(role.uid, row);
-      }
-      if (role.uid === active?.uid) row.activeIn.push(profileId);
-    }
-  }
-  return [...rows.values()].slice(0, maxSlot);
-}
-
-export async function selectOwnRole(profiles: Roles, { game, slot, profileId, uid }: Selection, scope: Scope,
-  readPublic?: (qq: string) => Promise<PublicRoleReferenceCatalogue>, defaults?: ReturnType<typeof createGameProfileDefaults>,
+export async function selectOwnRole(profiles: Roles, { game, slot, profileId: explicit, uid }: Selection, scope: Scope,
   legacyArtwork?: ReturnType<typeof createOwnRoleLegacyArtwork>) {
   const { user, signal, isCurrent } = scope;
+  const profileId = gameCommandProfileId(game, explicit);
   if (!isCurrent() || signal.aborted) return;
-  if (profileId !== undefined && profileId > MAX_PROFILE_ID) return $t("lib.own-role-selection.text_b4ba5fed47", { "MAX_PROFILE_ID": MAX_PROFILE_ID });
+  if (!Number.isSafeInteger(profileId) || profileId < 1 || profileId > MAX_PROFILE_ID) return $t("lib.own-role-selection.text_b4ba5fed47", { "MAX_PROFILE_ID": MAX_PROFILE_ID });
   if (slot !== undefined && (slot < 1 || slot > maxSlot)) return $t("lib.own-role-selection.text_849b66fea4", { "maxSlot": maxSlot });
   const qq = String(user);
   try {
-    const ids = profileId === undefined ? await profiles.listIds(qq) : [profileId];
-    const publicRoles = await readPublic?.(qq).catch(() => undefined);
-    const hasReferences = publicRoles && Object.values(publicRoles).some(entry => entry.data.length);
-    const catalogs = new Map<number, Catalog>();
-    for (const id of ids) {
-      if (!isCurrent() || signal.aborted) return;
-      try {
-        catalogs.set(id, await profiles.roleCatalog(qq, id));
-      } catch (error) {
-        if (!(error instanceof ProfileError && error.code === "missing" && profileId === undefined)) throw error;
-      }
-    }
+    const catalogue = await profiles.roleCatalog(qq, profileId);
     if (!isCurrent() || signal.aborted) return;
-    if (!catalogs.size && slot !== undefined) return $t("lib.own-role-selection.text_0cd34ccea0");
-    if (!catalogs.size && !hasReferences) return $t("lib.own-role-selection.text_37a995e092");
-
-    const all = { gs: collectRoles(catalogs, "gs"), sr: collectRoles(catalogs, "sr"), zzz: collectRoles(catalogs, "zzz") };
-    const suffix = profileId === undefined ? "" : $t("lib.own-role-selection.text_31a2142f9f", { "profileId": profileId });
+    const suffix = $t("lib.own-role-selection.text_31a2142f9f", { "profileId": profileId });
     let confirmation: string | undefined;
-    if (slot !== undefined || (uid !== undefined && profileId !== undefined)) {
-      const label = gameLabels[game];
-      const selected = slot === undefined ? await profiles.requestContext(qq, profileId!, game, uid) : all[game][slot - 1];
-      if (!selected) return $t("lib.own-role-selection.text_e7571f382e", { "value1": profileId === undefined ? $t("lib.own-role-selection.text_1b13f8bc82") : $t("lib.own-role-selection.text_3f6fdc79bb", { "profileId": profileId }), "slot": slot, "label": label, "suffix": suffix });
-      const { role, revision, profileId: id } = selected;
-      if (uid !== undefined && catalogs.get(id)?.revision !== revision) throw new ProfileError("changed", $t("lib.own-role-selection.text_8a1edc5158"));
+    if (slot !== undefined || uid !== undefined) {
+      const role = uid === undefined ? catalogue.catalog[game][slot! - 1] : catalogue.catalog[game].find(role => role.uid === uid);
+      if (!role) return uid === undefined
+        ? $t("lib.own-role-selection.text_e7571f382e", { "value1": $t("lib.own-role-selection.text_3f6fdc79bb", { "profileId": profileId }), "slot": slot, "label": gameLabel(game), "suffix": suffix })
+        : $t("lib.own-role-selection.text_384d21e4ee", { "profileId": profileId, "value2": gameLabel(game), "value3": prefixes[game], "value4": profileId });
+      const source = await profiles.requestContext(qq, profileId, game, role.uid);
       if (!isCurrent() || signal.aborted) return;
-      const saved = await profiles.selectCatalogRole(qq, id, game, role.uid, revision, signal, isCurrent);
+      if (source.revision !== catalogue.revision) throw new ProfileError("changed", $t("lib.own-role-selection.text_8a1edc5158"));
+      await profiles.selectCatalogRole(qq, profileId, game, role.uid, source.revision, signal, isCurrent);
       if (!isCurrent() || signal.aborted) return;
-      for (const row of all[game]) row.activeIn = row.activeIn.filter(value => value !== id);
-      const item = all[game].find(row => row.role.uid === role.uid);
-      if (item) {
-        item.activeIn.push(id);
-        item.activeIn.sort((a, b) => a - b);
-      }
-      confirmation = $t("lib.own-role-selection.text_34fe465cfa", { "id": id, "label": label, "value3": [role.uid, roleInfo(game, role)].filter(Boolean).join(" · ") });
-      if (profileId === undefined && defaults) {
-        const selected = await defaults.select(game, id, role.uid, saved.revision, scope).catch(() => false);
-        if (!isCurrent() || signal.aborted) return;
-        confirmation += selected ? $t("lib.own-role-selection.text_966da1c2b7", { "label": label, "id": id }) : $t("lib.own-role-selection.text_518808d6b3", { "label": label });
-      }
+      catalogue.active[game] = role.uid;
+      confirmation = $t("lib.own-role-selection.text_34fe465cfa", { "id": profileId, "label": gameLabel(game), "value3": [role.uid, roleInfo(game, role)].filter(Boolean).join(" · ") });
     }
-
-    const activeDefaults = catalogs.size ? await defaults?.read(qq) : undefined;
-    if (!isCurrent() || signal.aborted) return;
-    const title = catalogs.size ? $t("lib.own-role-selection.text_b844714f31") : $t("lib.own-role-selection.text_644d7384cc");
-    const subtitle = catalogs.size ? (profileId === undefined ? $t("lib.own-role-selection.text_595270cd9a") : $t("lib.own-role-selection.text_3f6fdc79bb", { "profileId": profileId })) : undefined;
-    const lines = [[title, subtitle].filter(Boolean).join(" · ")];
+    const title = $t("lib.own-role-selection.text_b844714f31");
+    const subtitle = $t("lib.own-role-selection.text_3f6fdc79bb", { "profileId": profileId });
+    const lines = [[title, subtitle].join(" · ")];
     const cardGroups = [];
     for (const key of games) {
-      const roles = all[key];
-      const references = publicRoles?.[key];
-      const label = gameLabels[key];
-      const gameDefault = activeDefaults?.[key] ?? 1;
-      const defaultLabel = profileId === undefined && roles.length ? (catalogs.get(gameDefault)?.catalog[key].length
-        ? $t("lib.own-role-selection.text_113f48d452", { "gameDefault": gameDefault }) : $t("lib.own-role-selection.text_7372697e19")) : "";
-      lines.push(label + defaultLabel);
+      const roles = catalogue.catalog[key].slice(0, maxSlot);
+      const active = roles.find(role => role.uid === catalogue.active[key]) ?? roles.find(role => role.chosen) ?? roles[0];
+      lines.push(gameLabel(key));
       if (!roles.length) lines.push($t("lib.own-role-selection.text_48101791af"));
       const rows: (ProfileCardRole & { readonly avatar?: string; readonly profile?: number })[] = [];
-      for (const [index, { profileId: source, role, activeIn }] of roles.entries()) {
-        const reference = references?.data.indexOf(role.uid) ?? -1;
-        const marker = reference >= 0 ? `（${references?.uid === role.uid ? $t("lib.own-role-selection.text_c758d2d62e") : $t("lib.own-role-selection.text_21ebc31a63")} ${reference + 1}）` : "";
-        const current = activeIn.length ? (profileId === undefined ? $t("lib.own-role-selection.text_9f62273138", { "value1": activeIn.join("、") }) : $t("lib.own-role-selection.text_58d8cd20d2")) : "";
-        const origin = profileId === undefined ? $t("lib.own-role-selection.text_b369256ccb", { "source": source }) : "";
+      for (const [index, role] of roles.entries()) {
+        const selected = role.uid === active?.uid;
+        const marker = selected ? $t("lib.own-role-selection.text_58d8cd20d2") : "";
         const detail = roleInfo(key, role);
-        lines.push(`  ${index + 1}. ${[role.uid, detail, origin].filter(Boolean).join(" · ")}${current}${marker}`);
-        const cardOrigin = profileId === undefined && activeIn.includes(source) ? $t("lib.own-role-selection.text_4476f8250e", { "value1": activeIn.join("、") }) :
-          [origin, current].filter(Boolean).join(" ");
-        rows.push({ uid: role.uid, name: [cardOrigin, detail, marker].filter(Boolean).join(" · "), active: !!activeIn.length,
-          slot: String(index + 1), badge: $t("lib.own-role-selection.text_63927b798f"), avatar: role.avatar, profile: source });
+        lines.push(`  ${index + 1}. ${[role.uid, detail].filter(Boolean).join(" · ")}${marker}`);
+        rows.push({ uid: role.uid, name: [detail, marker].filter(Boolean).join(" · "), active: selected,
+          slot: String(index + 1), badge: $t("lib.own-role-selection.text_63927b798f"), avatar: role.avatar, profile: profileId });
       }
-      const listedUids = new Set(roles.map(({ role }) => role.uid));
-      const uniqueReferences = references?.data.flatMap((uid, index) => {
-        if (listedUids.has(uid)) return [];
-        const active = uid === references.uid;
-        rows.push({ uid, name: active ? $t("lib.own-role-selection.text_c758d2d62e") : $t("lib.own-role-selection.text_89f8145800"), active, slot: $t("lib.own-role-selection.text_0932f36928", { "value1": index + 1 }), badge: $t("lib.own-role-selection.text_4a8cb47249") });
-        return [$t("lib.own-role-selection.text_dbc62a9fce", { "value1": index + 1, "uid": uid, "value3": active ? $t("lib.own-role-selection.text_d3df839a99") : "" })];
-      });
-      if (uniqueReferences?.length) lines.push($t("lib.own-role-selection.text_722538b31b"), ...uniqueReferences);
-      cardGroups.push({ label: `${prefixes[key]}${label}${defaultLabel}`, command: `${prefixes[key]}UID1${suffix}`,
-        game: key, rows });
+      cardGroups.push({ label: `${prefixes[key]}${gameLabel(key)}`, command: `${prefixes[key]}切换角色 1${suffix}`, game: key, rows });
     }
-    const instructions = [];
-    if (catalogs.size) instructions.push($t("lib.own-role-selection.text_b207f99843", { "suffix": suffix, "value2": suffix, "value3": suffix }));
-    if (profileId === undefined && catalogs.size > 1) instructions.push($t("lib.own-role-selection.text_f94d71da1c"));
-    if (hasReferences) instructions.push($t("lib.own-role-selection.text_53c4ec0e44"));
+    const instructions = [$t("lib.own-role-selection.instructions", { "prefix": prefixes[game], "profileId": profileId })];
     const fallback = [confirmation, ...lines, ...instructions].filter(Boolean).join("\n");
     try {
       const [{ loadProfileRoleArtwork }, { openProfileCardTheme, renderProfileCard }] = await Promise.all([
@@ -187,9 +121,9 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId, ui
     if (error instanceof ProfileError) {
       if (error.code === "missing") return $t("lib.own-role-selection.text_21d26e1170", { "profileId": profileId });
       if (error.code === "changed") return $t("lib.own-role-selection.text_f19cfb39b5");
-      if (error.code === "login-required" && uid !== undefined) return $t("lib.own-role-selection.text_01e4cf1b34", { "profileId": profileId });
-      if (error.code === "role-missing" && uid !== undefined) {
-        return $t("lib.own-role-selection.text_384d21e4ee", { "profileId": profileId, "value2": gameLabels[game], "value3": prefixes[game], "value4": profileId });
+      if (error.code === "login-required") return $t("lib.own-role-selection.text_01e4cf1b34", { "profileId": profileId });
+      if (error.code === "role-missing") {
+        return $t("lib.own-role-selection.text_384d21e4ee", { "profileId": profileId, "value2": gameLabel(game), "value3": prefixes[game], "value4": profileId });
       }
     }
     return $t("lib.own-role-selection.text_403f8b8e2c");

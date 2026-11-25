@@ -37,13 +37,13 @@ games:
       message_id: 1, message_type: "group", groupActivitySignal: session.signal, reply() { return true; } };
     for (const denied of [{ ...event, groupActivitySignal: undefined }, { ...event, sub_type: "anonymous" },
       { ...event, isDelegated: true }, { ...event, sender: { user_id: 43 } }]) {
-      expect(await module.fallback(event.normalizedMessage, denied)).toContain("本人国际服角色资料");
+      expect(await module.fallback(event.normalizedMessage, denied)).toContain("本人绝区零国际服角色资料");
     }
     expect(requests).toBe(0);
     expect(await module.fallback(event.normalizedMessage, event)).toContain("Cookie");
     expect(requests).toBe(1);
     session.abort();
-    expect(await module.fallback(event.normalizedMessage, event)).toContain("本人国际服角色资料");
+    expect(await module.fallback(event.normalizedMessage, event)).toContain("本人绝区零国际服角色资料");
     expect(requests).toBe(1);
   } finally {
     if (previous === undefined) delete Bun.env.LOTUS_PROFILE_DIR;

@@ -37,7 +37,7 @@
 
 - 国际化支持：预加载 `lib/i18n-preload.ts`，使用 `@lotus-yunzai/i18n` 与 `i18n/zh-CN.json` 创建核心翻译器，并结合 `lib/i18n.ts` 与 `lib/i18n-settings.ts` 处理本地化设置。
 - 运行时基础设施：包含生成设备信息刷新（`lib/generated-device-runtime.ts`）、托管 Valkey（`lib/managed-valkey.ts`）、内置资源目录定位（`lib/builtin-resources.ts`）、网络访问控制（`lib/network-access.ts`）、终端日志格式化（`lib/terminal-log-format.ts`）以及持久化存储连接（`@lotus-yunzai/storage`）。
-- 业务与指令模块：基于 `@lotus-yunzai/account`、`@lotus-yunzai/hoyo-client`、`@lotus-yunzai/gacha`、`@lotus-yunzai/skia` 等共享包，在 `lib/` 下组织账号管理、每日签到、兑换码、角色面板与签名、群管及各类实用工具。
+- 业务与指令模块：基于 `@lotus-yunzai/account`、`@lotus-yunzai/hoyo-client`、`@lotus-yunzai/gacha`、`@lotus-yunzai/skia` 等共享包，在 `lib/` 下组织账号管理、每日签到、兑换码、角色面板与档案归属校验、群管及各类实用工具。
 - 消息协议适配器：通过 `lib/adapters/` 接入 Milky（WebSocket / Webhook / 会话与群事件）和 OneBot 协议。
 
 ## 工作区与模块关系

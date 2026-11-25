@@ -593,7 +593,7 @@
       "source": "lib/own-role-legacy-artwork.ts"
     },
     "lib.own-role-selection": {
-      "description": "本人游戏角色与档案的查询、切换及卡片展示",
+      "description": "查看当前档案的本人角色，按序号或UID在同一档案内切换游戏角色",
       "source": "lib/own-role-selection.ts"
     },
     "lib.owner-account-command": {
@@ -1135,6 +1135,14 @@
     "web.miyoushe.app": {
       "description": "米游社网页控制台前端，负责签到配置与状态展示、官方商城商品浏览、兑换计划管理及商品追踪规则配置",
       "source": "web/miyoushe/app.ts"
+    },
+    "lib.game-profile-commands": {
+      "description": "查看本人登录档案，显式切换各游戏默认档案",
+      "source": "lib/game-profile-commands.ts"
+    },
+    "lib.uid-commands": {
+      "description": "旧独立UID命令的停用提示与不保存绑定的公开UID临时查询",
+      "source": "lib/uid-commands.ts"
     }
   },
   "messages": {
@@ -1292,7 +1300,7 @@
     "app.text_b8a0c84a1b": "[进程管理] 未能确认旧版关机状态已接管。",
     "app.text_b9f218c503": "禁言{seconds}秒",
     "app.text_bd73de9617": "米币查询",
-    "app.text_bdae5bcc73": "请在当前机器人的好友私聊中验证本人游戏签名或导出面板。",
+    "app.text_bdae5bcc73": "请在当前机器人的好友私聊中导出本人档案的面板。",
     "app.text_be7f15d660": "取face",
     "app.text_bea6ccc3d2": "（原音不可用）",
     "app.text_c2abfa19e0": "安装 {name} 成功，提交 {value2}。",
@@ -2103,7 +2111,7 @@
     "lib.device-commands.text_d996b42581": "当前会话没有进行中的该档案设备绑定。",
     "lib.device-commands.text_dce8c9281f": "可继续发送设备 JSON。需要工具时，可直接下载：\n{apkDownload}",
     "lib.device-commands.text_e4cfc3641a": "设备绑定已超时，请重新发送 #绑定设备。",
-    "lib.device-commands.text_e99ac1feff": "请在本人群聊会话或好友私聊中解绑设备。",
+    "lib.device-commands.text_e99ac1feff": "请在机器人所在群聊或好友私聊中解绑设备。",
     "lib.device-commands.text_fc98247ef3": "登录该档案后，在机器人所在群聊或好友私聊中发送 #绑定设备{suffix}。",
     "lib.device-commands.text_fd690683f9": "设备信息工具文件暂不可用。{apkFallback}",
     "lib.dispatch-power-schedule.text_19862731dc": "[任务] 跳过 bot.yaml 中无效的 {field}。",
@@ -3659,7 +3667,7 @@
     "lib.panel-runtime-settings.text_fb71acb2ef": "默认 1 分钟，支持小数。填 0 时链接不随时间失效。保存后重启宿主生效。",
     "lib.panel-runtime-settings.text_fe562a50dd": "图片渲染档位",
     "lib.panel-runtime-settings.text_fff8050bff": "标签最多 64 个字符。留空取消对齐。保存后重启宿主生效。",
-    "lib.panel-signature.text_4011c959d7": "请在机器人所在群聊或好友私聊中发送 #绑定{gameName}UID 游戏UID。",
+    "lib.panel-signature.text_4011c959d7": "原签名绑定命令“#绑定{gameName}UID 游戏UID”已停用，请登录后直接在本档案内选择角色，原有数据未删除。",
     "lib.panel-signature.text_442f82413a": "请填写有效的{gameName} UID。",
     "lib.panel-signature.text_48517e574f": "已验证 UID {uid} 的{gameName}签名。可以改回签名，并在 30 分钟内从此好友私聊发送 #{value3}导出面板 {value4}。",
     "lib.panel-signature.text_57675031bd": "本次游戏签名验证已撤回。",
@@ -4921,7 +4929,27 @@
     "scripts.migrate.old_data_snapshot": "迁移暂存缺少完整数据快照，请保留原暂存备份并重新准备迁移。",
     "scripts.migrate.old_schedule_policy": "迁移暂存使用旧日程策略，请保留原暂存备份并重新准备迁移。",
     "scripts.migrate.old_conversion_policy": "迁移暂存使用旧转换规则，请保留原暂存备份并重新准备迁移。",
-    "app.group-device-recall": "请撤回包含设备资料的原消息。"
+    "app.group-device-recall": "请撤回包含设备资料的原消息。",
+    "lib.own-role-selection.instructions": "切换本档案角色：{prefix}切换角色 序号 档案{profileId}。角色切换不改变默认档案。",
+    "lib.uid-commands.retired": "UID 独立绑定已停用。请使用 #扫码登录；登录后发送 #角色列表，在当前档案内使用 #切换角色 序号。切换档案请使用 #切换档案 档号。",
+    "lib.uid-commands.public-usage": "用法：{prefix}查询公开UID 游戏UID。此查询不保存绑定。",
+    "lib.uid-commands.public-result": "{game} UID {uid} · {provider} 公开展柜可见 {count} 个角色。",
+    "lib.uid-commands.public-failure": "{game}公开 UID 查询失败，请稍后重试。",
+    "app.profile-owned-export": "面板只能导出当前档案内的本人角色，请先扫码登录或切换档案。",
+    "lib.game-profile-commands.invalid": "档案编号须为 1–{max}。用法：{prefix}切换档案2。",
+    "lib.game-profile-commands.changed": "档案或会话已变更，请重试。",
+    "lib.game-profile-commands.selected": "{game}默认档案已切换为 {id}。",
+    "lib.game-profile-commands.login": "请先登录档案 {id}。",
+    "lib.game-profile-commands.role-missing": "档案 {id} 没有已同步的{game}角色，请先同步角色。",
+    "lib.game-profile-commands.current-title": "当前游戏档案",
+    "lib.game-profile-commands.current-row": "{game}：档案 {id}{state}",
+    "lib.game-profile-commands.unlogged": "（未登录）",
+    "lib.game-profile-commands.list-title": "本人登录档案",
+    "lib.game-profile-commands.list-row": "档案 {id} · {games}",
+    "lib.game-profile-commands.no-role": "未同步角色",
+    "lib.game-profile-commands.no-profiles": "尚无登录档案，请先扫码登录。",
+    "lib.game-profile-commands.list-help": "切换默认档案：#切换档案2、*切换档案2、%切换档案2。",
+    "lib.game-profile-commands.failed": "读取或切换档案失败，请重试。"
   },
   "parameters": {
     "app.text_242958f459": {
@@ -6979,6 +7007,56 @@
     "lib.migration-media-config.invalid_cli_setting": {
       "field": "无效的 CLI 配置字段名，不包含配置值"
     },
-    "app.group-device-recall": {}
+    "app.group-device-recall": {},
+    "lib.own-role-selection.instructions": {
+      "prefix": "游戏指令前缀",
+      "profileId": "当前档案编号"
+    },
+    "lib.uid-commands.retired": {},
+    "lib.uid-commands.public-usage": {
+      "prefix": "对应游戏的指令前缀"
+    },
+    "lib.uid-commands.public-result": {
+      "game": "游戏名称",
+      "uid": "本次显式查询的游戏UID",
+      "provider": "公开展柜服务名称",
+      "count": "可见角色数量"
+    },
+    "lib.uid-commands.public-failure": {
+      "game": "游戏名称"
+    },
+    "app.profile-owned-export": {},
+    "lib.game-profile-commands.invalid": {
+      "max": "最大档案编号",
+      "prefix": "游戏指令前缀"
+    },
+    "lib.game-profile-commands.changed": {},
+    "lib.game-profile-commands.selected": {
+      "game": "游戏名称",
+      "id": "选中的档案编号"
+    },
+    "lib.game-profile-commands.login": {
+      "id": "档案编号"
+    },
+    "lib.game-profile-commands.role-missing": {
+      "id": "档案编号",
+      "game": "游戏名称"
+    },
+    "lib.game-profile-commands.current-title": {},
+    "lib.game-profile-commands.current-row": {
+      "game": "游戏名称",
+      "id": "默认档案编号",
+      "state": "未登录时的说明"
+    },
+    "lib.game-profile-commands.unlogged": {},
+    "lib.game-profile-commands.list-title": {},
+    "lib.game-profile-commands.list-row": {
+      "id": "档案编号",
+      "games": "该档案包含角色的游戏名称"
+    },
+    "lib.game-profile-commands.no-role": {},
+    "lib.game-profile-commands.no-profiles": {},
+    "lib.game-profile-commands.list-help": {},
+    "lib.game-profile-commands.failed": {}
   }
 }

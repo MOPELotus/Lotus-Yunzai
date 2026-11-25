@@ -30,8 +30,9 @@ import { createGameProfileDefaults, gameProfileDefaultsPath } from "./lib/game-p
 import { createOwnRoleLegacyArtwork } from "./lib/own-role-legacy-artwork.ts";
 import { matchOwnRoleSelection, ownRoleSelectionFeatures, selectOwnRole } from "./lib/own-role-selection.ts";
 import { withGroupPersonalReplies } from "./lib/group-personal-replies.ts";
-import { createPublicRoleReferences, matchPublicRoleReferenceCommand, publicRoleReferenceFeatures } from "./lib/public-role-references.ts";
-import { createPublicRoleRegistration, matchPublicRoleRegistrationFollowup } from "./lib/public-role-registration.ts";
+import { matchRetiredUidCommand, matchPublicUidQuery, createPublicUidQuery } from "./lib/uid-commands.ts";
+import { createGameProfileCommands, matchGameProfileCommand } from "./lib/game-profile-commands.ts";
+import { ownedPanelAuthorization } from "./lib/owned-panel-authorization.ts";
 import { donationCommands } from "./lib/donation-command.ts";
 import { characterGalleryCron, createCharacterGallerySchedule } from "./lib/character-gallery-schedule.ts";
 import { legacyAnniversaryCommands } from "./lib/legacy-anniversary.ts";
@@ -44,7 +45,7 @@ import { createGroupAvatarCommand, groupAvatarNames } from "./lib/group-avatar-c
 import { createOwnerAccountCommand, ownerAccountFeatureNames } from "./lib/owner-account-command.ts";
 import { createOwnerQzoneCommand, ownerQzoneFeatures } from "./lib/owner-qzone-command.ts";
 import { arkSelfRankFeatures, createArkSelfRankCommand, matchArkSelfRank } from "./lib/ark-self-rank.ts";
-import { containsPanelSignatureChallenge, createPanelSignatureService, matchPanelSignatureCommand, panelSignatureFeatures } from "./lib/panel-signature.ts";
+import { containsPanelSignatureChallenge, matchPanelSignatureCommand, panelSignatureFeatures } from "./lib/panel-signature.ts";
 import { ownerContactListCommand, replyOwnerContactList } from "./lib/owner-contact-list.ts";
 import { createOwnerMessageRelay, ownerRelayFeatureNames, type OwnerRelayAccount } from "./lib/owner-message-relay.ts";
 import { groupCleanupCommands } from "./lib/group-cleanup-commands.ts";
@@ -406,15 +407,14 @@ if (import.meta.main) {
   const roleProfiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
   const accountCookieStatus = createAccountCookieStatus(roleProfiles);
   const gameProfileDefaults = createGameProfileDefaults(fileURLToPath(new URL(gameProfileDefaultsPath + "/", import.meta.url)), roleProfiles, lockFile);
-  const publicRoleReferences = createPublicRoleReferences(lockFile);
-  const publicRoleRegistration = createPublicRoleRegistration();
+  const publicUidQuery = createPublicUidQuery();
+  const gameProfileCommands = createGameProfileCommands(roleProfiles, gameProfileDefaults);
   const gachaBatch = createGachaBatch({
     listIds: roleProfiles.listIds,
     signal: lifecycle.signal,
   });
   const panelRebuild = createPanelRebuild(roleProfiles, lifecycle.signal);
   const arkSelfRank = createArkSelfRankCommand(roleProfiles);
-  const panelSignatures = createPanelSignatureService(lockFile);
   const legacyPanelRecoveryEnabled = () => readLegacyPanelRecoveryEnabled(root);
   const legacyPanelRecovery = createLegacyPanelRecoveryFlow({
     enabled: legacyPanelRecoveryEnabled,
@@ -432,13 +432,11 @@ if (import.meta.main) {
       };
       const account = await read();
       if (account) return async () => session.isCurrent() && (await read()) === account;
-      const signed = await panelSignatures.authorization(game, uid, session);
-      if (signed) return async () => session.isCurrent() &&
-        sameRole(await roleProfiles.savedRole(qq, profileId, game).catch(() => undefined)) && await signed();
+
     },
   });
 
-  async function exportSignedPanel(game: "gs" | "sr", uid: string, authorized: () => Promise<boolean>,
+  async function exportOwnedPanel(game: "gs" | "sr", uid: string, authorized: () => Promise<boolean>,
     event: MessageEvent, signal: AbortSignal) {
     const { uploadFile } = event;
     if (!uploadFile || event.user_id === undefined) return $t("app.text_84db7aa2ac");
@@ -2114,6 +2112,7 @@ if (import.meta.main) {
       const command = normalizeGameCommand(event).msg;
       const personal = isPassportLoginInput(event.msg) || isDeviceBindingInput(command) || isDeviceBindingPayload(event.msg) ||
         isDeviceBindingPayload(event.raw_message) || !!matchOwnRoleSelection(command) || !!matchArkSelfRank(event.msg) ||
+        !!matchGameProfileCommand(command) || matchRetiredUidCommand(command) || !!matchPublicUidQuery(command) ||
         (!!matchPanelSignatureCommand(event.msg) && matchPanelSignatureCommand(event.msg)?.action !== "export") ||
         /^#?(?:原神)?(?:留影(?:叙佳期)?|领?(?:角色)?生日卡?)(?:\s|$)/u.test(command) ||
         /^(?:#?(?:星铁|星穹铁道|星轨|穹轨|星穹|崩铁|铁道)|[*＊])\s*(?:(?:本期|上期)?(?:模拟)?宇宙|(?:寰宇)?蝗灾|差分|(?:常规|本期|上期|本周|上周|周期)(?:差分|演算))/u.test(command) ||
@@ -2371,52 +2370,29 @@ if (import.meta.main) {
       if (reply !== undefined && scope.isCurrent()) await event.reply(reply);
       return;
     }
-    const publicRoleReference = matchPublicRoleReferenceCommand(gameAccountCommand);
-    const publicRoleFollowup = !publicRoleReference && event.isPrivate && matchPublicRoleRegistrationFollowup(event.msg);
-    if (publicRoleReference || publicRoleFollowup) {
-      const features = publicRoleReferenceFeatures;
-      const scope = allowNew && !event.isDelegated && !event.attachmentOnly && allowed(features) ? ownCheckinSession(event, features) : undefined;
-      const connection = event.privateCredentialSignal;
-      if (scope?.privateFriend && connection && event.self_id !== undefined) {
-        const session = { ...scope, connection, bot: event.self_id, adapter: event.adapter === "milky" ? "milky" as const : "onebot" as const };
-        if (publicRoleReference?.action === "登记uid" || publicRoleReference?.action === "登记公开uid") {
-          if (!publicRoleReference.value) {
-            await publicRoleRegistration.start(session, publicRoleReference.game,
-              () => event.reply($t("app.text_2c1d597226")));
-            return;
-          }
-          publicRoleRegistration.clear(session);
-        }
-        const selection = publicRoleReference ?? (publicRoleFollowup ? publicRoleRegistration.consume(session, publicRoleFollowup) : undefined);
-        if (selection) {
-          const reply = "cancelled" in selection ? $t("app.text_5c1f0aaed5") : await publicRoleReferences(selection, scope);
-          if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
-          return;
-        }
-      }
-      if (publicRoleReference) {
-        if (scope && event.message_type === "group") await event.reply($t("app.text_6b5cc7a198"));
-        return;
-      }
+    const profileCommand = matchGameProfileCommand(gameAccountCommand);
+    if (profileCommand) {
+      if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(ownRoleSelectionFeatures)) return;
+      const scope = ownCheckinSession(event, ownRoleSelectionFeatures);
+      if (!scope) return;
+      const reply = await gameProfileCommands(profileCommand, scope);
+      if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
+      return;
     }
-    if (/^#(?:原神)?\s*(?:展板|备用)\s*(?:更新面板|面板更新|更新全部面板|全部面板更新|获取游戏角色详情)$/u.test(gameAccountCommand)) {
-      const features = [$t("app.text_81f59af71e"), "@lotus-yunzai/genshin"];
-      const scope = allowNew && allowed(features) && allowed(publicRoleReferenceFeatures) ? ownCheckinSession(event, features) : undefined;
-      if (scope?.privateFriend && commands.hasModule("@lotus-yunzai/genshin")) {
-        const qq = String(scope.user);
-        const fallback = await roleProfiles.savedRole(qq, 1, "gs").then(() => false, (error: unknown) =>
-          error instanceof ProfileError && (error.code === "missing" || error.code === "role-missing"));
-        const uid = fallback ? await publicRoleReferences.catalogue(qq).then(value => value.gs.uid).catch(() => undefined) : undefined;
-        if (uid && scope.isCurrent()) {
-          const request = { ...event, privateCredentialSignal: scope.signal };
-          const reply = await commands.dispatchFallback(request, names => names[0] === "@lotus-yunzai/genshin" && allowed(names),
-            user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user),
-            $t("app.text_06fb255ccb", { "uid": uid }), undefined, "@lotus-yunzai/genshin");
-          const current = await publicRoleReferences.catalogue(qq).then(value => value.gs.uid).catch(() => undefined);
-          if (reply !== undefined && scope.isCurrent() && allowed(publicRoleReferenceFeatures) && uid === current) await sendCommandReply(event, reply);
-          return;
-        }
+    if (matchRetiredUidCommand(gameAccountCommand)) {
+      if (allowNew && !event.isDelegated && !event.attachmentOnly && allowed(ownRoleSelectionFeatures) && ownCheckinSession(event, ownRoleSelectionFeatures)) {
+        await event.reply($t("lib.uid-commands.retired"));
       }
+      return;
+    }
+    const publicUidCommand = matchPublicUidQuery(gameAccountCommand);
+    if (publicUidCommand) {
+      if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(ownRoleSelectionFeatures)) return;
+      const scope = ownCheckinSession(event, ownRoleSelectionFeatures);
+      if (!scope) return;
+      const reply = await publicUidQuery(publicUidCommand, scope);
+      if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
+      return;
     }
     const gameLoginRemoval = matchGameLoginRemoval(gameAccountCommand);
     if (gameLoginRemoval) {
@@ -2436,8 +2412,7 @@ if (import.meta.main) {
       if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(ownRoleSelectionFeatures)) return;
       const scope = ownCheckinSession(event, ownRoleSelectionFeatures);
       if (!scope) return;
-      const readPublic = allowed(publicRoleReferenceFeatures) ? publicRoleReferences.catalogue : undefined;
-      const reply = await selectOwnRole(roleProfiles, ownRoleSelection, scope, readPublic, gameProfileDefaults,
+      const reply = await selectOwnRole(roleProfiles, ownRoleSelection, scope,
         createOwnRoleLegacyArtwork(roleProfiles, lockFile));
       if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
       return;
@@ -2452,22 +2427,19 @@ if (import.meta.main) {
         return;
       }
       const session = { ...scope, bot: event.self_id, adapter: event.adapter === "milky" ? "milky" as const : "onebot" as const };
-      const { action, game } = panelSignature;
-      const qq = String(scope.user);
-      if (action !== "export") {
-        const uid = panelSignature.uid ?? (action === "begin" ? await roleProfiles.savedRole(qq, gameCommandProfileId(game), game).then(role => role.uid).catch(() => undefined) : undefined);
-        const reply = await panelSignatures.run({ action, game, uid }, session);
-        if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
+      const { game } = panelSignature;
+      if (panelSignature.action !== "export") {
+        await event.reply($t("lib.uid-commands.retired"));
         return;
       }
       const uid = panelSignature.uid!;
-      const authorized = await panelSignatures.authorization(game, uid, session);
+      const authorized = await ownedPanelAuthorization(roleProfiles, game, uid, gameCommandProfileId(game), scope);
       if (!scope.isCurrent()) return;
       if (!authorized) {
-        await event.reply($t("app.text_ebd5810aa0", { "uid": uid }));
+        await event.reply($t("app.profile-owned-export"));
         return;
       }
-      const reply = await exportSignedPanel(game, uid, authorized, event, session.signal);
+      const reply = await exportOwnedPanel(game, uid, authorized, event, session.signal);
       if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
       return;
     }

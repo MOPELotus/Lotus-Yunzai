@@ -36,6 +36,20 @@ async function prepare(root: string) {
       [id]: { ...row, stoken: secret, _time: Date.now() - 1000, talent: { a: 6, e: 8, q: 8, token: secret }, artis: {} },
     } }));
   }
+  for (const [qq, id, uid, accountId] of [["42", 1, gs, "4242"], ["42", 2, "123450003", "4444"], ["43", 1, "123450099", "4343"]] as const) {
+    await writeFile(join(root, "profiles", `${qq}${id === 1 ? "" : `-${id}`}.yaml`), Bun.YAML.stringify({
+      user: { qq }, profile: { id }, device: { id: `fixture-bound-${accountId}`, fp: "0123456789abc", bound: true }, account: { stuid: accountId, stoken: "fixture-login-token", cookie: `ltuid=${accountId}; cookie_token=fixture-login-cookie`,
+        current_uid: { gs: uid, sr }, game_roles: {
+          gs: [{ uid, region: "cn_gf01", game_biz: "hk4e_cn" }],
+          sr: [{ uid: sr, region: "prod_gf_cn", game_biz: "hkrpg_cn" }],
+        },
+      },
+    }));
+  }
+  const proofs = join(root, "data/panel-signatures/onebot/gs/43");
+  await mkdir(proofs, { recursive: true });
+  await writeFile(join(proofs, "99.json"), JSON.stringify({ version: 1, game: "gs", bot: 99, user: 43, adapter: "onebot",
+    state: "verified", uid: gs, generation: "a".repeat(64), expires: Date.now() + 1_800_000 }));
 }
 
 function attachment(uri: unknown, uid: string) {
@@ -50,200 +64,83 @@ function attachment(uri: unknown, uid: string) {
   return panel.avatars;
 }
 
-test("真实群聊和好友会话可签名验证，口令需确认送达且面板导出仅限本人私聊", async () => {
-  const signatures = new Map<string, string>();
-  const requests: { path: string; method: string; cookie: string | null; authorization: string | null; referer: string | null; body: string }[] = [];
-  const publicProfiles = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-    const url = new URL(request.url);
-    requests.push({ path: url.pathname + url.search, method: request.method, cookie: request.headers.get("Cookie"),
-      authorization: request.headers.get("Authorization"), referer: request.headers.get("Referer"), body: await request.text() });
-    if (url.pathname === `/api/uid/${gs}/`) return Response.json({ uid: Number(gs), playerInfo: { signature: signatures.get(gs) }, ttl: 5 });
-    if (url.pathname === `/sr_info/${sr}`) return Response.json({ detailInfo: { uid: Number(sr), signature: signatures.get(sr) }, ttl: 5 });
-    return new Response(null, { status: 404 });
-  } });
+test("双协议面板导出只认当前登录档案角色，旧 UID 口令与公开引用不能授予权限", async () => {
   const preload = `
-    import { appendFileSync } from "node:fs";
-    const fixtureSetTimeout = globalThis.setTimeout;
-    globalThis.setTimeout = ((callback, delay, ...args) => {
-      if (delay === 120_000 && new Error().stack?.includes("onebot-calls.ts")) {
-        appendFileSync("./signature-recall-delays.txt", String(delay) + "\\n");
-      }
-      return fixtureSetTimeout(callback, delay, ...args);
-    });
     Bun.env.LOTUS_PROFILE_DIR = "./profiles";
     const nativeFetch = globalThis.fetch;
     globalThis.fetch = Object.assign(async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input));
       if (url.hostname === "127.0.0.1") return nativeFetch(input, init);
-      if (url.origin !== "https://enka.network" && url.origin !== "https://api.mihomo.me") {
-        throw new Error("隔离宿主禁止连接其他外部地址。");
-      }
-      if (init.credentials !== "omit" || init.redirect !== "error" || init.referrerPolicy !== "no-referrer") {
-        throw new Error("公开签名请求缺少隐私约束。");
-      }
-      const explicitHeaders = [...new Headers(init.headers).keys()].sort().join(",");
-      if (explicitHeaders !== "accept,user-agent") throw new Error("公开签名请求附带意外的头字段。");
-      const response = await nativeFetch(new URL(url.pathname + url.search, ${JSON.stringify(publicProfiles.url.origin)}), init);
-      return new Response(response.body, { status: response.status, headers: response.headers });
+      await Bun.write("./unexpected-external-request.txt", url.origin + url.pathname);
+      throw new Error("档案归属导出不得向公开签名或其他外部接口发请求。");
     }, { preconnect: nativeFetch.preconnect });
   `;
-  try {
-    await withDualGatewayFixture("panel-signature-fixture", 'master: ["99:42", "100:42"]\ndisablePrivate: false\n', async gateway => {
-      const { onebot, milky, root, sendOneBot, sendMilky } = gateway;
-      let receipt = 1;
-      async function onebotReply(expected: string, user = 42) {
-        const reply = await onebot.next("send_msg").catch(error => { throw new Error(`未收到私聊回执：${expected}`, { cause: error }); });
-        expect(reply.params).toMatchObject({ message_type: "private", user_id: user });
-        expect(JSON.stringify(reply.params.message)).toContain(expected);
-        reply.respond({ message_id: receipt++ });
-      }
-      async function milkyReply(expected: string) {
-        const reply = await milky.next("send_private_message");
-        expect(reply.params.user_id).toBe(42);
-        expect(JSON.stringify(reply.params.message)).toContain(expected);
-        reply.respond({ message_seq: receipt++ });
-      }
-      async function groupReply(expected: string) {
-        const reply = await onebot.next("send_msg").catch(error => { throw new Error(`未收到群回执：${expected}`, { cause: error }); });
-        expect(reply.params).toMatchObject({ message_type: "group", group_id: 701 });
-        expect(JSON.stringify(reply.params.message)).toContain(expected);
-        reply.respond({ message_id: receipt++ });
-      }
-      async function waitForReceipt(relativePath: string, code: string) {
-        const file = join(root, "data/panel-signatures", relativePath);
-        for (let attempt = 0; attempt < 100; attempt++) {
-          const text = await readFile(file, "utf8");
-          expect(text).not.toContain(code);
-          if (JSON.parse(text).delivered === true) return;
-          await Bun.sleep(10);
-        }
-        throw new Error("成功回执没有激活口令。");
-      }
+  await withDualGatewayFixture("panel-profile-owner-fixture", 'master: ["99:42", "100:42"]\ndisablePrivate: false\n', async gateway => {
+    const { onebot, milky, root, sendOneBot, sendMilky } = gateway;
+    let receipt = 1;
+    const oldProof = join(root, "data/panel-signatures/onebot/gs/43/99.json");
+    const proofBytes = await readFile(oldProof);
+    async function onebotReply(expected: string, user = 42, group = false) {
+      const reply = await onebot.next("send_msg").catch(error => { throw new Error(`未收到回执：${expected}`, { cause: error }); });
+      expect(reply.params).toMatchObject(group ? { message_type: "group", group_id: 701 } : { message_type: "private", user_id: user });
+      expect(JSON.stringify(reply.params.message)).toContain(expected);
+      expect(JSON.stringify(reply.params.message)).not.toMatch(challenge);
+      reply.respond({ message_id: receipt++ });
+    }
+    async function milkyReply(expected: string) {
+      const reply = await milky.next("send_private_message");
+      expect(reply.params.user_id).toBe(42);
+      expect(JSON.stringify(reply.params.message)).toContain(expected);
+      expect(JSON.stringify(reply.params.message)).not.toMatch(challenge);
+      reply.respond({ message_seq: receipt++ });
+    }
 
-      sendOneBot(`#原神绑定UID ${gs}`, { message_type: "group", sub_type: "normal", group_id: 701 });
-      const groupChallenge = await onebot.next("send_msg");
-      expect(groupChallenge.params).toMatchObject({ message_type: "group", group_id: 701 });
-      expect(JSON.stringify(groupChallenge.params.message)).toMatch(challenge);
-      const groupCode = JSON.stringify(groupChallenge.params.message).match(challenge)?.[0];
-      if (!groupCode) throw new Error("群聊未收到本人签名验证口令。");
-      groupChallenge.respond({ message_id: receipt++ });
-      await waitForReceipt("onebot/gs/42/99.json", groupCode);
-      expect(await Bun.file(join(root, "signature-recall-delays.txt")).text()).toContain("120000\n");
-      signatures.set(gs, groupCode);
-      sendOneBot(`#验证原神UID ${gs}`, { message_type: "group", sub_type: "normal", group_id: 701, user_id: 43 });
-      await groupReply("没有对应的待验证口令");
-      expect(requests).toEqual([]);
-      sendOneBot(`#验证原神UID ${gs}`, { message_type: "group", sub_type: "normal", group_id: 701 });
-      await groupReply(`已验证 UID ${gs}`);
-      const groupRequests = [...requests];
-      expect(groupRequests).toEqual([{ path: `/api/uid/${gs}/?info`, method: "GET", cookie: null,
-        authorization: null, referer: null, body: "" }]);
-      sendOneBot(`#原神导出面板 ${gs}`, { message_type: "group", sub_type: "normal", group_id: 701 });
-      await groupReply("好友私聊");
-      expect(onebot.calls.some(call => call.action === "upload_group_file")).toBe(false);
-      sendOneBot(`#取消验证原神UID ${gs}`, { message_type: "group", sub_type: "normal", group_id: 701 });
-      await groupReply("已撤回");
-      sendOneBot(`#原神导出面板 ${gs}`);
-      await onebotReply("请先签名验证");
-      expect(requests).toEqual(groupRequests);
-      requests.length = 0;
+    sendOneBot(`#原神绑定UID ${gs}`, { message_type: "group", sub_type: "normal", group_id: 701 });
+    await onebotReply("UID 独立绑定已停用", 42, true);
+    await sendMilky(`*验证UID ${sr}`, friend);
+    await milkyReply("UID 独立绑定已停用");
+    sendOneBot(`#取消验证原神UID ${gs}`, { user_id: 43 });
+    await onebotReply("UID 独立绑定已停用", 43);
+    expect(await readFile(oldProof)).toEqual(proofBytes);
 
-      sendOneBot(`#绑定原神UID ${gs}`);
-      const unconfirmed = await onebot.next("send_msg");
-      expect(unconfirmed.params.user_id).toBe(42);
-      const unconfirmedCode = JSON.stringify(unconfirmed.params.message).match(challenge)?.[0];
-      expect(unconfirmedCode).toBeDefined();
-      signatures.set(gs, unconfirmedCode!);
-      unconfirmed.respond({});
-      sendOneBot(`#原神验证UID ${gs}`);
-      await onebotReply("没有对应的待验证口令");
-      expect(requests).toEqual([]);
+    sendOneBot(`#原神导出面板 ${gs}`, { message_type: "group", sub_type: "normal", group_id: 701 });
+    await onebotReply("好友私聊", 42, true);
+    expect(onebot.calls.some(call => call.action === "upload_group_file")).toBe(false);
+    // The same command in a separate conversation must not be swallowed by duplicate protection.
+    sendOneBot(`#原神导出面板 ${gs}`);
+    const gsUpload = await onebot.next("upload_private_file");
+    expect(gsUpload.params).toMatchObject({ user_id: 42, name: `${gs}.json` });
+    const gsAvatars = attachment(gsUpload.params.file, gs);
+    expect(Object.keys(gsAvatars)).toEqual(["10000046"]);
+    expect(gsAvatars[10000046]).toMatchObject({ level: 90, talent: { a: 6 }, _source: "enka" });
+    gsUpload.respond({ file_id: "isolated-genshin-panel" });
+    await onebotReply(`已导出原神面板 ${gs}.json`);
 
-      sendOneBot(`#绑定原神UID${gs}`);
-      const gsChallenge = await onebot.next("send_msg");
-      expect(gsChallenge.params).toMatchObject({ user_id: 42, message_type: "private" });
-      const gsCode = JSON.stringify(gsChallenge.params.message).match(challenge)?.[0];
-      if (!gsCode) throw new Error("好友私聊未收到原神口令。");
-      expect(gsCode).not.toBe(unconfirmedCode);
-      signatures.set(gs, gsCode);
-      gsChallenge.respond({ message_id: receipt++ });
-      await waitForReceipt("onebot/gs/42/99.json", gsCode);
+    // A verified proof left by the retired system cannot authorize someone else's role.
+    sendOneBot(`#原神导出面板 ${gs}`, { user_id: 43 });
+    await onebotReply("当前档案", 43);
+    expect(await readFile(oldProof)).toEqual(proofBytes);
+    sendOneBot(`#原神导出面板 ${sr}`);
+    await onebotReply("当前档案");
+    sendOneBot(`*导出面板 ${gs}`);
+    await onebotReply("当前档案");
 
-      await sendMilky(`#验证原神UID ${gs}`, friend);
-      await milkyReply("没有对应的待验证口令");
-      sendOneBot(`#验证原神UID ${gs}`, { user_id: 43 });
-      await onebotReply("没有对应的待验证口令", 43);
-      sendOneBot(`#验证原神UID ${sr}`);
-      await onebotReply("没有对应的待验证口令");
-      expect(requests).toEqual([]);
+    await sendMilky(`*导出面板 ${sr}`, friend);
+    const srUpload = await milky.next("upload_private_file");
+    expect(srUpload.params).toMatchObject({ user_id: 42, file_name: `${sr}.json` });
+    const srAvatars = attachment(srUpload.params.file_uri, sr);
+    expect(Object.keys(srAvatars)).toEqual(["1102"]);
+    expect(srAvatars[1102]).toMatchObject({ level: 80, talent: { a: 6 }, trees: ["101"], _source: "homo" });
+    srUpload.respond({ file_id: "isolated-starrail-panel" });
+    await milkyReply(`已导出 ${sr}.json`);
 
-      sendOneBot(`#验证原神UID ${gs}`);
-      await onebotReply(`已验证 UID ${gs}`);
-      await sendMilky(`#原神导出面板 ${gs}`, friend);
-      await milkyReply("请先签名验证");
-      sendOneBot(`#原神导出面板 ${gs}`, { user_id: 43 });
-      await onebotReply("请先签名验证", 43);
-      sendOneBot(`#原神导出面板 ${sr}`);
-      await onebotReply("请先签名验证");
-      sendOneBot(`*导出面板 ${gs}`);
-      await onebotReply("请先签名验证");
-
-      sendOneBot(`#原神导出面板 UID${gs}`);
-      const gsUpload = await onebot.next("upload_private_file");
-      expect(gsUpload.params).toMatchObject({ user_id: 42, name: `${gs}.json` });
-      const gsAvatars = attachment(gsUpload.params.file, gs);
-      expect(Object.keys(gsAvatars)).toEqual(["10000046"]);
-      expect(gsAvatars[10000046]).toMatchObject({ level: 90, talent: { a: 6 }, _source: "enka" });
-      gsUpload.respond({ file_id: "isolated-genshin-panel" });
-      await onebotReply(`已导出原神面板 ${gs}.json`);
-
-      await sendMilky(`#绑定星铁UID ${sr}`, friend);
-      const srUnconfirmed = await milky.next("send_private_message");
-      expect(srUnconfirmed.params.user_id).toBe(42);
-      const srUnconfirmedCode = JSON.stringify(srUnconfirmed.params.message).match(challenge)?.[0];
-      if (!srUnconfirmedCode) throw new Error("好友私聊未发起星铁口令投递。");
-      signatures.set(sr, srUnconfirmedCode);
-      srUnconfirmed.respond({});
-      await sendMilky(`#验证星铁UID ${sr}`, friend);
-      await milkyReply("没有对应的待验证口令");
-      expect(requests).toHaveLength(1);
-
-      await sendMilky(`*绑定UID ${sr}`, friend);
-      const srChallenge = await milky.next("send_private_message");
-      expect(srChallenge.params.user_id).toBe(42);
-      const srCode = JSON.stringify(srChallenge.params.message).match(challenge)?.[0];
-      if (!srCode) throw new Error("好友私聊未收到星铁口令。");
-      expect(srCode).not.toBe(srUnconfirmedCode);
-      signatures.set(sr, srCode);
-      srChallenge.respond({ message_seq: receipt++ });
-      await waitForReceipt("milky/sr/42/100.json", srCode);
-      await sendMilky(`*验证UID ${sr}`, friend);
-      await milkyReply(`已验证 UID ${sr}`);
-      await sendMilky(`*导出面板 ${sr}`, friend);
-      const srUpload = await milky.next("upload_private_file");
-      expect(srUpload.params).toMatchObject({ user_id: 42, file_name: `${sr}.json` });
-      const srAvatars = attachment(srUpload.params.file_uri, sr);
-      expect(Object.keys(srAvatars)).toEqual(["1102"]);
-      expect(srAvatars[1102]).toMatchObject({ level: 80, talent: { a: 6 }, trees: ["101"], _source: "homo" });
-      srUpload.respond({ file_id: "isolated-starrail-panel" });
-      await milkyReply(`已导出 ${sr}.json`);
-
-      sendOneBot(`#取消验证原神UID ${gs}`);
-      await onebotReply("已撤回");
-      sendOneBot(`#原神导出面板 UID ${gs}`);
-      await onebotReply("请先签名验证");
-      await sendMilky(`*取消验证UID ${sr}`, friend);
-      await milkyReply("已撤回");
-      await sendMilky(`#星铁导出面板 UID ${sr}`, friend);
-      await milkyReply("请先签名验证");
-
-      const onlyUid = { method: "GET", cookie: null, authorization: null, referer: null, body: "" };
-      expect(requests).toEqual([{ ...onlyUid, path: `/api/uid/${gs}/?info` }, { ...onlyUid, path: `/sr_info/${sr}` }]);
-      expect(await readdir(join(root, "profiles"))).toEqual([]);
-      expect(onebot.calls).toEqual([]);
-      expect(milky.calls).toEqual([]);
-    }, 4_000, preload, prepare);
-  } finally {
-    publicProfiles.stop(true);
-  }
-}, 30_000);
+    sendOneBot("#切换档案2");
+    await onebotReply("档案");
+    sendOneBot(`#原神导出面板 UID ${gs}`);
+    await onebotReply("当前档案");
+    expect(await Bun.file(join(root, "unexpected-external-request.txt")).exists() ? await Bun.file(join(root, "unexpected-external-request.txt")).text() : "").toBe("");
+    expect(await readFile(oldProof)).toEqual(proofBytes);
+    expect(onebot.calls).toEqual([]);
+    expect(milky.calls).toEqual([]);
+  }, 4_000, preload, prepare);
+}, 20_000);
