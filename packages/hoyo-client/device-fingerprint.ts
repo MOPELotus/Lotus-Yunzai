@@ -13,12 +13,17 @@ const apiLevels: Readonly<Record<string, string>> = {
 };
 
 export class DeviceFingerprintError extends Error {
-  constructor() { super("设备指纹申请未完成，请稍后重新发送设备 JSON。"); this.name = "DeviceFingerprintError"; }
+  constructor() { super("设备指纹申请未完成，请稍后重试。"); this.name = "DeviceFingerprintError"; }
 }
 
-export function buildDeviceFingerprintPayload(info: AndroidDeviceInfo) {
-  const deviceId = randomBytes(8).toString("hex");
-  const deviceGuid = randomUUID();
+export function buildDeviceFingerprintPayload(info: AndroidDeviceInfo,
+  identity?: { readonly deviceId: string; readonly deviceGuid: string }) {
+  if (identity && (!/^(?:[0-9a-f]{16}|[0-9a-f]{32})$/iu.test(identity.deviceId) ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(identity.deviceGuid))) {
+    throw new TypeError("自动设备身份无效。");
+  }
+  const deviceId = identity?.deviceId ?? randomBytes(8).toString("hex");
+  const deviceGuid = identity?.deviceGuid ?? randomUUID();
   const brand = info.deviceFingerprint.split("/")[0] || info.deviceBrand || "Android";
   const osVersion = info.osVersion ?? "";
   const release = osVersion.toUpperCase().replace(/(?:\.0)+$/u, "");
@@ -46,9 +51,9 @@ export function buildDeviceFingerprintPayload(info: AndroidDeviceInfo) {
 }
 
 export async function requestDeviceFingerprint(info: AndroidDeviceInfo, {
-  transport = (url, init) => fetch(url, init), signal, verify,
-}: { readonly transport?: HoyoTransport; readonly signal: AbortSignal; readonly verify?: () => Promise<void> }): Promise<DeviceBinding> {
-  const payload = buildDeviceFingerprintPayload(info);
+  transport = (url, init) => fetch(url, init), signal, verify, identity,
+}: { readonly transport?: HoyoTransport; readonly signal: AbortSignal; readonly verify?: () => Promise<void>; readonly identity?: { readonly deviceId: string; readonly deviceGuid: string } }): Promise<DeviceBinding> {
+  const payload = buildDeviceFingerprintPayload(info, identity);
   const body = JSON.stringify(payload);
   async function guard() { signal.throwIfAborted(); await verify?.(); signal.throwIfAborted(); }
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -60,7 +65,7 @@ export async function requestDeviceFingerprint(info: AndroidDeviceInfo, {
     try {
       response = await transport(new URL(endpoint), {
         method: "POST", headers: { "User-Agent": "okhttp/4.9.3", "Content-Type": "application/json" },
-        body, signal: deadline, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer",
+        body, signal: deadline, keepalive: false, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer",
       });
     } catch {
       await guard();
@@ -74,7 +79,8 @@ export async function requestDeviceFingerprint(info: AndroidDeviceInfo, {
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      if ((response.status === 408 || response.status >= 500) && attempt < 2) continue;
+      if ((response.status === 408 || response.status >= 500 || (response.status === 410 &&
+          /^text\/html(?:\s*;|$)/iu.test(response.headers.get("Content-Type") ?? ""))) && attempt < 2) continue;
       throw new DeviceFingerprintError();
     }
     let result: Awaited<ReturnType<typeof readGameRecordPayload>>;

@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
+import { generateProfileDevice } from "./generated-device.ts";
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { link, mkdir, mkdtemp, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -550,6 +551,7 @@ function verifiedInternationalAccount(os: Record<string, unknown>, credential: u
 export function createProfileStore(directory: string | URL = new URL("../../data/users/", import.meta.url)) {
   const root = typeof directory === "string" ? directory : fileURLToPath(directory);
   const loginSlots = new WeakSet<ProfileLoginSlot>();
+  const loginDevices = new WeakMap<ProfileLoginSlot, ReturnType<typeof generateProfileDevice>>();
 
   async function listSlots() {
     try {
@@ -691,12 +693,11 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const filename = profileFilename(qq, profileId);
       const snapshot = await optionalSnapshot(join(root, filename));
       const existing = snapshot ? decodeProfile(snapshot, qq, profileId).device : undefined;
-      const device = existing?.id ? existing : {
-        id: randomUUID().replaceAll("-", "").toUpperCase(), fp: "", model: existing?.model || "Lotus",
-        name: existing?.name || "Lotus Device", androidVersion: existing?.androidVersion || "11", raw: existing?.raw ?? {},
-      };
+      const generated = existing?.id ? undefined : generateProfileDevice();
+      const device = generated ? readIdentity({ device: generated }, qq, profileId).device : existing!;
       const slot = Object.freeze({ qq, profileId, revision: snapshot ? revisionOf(snapshot) : null, device: Object.freeze(device) });
       loginSlots.add(slot);
+      if (generated) loginDevices.set(slot, generated);
       return slot;
     },
     async verifyLoginSlot(slot: ProfileLoginSlot) {
@@ -728,16 +729,55 @@ export function createProfileStore(directory: string | URL = new URL("../../data
           account: { ...record(document.account), ...account, ...nextRoles, updated_at: now,
             roles_updated_at: result.roles ? now : sameAccount ? text(record(document.account).roles_updated_at) : "",
             role_sync_error: result.roles ? "" : "登录成功，角色暂未同步。" },
-          device: previous.device.id || text(savedDevice.fp) || savedDevice.bound === true ? document.device : {
-            ...savedDevice, bound: false, id: device.id, fp: "",
-            name: device.name, model: device.model, android_version: device.androidVersion,
-          },
+          device: previous.device.id || text(savedDevice.fp) || savedDevice.bound === true ? document.device :
+            loginDevices.get(slot) ?? { ...savedDevice, bound: false, id: device.id, fp: "",
+              name: device.name, model: device.model, android_version: device.androidVersion, raw: device.raw },
         };
         const nickname = result.nickname && checkinLabel(previous, result.nickname, "");
         const named = nickname ? fillCheckinNickname(updated, readIdentity(updated, qq, profileId), nickname) : updated;
         const revision = await writeProfileDocument(path, named, slot.revision, signal);
         loginSlots.delete(slot);
+        loginDevices.delete(slot);
         return { rolesSynced: result.roles !== undefined, revision };
+      });
+    },
+    async prepareGeneratedDevice(qq: string, profileId = 1, signal?: AbortSignal) {
+      const path = join(await realpath(root), profileFilename(qq, profileId));
+      return serializeWrite(path, async () => {
+        signal?.throwIfAborted();
+        let { document, state, revision } = await readDocument(qq, profileId, path);
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        let device = record(document.device);
+        // Migrate only the exact placeholder written by the previous TS login flow.
+        // Preserve arbitrary partial legacy identities and every manually bound device.
+        const placeholder = /^[A-F0-9]{32}$/u.test(state.device.id) && state.device.model === "Lotus" &&
+          state.device.name === "Lotus Device" && Object.keys(state.device.raw).length === 0;
+        if (device.bound !== true && !state.device.fp && (!state.device.id || placeholder)) {
+          device = generateProfileDevice({ deviceId: state.device.id || undefined });
+          document = { ...document, device };
+          revision = await writeProfileDocument(path, document, revision, signal);
+          state = readIdentity(document, qq, profileId);
+        }
+        return { source: { qq, profileId, account: state.account, device: state.device, revision },
+          pending: device.generated === true && device.bound !== true && Boolean(state.device.id) && !state.device.fp,
+          instanceId: text(device.instance_id), deviceGuid: text(record(device.raw).bbsDeviceId) };
+      });
+    },
+    async saveGeneratedDeviceFp(expected: DeviceBindingSnapshot, instanceId: string, fp: string, signal?: AbortSignal) {
+      const { qq, profileId } = expected;
+      const path = join(await realpath(root), profileFilename(qq, profileId));
+      return serializeWrite(path, async () => {
+        signal?.throwIfAborted();
+        const { document, state, revision } = await readDocument(qq, profileId, path);
+        const device = record(document.device);
+        if (!state.summary.loggedIn || !sameDeviceBindingLogin(expected.account, state.account) ||
+            !isDeepStrictEqual(expected.device, state.device) || device.generated !== true || device.bound === true ||
+            !instanceId || text(device.instance_id) !== instanceId || state.device.fp) throw changedProfile();
+        if (!/^[0-9a-f]{13}$/iu.test(fp) || ["38d80737ce6f3", "38d7ee834d1e9"].includes(fp.toLowerCase())) {
+          throw new ProfileError("invalid", "官方未签发有效设备指纹。");
+        }
+        await writeProfileDocument(path, { ...document, device: { ...device, fp, fp_source: "mihoyo",
+          updated_at: new Date().toISOString() } }, revision, signal);
       });
     },
     async verifyDeviceBindingTarget(qq: string, profileId: number, expected: DeviceBindingSnapshot) {

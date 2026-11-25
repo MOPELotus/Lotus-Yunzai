@@ -1,3 +1,4 @@
+import { createGeneratedDeviceRefresh } from "./lib/generated-device-runtime.ts";
 import { ensureManagedValkey } from "./lib/managed-valkey.ts";
 import { builtinResourceDirectory } from "./lib/builtin-resources.ts";
 import { isDirectInternalRequest, listenerOrigins } from "./lib/network-access.ts";
@@ -3113,6 +3114,14 @@ if (import.meta.main) {
     const checkinScheduleStore = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)),
       legacyLotusDirectories.map(id => ({ id, directory: fileURLToPath(new URL(`plugins/${id}/data/schedules/`, root)) })));
     const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
+    const generatedDevices = createGeneratedDeviceRefresh(checkinProfiles, { transport: hoyoTransport,
+      signal: AbortSignal.any([lifecycle.signal, handoffSession.signal]) });
+    if (!probingUpdate) {
+      const prepared = await generatedDevices.prepare();
+      if (prepared.generated) console.info(`[设备] 已补齐 ${prepared.generated} 个档案的自动设备参数。`);
+      if (prepared.failed) console.warn(`[设备] ${prepared.failed} 个档案的自动设备检查未完成。`);
+      whenModuleTasksActive(() => generatedDevices.start());
+    }
     if (!probingUpdate) {
       try {
         captchaService = createCaptchaService({
@@ -3176,7 +3185,8 @@ if (import.meta.main) {
     }
     const zzzRankClient = createProfileHoyoClient(checkinProfiles, hoyoTransport);
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
-      { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport, scheduleStore: checkinScheduleStore });
+      { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport, scheduleStore: checkinScheduleStore,
+        prepareDevice: (qq, profileId) => generatedDevices.refresh(qq, profileId) });
     runNamedCheckin = gameCheckin.runNamed;
     const previewSignal = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
     const previewOptions = {
@@ -3513,6 +3523,9 @@ if (import.meta.main) {
       }
     }
     commands.registerModule(passportLoginCommands(profileDirectory, lifecycle.signal, async (qq, profileId, revision) => {
+      void generatedDevices.refresh(qq, profileId).catch(() => {
+        if (!lifecycle.signal.aborted) console.warn("[设备] 登录后的自动设备检查未完成，稍后重试。");
+      });
       if (!checkinRuntime || lifecycle.signal.aborted) return;
       const current = await checkinProfiles.checkinSettings(qq, profileId);
       if (lifecycle.signal.aborted || !current.enabled || current.revision !== revision) return;

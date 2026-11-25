@@ -325,7 +325,7 @@ test("扫码登录按原档案做原子提交，同账号续用角色，换账�
     const first = await profiles.openLoginSlot("42", 2);
     const competing = await profiles.openLoginSlot("42", 2);
     expect(first.revision).toBeNull();
-    expect(first.device.id).toMatch(/^[A-F0-9]{32}$/u);
+    expect(first.device.id).toMatch(/^[a-f0-9]{32}$/u);
     await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(profiles.verifyLoginSlot({ ...first })).rejects.toMatchObject({ code: "changed" });
     await expect(profiles.saveLogin(first, credentials("8001"), AbortSignal.abort("cancelled"))).rejects.toBe("cancelled");
@@ -481,7 +481,7 @@ test("月谕圣牌只查询当前档案剧诗，续期一次并校验区服和�
     await writeFile(join(root, "42.yaml"), Bun.YAML.stringify({
       account: { stuid: "71", stoken: "fixture-login", cookie: "ltoken=old;ltuid=71",
         game_roles: { gs: [{ uid, region: "cn_gf01" }] } },
-      device: { id: "fixture-device" },
+      device: { id: "fixture-device", fp: "fixture-existing-fp" },
     }));
     const profiles = createProfileStore(root);
     const source = await profiles.requestContext("42", 1, "gs");
