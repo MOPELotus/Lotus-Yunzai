@@ -502,7 +502,7 @@ test("配置的设备绑定附件在受管切换后仍由私聊指令发送", as
       reply(value) { replies.push(value); return true; },
       async uploadFile(file) { files.push(file); return "confirmed"; },
     });
-    expect(replies).toEqual([expect.stringContaining("请发送 profile 2 的设备 JSON")]);
+    expect(replies).toEqual([expect.stringContaining("请发送 档案 2 的设备 JSON")]);
     expect(files.map(file => [file.name, Buffer.from(file.bytes)])).toEqual([["copy_device_info_1.2.apk", bytes]]);
   }
   const verify = async (root: string) => {

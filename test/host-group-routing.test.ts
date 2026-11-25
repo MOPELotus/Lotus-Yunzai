@@ -197,7 +197,7 @@ default: { groupCD: 0, singleCD: 0, onlyReplyAt: 0 }
   }
 }, async (connect) => {
   const gateway = await connect(99);
-  const helpUrl = "https://www.lotusshared.cn/yunzai/";
+  const helpUrl = "点击查看帮助：\nhttps://www.lotusshared.cn/yunzai/";
   for (const prefix of ["", "#", "/", "#原神", "#星铁", "#绝区零", "*", "%"]) {
     for (const name of ["命令", "帮助", "菜单", "help", "说明", "功能", "指令", "使用说明"]) {
       gateway.send(prefix + name, 77);
