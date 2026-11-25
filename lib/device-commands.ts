@@ -149,7 +149,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
           const report = isCurrent();
           cancelRequest(scope, current);
           if (!report) return [];
-          return `[account] 请先扫码登录 profile ${id}。`;
+          return `请先扫码登录 profile ${id}。`;
         }
         if (!opened[2]?.trim()) {
           setTimeout(() => {
@@ -217,7 +217,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       try {
         return await showProfile(request.profileId, context);
       } catch {
-        return `[account] profile ${request.profileId} 设备已绑定。`;
+        return `profile ${request.profileId} 设备已绑定。`;
       }
     },
   };

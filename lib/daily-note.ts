@@ -159,17 +159,17 @@ export function dailyNoteCommands(directory: string | undefined, signal: AbortSi
       if (active.aborted) return [];
       const qq = String(user_id);
       await context.reply(profileId
-        ? `[account] 正在查询 profile ${profileId} 的体力。`
-        : "[account] 正在查询当前 QQ 的所有 profile 体力。");
+        ? `正在查询 profile ${profileId} 的体力。`
+        : "正在查询当前 QQ 的所有 profile 体力。");
       if (active.aborted) return [];
       const ids = profileId ? [profileId] : await profiles.listIds(qq).catch(() => undefined);
       if (active.aborted) return [];
       if (!ids) return "无法读取档案列表，请稍后再试。";
-      if (!ids.length) return "[account] 没有找到可查询的 profile，请先扫码登录并同步 UID。";
+      if (!ids.length) return "没有找到可查询的 profile，请先扫码登录并同步 UID。";
 
       const groups: DailyNoteCardModel["groups"][number][] = [];
       const verifyDelivery: (() => Promise<void>)[] = [];
-      const changed = "[account] 登录状态已变化，本次体力查询已停止，请重新发送原指令。";
+      const changed = "登录状态已变化，本次体力查询已停止，请重新发送原指令。";
       for (const id of ids) {
         if (active.aborted) return [];
         const items: DailyNoteCardItem[] = [];

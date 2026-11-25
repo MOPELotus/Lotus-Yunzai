@@ -99,7 +99,7 @@ test("旧设备别名进入实际私聊，取消能阻止等待 SQLite 锁的绑
       apk.respond({ message_id: 22 });
       sendOneBot("#绝区零zzz设备信息3");
       const viewer = await onebot.next("send_msg");
-      expect(viewer.params.message).toBe("[account] 请先扫码登录 profile 3。");
+      expect(viewer.params.message).toBe("请先扫码登录 profile 3。");
       viewer.respond({ message_id: 24 });
 
       const directory = join(root, "data/users");
