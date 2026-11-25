@@ -1,7 +1,7 @@
 // Port of wulu007/geetest-bypass crypto/parser; MIT notices retained in vendor.
 import crypto from 'node:crypto'
 import { setImmediate } from 'node:timers/promises'
-import { sm2 } from 'sm-crypto'
+import { sm2, sm4 } from 'sm-crypto'
 const modulus =
   '00C1E3934D1614465B33053E7F48EE4EC87B14B95EF88947713D25EECBFF7E74C7977D02DC1D9451F79DD5D1C10C29ACB6A9B4D6FB7D0A0279B6719E1772565F09AF627715919221AEF91899CAE08C0D686D748B20A3603BE2318CA6BC2B59706592A9219D0BF05C9F65023A21D2330807252AE0066D59CEEFA5F2748EA80BAB81'
 const rsa = crypto.createPublicKey({
@@ -25,12 +25,18 @@ export function encryptPayload(
       .padEnd(Math.ceil(Buffer.byteLength(payload) / 3) * 4, '=')
   if (mode !== 1 && mode !== 2) throw new Error(`Unsupported encryption mode: ${mode}`)
   const key = Buffer.from(crypto.randomBytes(8).toString('hex'))
-  const cipher = crypto.createCipheriv(
-    mode === 1 ? 'aes-128-cbc' : 'sm4-cbc',
-    key,
-    Buffer.from('0000000000000000'),
-  )
-  const encrypted = Buffer.concat([cipher.update(payload), cipher.final()]).toString('hex')
+  // Bun's node:crypto does not implement SM4. Keep the protocol's ASCII key/IV
+  // bytes and PKCS#7 padding when using the existing portable implementation.
+  const iv = Buffer.from('0000000000000000')
+  let encrypted: string
+  if (mode === 2) {
+    encrypted = sm4.encrypt([...Buffer.from(payload)], [...key], {
+      mode: 'cbc', iv: [...iv], padding: 'pkcs#7',
+    })
+  } else {
+    const cipher = crypto.createCipheriv('aes-128-cbc', key, iv)
+    encrypted = Buffer.concat([cipher.update(payload), cipher.final()]).toString('hex')
+  }
   const wrapped =
     mode === 1
       ? crypto
