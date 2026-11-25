@@ -124,7 +124,7 @@ test("月报不会回退到另一已认证角色，也不会以不一致的 Cook
     const query = createZzzMonthlyCommands(profiles, client, archive, new AbortController().signal);
     const context = { user_id: 42, message_type: "private" };
     const options = { collect: false, year: "2024", month: "10" };
-    expect(await query(context, 1, options)).toBe("[zzz] profile 1 没有同步绝区零 UID。");
+    expect(await query(context, 1, options)).toBe("profile 1 没有同步绝区零 UID。");
     expect(wire).toEqual([]);
     expect(await query(context, 2, options)).toBe("档案 Cookie 与当前登录账号不一致，请刷新或重新扫码登录。");
     expect(wire).toEqual([]);

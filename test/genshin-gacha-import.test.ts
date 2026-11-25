@@ -29,9 +29,9 @@ test("UIGF 导入只接受发起请求的可信账号和原会话，并在换角
   expect(start).not.toBeNull();
   expect(await importFile({ ...context, canReadAttachments: false }, start)).toMatch(/暂不支持/);
   profileError = "missing";
-  expect(await importFile(context, start)).toBe("[genshin] 请先登录 profile 2。");
+  expect(await importFile(context, start)).toBe("请先登录 profile 2。");
   profileError = "role-missing";
-  expect(await importFile(context, start)).toBe("[genshin] profile 2 没有同步原神 UID。");
+  expect(await importFile(context, start)).toBe("profile 2 没有同步原神 UID。");
   profileError = undefined;
   const attachment = {
     name: "pulls.json",
