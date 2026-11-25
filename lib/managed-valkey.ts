@@ -191,12 +191,9 @@ export async function ensureManagedValkey(root: URL, { initialize = false, signa
     const connection = (await managedValkeyConnection(root))!;
     try { await verifyStorageConnection(connection); return { managed: true, connection }; } catch { signal?.throwIfAborted(); }
     if (await socketListening(saved.socketPath)) throw new Error($t("lib.managed-valkey.text_8d21a82fc0"));
-    const pid = Number(await readFile(join(directory, "valkey.pid"), "utf8").catch(() => ""));
-    if (Number.isSafeInteger(pid) && pid > 0) {
-      let alive = true;
-      try { process.kill(pid, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") alive = false; }
-      if (alive) throw new Error($t("lib.managed-valkey.text_55ed1e46aa"));
-    }
+    // A stale PID can belong to an unrelated process after a reboot. Use the
+    // same writer identity check as shutdown; never signal or trust the PID alone.
+    if (await managedWriterAlive(root)) throw new Error($t("lib.managed-valkey.text_55ed1e46aa"));
     if (!await usable(saved.binary)) {
       saved.binary = await prepareBinary(root, initialize, signal, progress);
       await writeFile(join(directory, "managed.json"), JSON.stringify(saved), { mode: 0o600 });

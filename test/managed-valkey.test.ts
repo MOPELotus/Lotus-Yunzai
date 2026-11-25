@@ -130,3 +130,48 @@ test.skipIf(!Bun.which("valkey-server"))("停止幂等且不吞活实例认证�
   await rm(directory,{recursive:true,force:true});
  }
 },30_000);
+
+test.skipIf(process.platform !== "linux" || !Bun.which("valkey-server"))("遗留PID被其他进程复用后恢复内部Valkey且不影响该进程", async () => {
+ const directory=await mkdtemp(join(tmpdir(),"lotus-valkey-reused-pid-"));
+ const root=pathToFileURL(directory+"/"), pidfile=join(directory,"data/valkey/valkey.pid");
+ const unrelated=Bun.spawn([process.execPath,"-e","setInterval(() => {}, 1000)"],{cwd:tmpdir(),stdin:"ignore",stdout:"ignore",stderr:"ignore"});
+ let client: ReturnType<typeof createStorageClient> | undefined;
+ try {
+  const started=await ensureManagedValkey(root,{initialize:true,env:{}});
+  if(!started.connection)throw Error("Expected private storage");
+  client=createStorageClient(started.connection);client.on("error",()=>{});await client.connect();
+  await client.set("reused-pid-proof","preserved");await client.disconnect();client=undefined;
+  await stopManagedValkey(root);
+  await writeFile(pidfile,String(unrelated.pid));
+  const recovered=await ensureManagedValkey(root,{env:{}});
+  expect(recovered.connection).toEqual(started.connection);
+  expect(Number(await readFile(pidfile,"utf8"))).not.toBe(unrelated.pid);
+  expect(unrelated.exitCode).toBeNull();expect(() => process.kill(unrelated.pid,0)).not.toThrow();
+  client=createStorageClient(started.connection);client.on("error",()=>{});await client.connect();
+  expect(await client.get("reused-pid-proof")).toBe("preserved");
+ } finally {
+  if(client?.isOpen)await client.disconnect();
+  await stopManagedValkey(root).catch(()=>{});unrelated.kill();await unrelated.exited;
+  await rm(directory,{recursive:true,force:true});
+ }
+},30_000);
+
+test.skipIf(process.platform !== "linux" || !Bun.which("valkey-server"))("活Valkey丢失Socket时拒绝再启动持久化写进程", async () => {
+ const directory=await mkdtemp(join(tmpdir(),"lotus-valkey-lost-socket-"));
+ const root=pathToFileURL(directory+"/");
+ let client: ReturnType<typeof createStorageClient> | undefined;
+ try {
+  const started=await ensureManagedValkey(root,{initialize:true,env:{}});
+  if(!started.connection || typeof started.connection==="string" || !started.connection.socketPath)throw Error("Expected private socket");
+  client=createStorageClient(started.connection);client.on("error",()=>{});await client.connect();
+  await client.set("writer-proof","preserved");
+  const pid=await readFile(join(directory,"data/valkey/valkey.pid"),"utf8");
+  await rm(started.connection.socketPath);
+  await expect(ensureManagedValkey(root,{env:{}})).rejects.toThrow();
+  expect(await readFile(join(directory,"data/valkey/valkey.pid"),"utf8")).toBe(pid);
+  expect(await client.get("writer-proof")).toBe("preserved");
+ } finally {
+  if(client?.isOpen) { await client.sendCommand(["SHUTDOWN","SAVE"]).catch(()=>{});if(client.isOpen)await client.disconnect(); }
+  await stopManagedValkey(root).catch(()=>{});await rm(directory,{recursive:true,force:true});
+ }
+},30_000);
