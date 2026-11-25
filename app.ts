@@ -320,7 +320,8 @@ function isRecallCommand(event: MessageEvent): boolean {
 }
 
 if (import.meta.main) {
-  const probingUpdate = process.env[pluginProbeTokenEnvironment] !== undefined;
+  const updateProbeToken = process.env[pluginProbeTokenEnvironment];
+  const probingUpdate = updateProbeToken !== undefined;
   const reportLoading = createPluginLoadingReporter();
   const handoff = createManagedHandoff();
   const legacy = new LegacyPlugins(() => handoff.accepting);
@@ -3693,6 +3694,7 @@ if (import.meta.main) {
     let publicRoutes: ((request: Request, auth: Headers) => Promise<Response | undefined>) | undefined;
     const acceptingPublic = () => !stopping && handoff.accepting && publicRoutes !== undefined;
     const listenerMessages: string[] = [];
+    let updateProbePort: number | undefined;
     function httpHandler(auth: Headers) {
       const statusRoute = httpStatus(auth, runtimeVersion);
       return async (request: Request, server?: { requestIP(request: Request): { address: string } | null }) => {
@@ -3746,6 +3748,7 @@ if (import.meta.main) {
     const socketServer = oneBot && listenOneBot(oneBot.port, oneBot.auth, shared ? httpHandler(http.auth) : undefined);
     if (http) {
       const server = shared && socketServer ? socketServer : listenHttp(http.port, httpHandler(http.auth));
+      if (updateProbeToken && hostname === "127.0.0.1" && server.url.hostname === "127.0.0.1") updateProbePort = server.port;
       fileBase = network.publicUrl ?? listenerFileBase(server.url.hostname, server.port);
       for (const origin of listenerOrigins(hostname, server.port, "http"))
         listenerMessages.push($t("app.text_711c38353a", { "origin": origin }));
@@ -4347,6 +4350,10 @@ if (import.meta.main) {
           await miyousheWeb?.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
           await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       };
+      if (updateProbeToken && updateProbePort !== undefined && process.connected === true && typeof process.send === "function") {
+        try { process.send({ type: "lotus-yunzai-probe-listener", token: updateProbeToken, host: "127.0.0.1", port: updateProbePort }); }
+        catch { /* The isolated probe may have already disconnected during cancellation. */ }
+      }
       for (const message of listenerMessages) console.info(formatTerminalLog("mark", message));
       await handoff.ready(runtimeVersion.revision, lifecycle.signal, plugins.readyDirectories, {
         // Port 0 is an ephemeral binding and may get a different allocated port on each process.

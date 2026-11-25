@@ -52,7 +52,7 @@ async function scaledProbe(root: string, assertion: string): Promise<number[]> {
   return JSON.parse(stdout);
 }
 
-test("隔离目录启动真实宿主，检查完整提交和状态后等待插件清理", () => fixture(async (root) => {
+test("翻译HTTP日志的真实宿主通过探测IPC报告端口，检查完整提交和状态后等待清理", () => fixture(async (root) => {
   const git = (...args: string[]) => {
     const result = Bun.spawnSync(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args], {
       cwd: root, env: { PATH: process.env.PATH, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: "1" },
@@ -61,9 +61,16 @@ test("隔离目录启动真实宿主，检查完整提交和状态后等待插�
     return result.stdout.toString().trim();
   };
   await copyHost(root);
+  await mkdir(join(root, "config/i18n"), { recursive: true });
+  await writeFile(join(root, "config/i18n/settings.json"), JSON.stringify({ language: "en" }));
+  await writeFile(join(root, "config/i18n/en.json"), JSON.stringify({ language: "en", messages: { core: {
+    "app.text_711c38353a": "[HTTP] Candidate endpoint available at {origin}/status",
+  } } }));
   await writeFile(join(root, "plugins", "health-fixture.js"), `
+    import { getLanguage } from "../packages/i18n/index.ts";
     export default class extends plugin {
       async init() {
+        if (getLanguage() !== "en") throw new Error("fixture language override was not loaded");
         if (globalThis.redis !== undefined) throw new Error("health probe opened fixture storage");
         await Bun.write("pid", String(process.pid));
         this.addCleanup(async () => { await Bun.write("stopped", "clean"); });
@@ -83,7 +90,7 @@ test("隔离目录启动真实宿主，检查完整提交和状态后等待插�
   const storageUrl = `redis://127.0.0.1:${storage.port}/3`;
   const previousUrl = process.env.LOTUS_VALKEY_URL;
   try {
-    await mkdir(join(root, "config"));
+    await mkdir(join(root, "config"), { recursive: true });
     await writeFile(join(root, "config", "redis.yaml"), `host: 127.0.0.1\nport: ${storage.port}\ndb: 3\n`);
     await writeFile(join(root, ".env"), `LOTUS_VALKEY_URL=${storageUrl}\nLOTUS_LISTEN_HOST=bad-hostname.invalid\n`);
     process.env.LOTUS_VALKEY_URL = storageUrl;
@@ -224,4 +231,36 @@ test("取消隔离探测会等待清理，且隐藏取消原因", () => fixture(
     controller.abort();
     await probe.catch(() => {});
   }
+}));
+
+
+test("探测IPC拒绝错误令牌、外部地址和非法端口，不向其发送状态请求", () => fixture(async root => {
+  let requests = 0;
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() {
+    requests++;
+    return Response.json({ status: "ok", revision });
+  } });
+  try {
+    for (const invalid of [
+      { token: "wrong-token", host: "127.0.0.1", port: server.port },
+      { host: "localhost", port: server.port },
+      { host: "192.0.2.1", port: server.port },
+      { host: "127.0.0.1", port: 0 },
+      { host: "127.0.0.1", port: 65_536 },
+      { host: "127.0.0.1", port: 1.5 },
+      { host: "127.0.0.1", port: String(server.port) },
+    ]) {
+      await writeFile(join(root, "app.ts"), `
+        await Bun.write("pid", String(process.pid));
+        process.send({ type: "lotus-yunzai-probe-listener",
+          token: process.env[${JSON.stringify(pluginProbeTokenEnvironment)}], ...${JSON.stringify(invalid)} });
+        console.log("Custom listener message without an endpoint");
+        await Bun.sleep(70);
+        process.exit(0);
+      `);
+      await expect(verifyUpdateHealth(root, revision)).rejects.toThrow(failure);
+      await expectReaped(root);
+    }
+    expect(requests).toBe(0);
+  } finally { server.stop(true); }
 }));

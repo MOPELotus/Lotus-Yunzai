@@ -114,6 +114,7 @@ export async function verifyUpdateHealth(directory: string, revision: string, si
   try {
     const lifetime = new AbortController();
     const ended = Promise.withResolvers<undefined>();
+    const ipcPort = Promise.withResolvers<number>();
     let watchdog: ReturnType<typeof setTimeout> | undefined;
     let nextIndex = 1;
     let watchingStartup = true;
@@ -128,6 +129,14 @@ export async function verifyUpdateHealth(directory: string, revision: string, si
     }
     function onProgress(message: unknown) {
       if (!watchingStartup || lifetime.signal.aborted) return;
+      if (typeof message === "object" && message !== null) {
+        const { type, token: source, host, port } = message as Record<string, unknown>;
+        if (type === "lotus-yunzai-probe-listener" && source === probeToken && host === "127.0.0.1" &&
+            typeof port === "number" && Number.isInteger(port) && port > 0 && port <= 65_535) {
+          ipcPort.resolve(port);
+          return;
+        }
+      }
       const wait = readPluginLoading(message, probeToken, nextIndex);
       if (wait === undefined) return;
       nextIndex++;
@@ -144,7 +153,7 @@ export async function verifyUpdateHealth(directory: string, revision: string, si
     if (signal?.aborted) finish();
     let verified = false;
     try {
-      const port = await Promise.race([listener.port, ended.promise]);
+      const port = await Promise.race([ipcPort.promise, listener.port, ended.promise]);
       if (port === undefined || lifetime.signal.aborted) throw new Error(failure);
       watchingStartup = false;
       arm();
