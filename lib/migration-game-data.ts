@@ -183,6 +183,8 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
       } else if (name === ".lotus-genshin-gacha-journal.json" && scope.path === "data/gachaJson") {
         throw new Error($t("lib.migration-game-data.text_47e01eb5c9"));
       } else if (!name.startsWith(".") && name.endsWith(".json")) {
+        // Active ZZZ archives are collected together with plugin-local sources below.
+        if (scope.path === "data/ZZZ-Plugin/gacha" && scope.active(name)) continue;
         await save(scope, folders, name);
       }
     }
@@ -202,8 +204,8 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
       ...[...pluginDirectories].map(path => join("backup", path, "data")),
     ])];
     const decoder = new TextDecoder("utf-8", { fatal: true });
-    for (const scope of ["monthly", "panel"] as const) {
-      const limit = (scope === "monthly" ? 4 : 12) * 1024 * 1024;
+    for (const scope of ["gacha", "monthly", "panel"] as const) {
+      const limit = (scope === "gacha" ? 32 : scope === "monthly" ? 4 : 12) * 1024 * 1024;
       const destination = join(zzzHistoryRoot, scope);
       const candidates = new Map<string, string[]>();
       for (const base of roots) {
@@ -215,7 +217,7 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
           if (!zzzUid.test(name)) continue;
           const paths = candidates.get(name) ?? [];
           // Panel rows have no ownership envelope or timestamps. Keep the preferred whole file.
-          if (scope === "monthly" || !paths.length) paths.push(join(directory, name));
+          if (scope !== "panel" || !paths.length) paths.push(join(directory, name));
           candidates.set(name, paths);
         }
       }
@@ -224,6 +226,7 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
         const uid = name.slice(0, -5);
         const snapshots: Buffer[] = [];
         const months: unknown[] = [];
+        const gachaBands = new Map<string, unknown[]>();
         let region: string | undefined;
         for (const path of paths) {
           const info = await named(path);
@@ -237,7 +240,15 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
           snapshots.push(bytes);
           try {
             const value: unknown = JSON.parse(decoder.decode(bytes));
-            if (scope === "panel") {
+            if (scope === "gacha") {
+              if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected gacha archive");
+              for (const [band, rows] of Object.entries(value)) {
+                if (!Array.isArray(rows)) throw new Error("Expected gacha pool array");
+                const merged = gachaBands.get(band) ?? [];
+                for (const row of rows) merged.push(row);
+                gachaBands.set(band, merged);
+              }
+            } else if (scope === "panel") {
               if (!zzzPanelRegion(uid, "", "")) throw new Error("Unknown region");
               decodeZzzPanelRows(value);
             } else {
@@ -259,9 +270,11 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
           }
         }
         // The current reader gives earlier rows priority when their month overlaps.
-        const bytes = snapshots.length === 1 ? snapshots[0]! : Buffer.from(JSON.stringify(months) + "\n");
+        const bytes = snapshots.length === 1 ? snapshots[0]! :
+          Buffer.from(JSON.stringify(scope === "gacha" ? Object.fromEntries(gachaBands) : months) + "\n");
         if (bytes.length > limit) throw new Error($t("lib.migration-game-data.text_a2e3972731", { "destination": destination }));
-        await publishFile(destination, [], name, bytes, active);
+        const published = await publishFile(destination, [], name, bytes, active);
+        if (scope === "gacha") await validateActive(destination, name, bytes, published);
       }
     }
   }
