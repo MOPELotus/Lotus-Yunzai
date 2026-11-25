@@ -76,7 +76,11 @@ export function parseStorageSnapshot(value: unknown): StorageSnapshot | undefine
 }
 
 export function storageRevision(snapshot: StorageSnapshot) {
-  return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
+  const canonical = snapshot !== null && typeof snapshot === "object" ? {
+    host: snapshot.host, port: snapshot.port, database: snapshot.database,
+    username: snapshot.username, password: snapshot.password, socketPath: snapshot.socketPath,
+  } : snapshot;
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
 export async function readStorageRevision(root: string, env: NodeJS.ProcessEnv, signal: AbortSignal) {

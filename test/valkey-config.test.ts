@@ -3,7 +3,19 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { readStorageConnection } from "../lib/valkey-config.ts";
+import { parseStorageSnapshot, readStorageConnection, storageRevision } from "../lib/valkey-config.ts";
+
+test("托管 Valkey 连接经过 IPC 解析后保持相同修订，实际配置变更仍能检出", () => {
+  const connection = { host: "127.0.0.1", port: 0, database: 0, socketPath: "/tmp/fixture/server.sock", password: "fixture" };
+  const transported = parseStorageSnapshot(JSON.parse(JSON.stringify(connection)));
+  expect(transported).toBeDefined();
+  expect(storageRevision(transported!)).toBe(storageRevision(connection));
+  for (const change of [{ password: "changed" }, { socketPath: "/tmp/other/server.sock" }, { database: 1 },
+    { host: "localhost" }, { port: 6380 }, { username: "other" }]) {
+    expect(storageRevision({ ...connection, ...change })).not.toBe(storageRevision(connection));
+  }
+  expect(storageRevision(null)).not.toBe(storageRevision(connection));
+});
 
 test("显式 Valkey URL 优先，旧 Redis 配置保留凭据并支持 IPv6", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-valkey-config-"));
