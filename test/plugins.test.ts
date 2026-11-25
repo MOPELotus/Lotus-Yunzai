@@ -1,4 +1,4 @@
-function plainOutput(text: string) { return text.replace(/^\[\d{2}:\d{2}:\d{2}\.\d{3}\]\[[A-Z]+\] (?:\[LOTUS-YUNZAI\] )?/gm, ""); }
+function plainOutput(text: string) { return text.replace(/^\[\d{2}:\d{2}:\d{2}\.\d{3}\]\[[A-Z]+\] (?:\[Lotus-Yunzai\] )?/gm, ""); }
 import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

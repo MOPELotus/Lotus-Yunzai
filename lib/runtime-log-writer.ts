@@ -12,7 +12,7 @@ import { runtimeLogDirectory, runtimeLogFilename, sanitizeRuntimeLog } from "./r
 const priorities = ["trace", "debug", "info", "warn", "error", "fatal", "mark", "off"];
 const consoleLevels = { debug: "debug", log: "info", info: "info", warn: "warn", error: "error" } as const;
 const pendingLimit = 512;
-const defaultLabel = "LOTUS-YUNZAI";
+const defaultLabel = "Lotus-Yunzai";
 
 function minimumLevel(config: Readonly<Record<string, unknown>>) {
   const level = typeof config.log_level === "string" ? priorities.indexOf(config.log_level.toLowerCase()) : -1;

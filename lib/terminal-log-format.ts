@@ -29,7 +29,7 @@ export function formatTerminalLog(level: LogLevel, message: string, options: {
     content = previous[3]!;
   }
   if (!previous && options.label !== false && !/^\[[^\]\r\n]{1,128}\]/u.test(content)) {
-    const label = options.label === undefined ? "LOTUS-YUNZAI" : sanitizeRuntimeLog(options.label, 64);
+    const label = options.label === undefined ? "Lotus-Yunzai" : sanitizeRuntimeLog(options.label, 64);
     if (label) content = `[${label}] ${content}`;
   }
   const name = level.toUpperCase();
