@@ -235,3 +235,36 @@ test('真实Node改title后使用restoreArgv恢复，不能以空身份argv启�
     if(child.exitCode===null&&!child.killed)child.kill('SIGTERM');
   }
 }));
+test('清除整套PM2运行元数据，保留代理、Git、Bun、npm及XDG环境', async () => {
+  const { migrationEnvironment } = await import('../scripts/legacy-migrate-environment.mjs');
+  const operational = Object.fromEntries(`name watch autorestart autostart exec_mode namespace instances cwd args script
+    exec_interpreter node_args pm_id pm_exec_path pm_cwd pm_pid_path created_at status restart_time prev_restart_delay
+    pm_uptime axm_actions env env_production instance_var max_restarts stop_exit_codes node_version username unique_id
+    vizion vizion_running automation time kill_timeout log_date_format merge_logs PM2_HOME PM2_USAGE PM2_INTERACTOR_PROCESSING
+    NODE_APP_INSTANCE NODE_OPTIONS NODE_CHANNEL_FD LOTUS_PROFILE_DIR`.split(/\s+/u).map(key=>[key,'old']));
+  const retained = {PATH:'/bin',HOME:'/home/fixture',HTTP_PROXY:'http://proxy.invalid',https_proxy:'http://proxy.invalid',
+    GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'protocol.file.allow',GIT_CONFIG_VALUE_0:'always',BUN_INSTALL_CACHE_DIR:'/fixture/cache',
+    npm_config_cache:'/fixture/npm',XDG_CACHE_HOME:'/fixture/xdg',NODE_COMPILE_CACHE:'/fixture/node',TZ:'Asia/Shanghai'};
+  assert.deepEqual(migrationEnvironment({...retained,...operational}),retained);
+});
+test('启动新端不继承旧PM2名称和watch，旧端恢复仍用原始元数据', () => fixture(async x => {
+  const previous={name:process.env.name,watch:process.env.watch,autorestart:process.env.autorestart};
+  Object.assign(process.env,{name:'lotus-legacy-v2',watch:'true',autorestart:'true'});
+  try {
+    await updateMigrationState(x.statePath,{oldHost:{...x.old,env:{...process.env},pm2:{id:9,cli:'/fake/pm2'}}});
+    let running=true;
+    x.dependencies.identity=async pid=>running?{...x.old,pid}:null;
+    x.dependencies.capture=async()=>JSON.stringify([{pm_id:9,pid:x.old.pid,pm2_env:{status:'online'}}]);
+    x.dependencies.execute=async(command,args,options)=>{
+      if(command==='/fake/pm2'){
+        assert.equal(options.env.name,'lotus-legacy-v2');assert.equal(options.env.watch,'true');
+        if(args[0]==='stop')running=false;if(args[0]==='restart')running=true;
+      }else{
+        assert.equal(options.env.name,undefined);assert.equal(options.env.watch,undefined);assert.equal(options.env.autorestart,undefined);
+      }
+      if(args[1]==='start:bg')throw Error('fixture startup failure');
+    };
+    await assert.rejects(runLegacyMigration(x,x.dependencies));
+    assert.equal(JSON.parse(await readFile(x.statePath,'utf8')).recovery,'old-restored');
+  }finally{for(const[key,value]of Object.entries(previous)){if(value===undefined)delete process.env[key];else process.env[key]=value}}
+}));

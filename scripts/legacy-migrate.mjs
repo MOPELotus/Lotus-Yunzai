@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { constants } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { migrationEnvironment } from './legacy-migrate-environment.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const catalog = JSON.parse(await readFile(new URL('../i18n/legacy-migrate/zh-CN.json', import.meta.url), 'utf8')).messages;
@@ -130,7 +131,7 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
     }, ...injected };
   let phase = 'preparing', stopped = false, startupAttempted = false, old, bun, result;
   const originalEnvironment = { ...process.env };
-  const environment = Object.fromEntries(Object.entries(originalEnvironment).filter(([key]) => !key.startsWith('LOTUS_')));
+  const environment = migrationEnvironment(originalEnvironment);
   const options = { cwd: target, env: environment, log: logFile.fd, signal };
   const recoveryOptions = { ...options, signal: undefined };
   const oldOptions = { cwd: source, env: originalEnvironment, log: logFile.fd };
