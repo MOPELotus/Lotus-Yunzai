@@ -37,7 +37,7 @@ test.skipIf(!Bun.which("git"))("full install applies maintenance clocks and CLI 
     for(const [p,text]of Object.entries(originals))expect(await readFile(join(source,p),"utf8")).toBe(text);
     expect((await migrateInstallation(source,target)).status).toBe("already-published");
     const metadata=join(parent,".new.lotus-migration-prepared/plan.json");const stale=JSON.parse(await readFile(metadata,"utf8"));
-    const currentMetadata=JSON.stringify(stale);delete stale.conversionVersion;await writeFile(metadata,JSON.stringify(stale),{mode:0o600});
+    const currentMetadata=JSON.stringify(stale);stale.conversionVersion=1;await writeFile(metadata,JSON.stringify(stale),{mode:0o600});
     await expect(migrateInstallation(source,target)).rejects.toThrow("旧转换规则");
     expect((await readLocalConfig(root,"global")).scheduler).toEqual(scheduler);
     const oldSchedule=JSON.parse(currentMetadata);delete oldSchedule.report.schedulePolicy;await writeFile(metadata,JSON.stringify(oldSchedule),{mode:0o600});

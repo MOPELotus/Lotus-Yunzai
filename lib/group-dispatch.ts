@@ -13,6 +13,8 @@ const defaults = {
   addPrivate: 1, addReply: 1, addRecall: 60,
 };
 
+export { defaults as groupRoutingDefaults };
+
 const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["[Lotus-Plugin] Device", ["@lotus-yunzai/device"]],
   ["[Lotus-Plugin] Daily Note", ["@lotus-yunzai/daily-note"]],

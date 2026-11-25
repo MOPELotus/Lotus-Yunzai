@@ -4,12 +4,12 @@ const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { parseDocument, stringify } from "yaml";
+import { isMap, parseDocument, stringify } from "yaml";
 import { isNoticeLogLevel, parseNoticeSchedule } from "../plugins/notice/schedule.ts";
 import { announcementConfigPaths, parseAnnouncementConfig } from "../plugins/notice/mys-announcement-config.ts";
 import { announcementGameKeys } from "../plugins/notice/mys-announcement-source.ts";
 import { readScreenedWordList, readScreenedWordSettings, screenedWordLimits } from "../plugins/group/screened-words.ts";
-import { groupRoutingScopePattern } from "./group-dispatch.ts";
+import { groupRoutingDefaults, groupRoutingScopePattern } from "./group-dispatch.ts";
 import { legacyAutoGroupCardScript } from "./plugins/metadata.ts";
 import { withinInstallation, type LegacyPluginPlanEntry } from "./plugins/migration-plan.ts";
 
@@ -24,7 +24,7 @@ const screenedCurrentWords = "data/group/screened-words";
 const sourcePaths = [
   "config/auto-group-card.yaml", "config/config/auto-group-card.yaml",
   "config/group-leave-blacklist.yaml", "config/config/group-leave-blacklist.yaml",
-  "config/group.yaml", legacyGroupDefaults, `${yenai}thumbUp.yaml`,
+  "config/group.yaml", "config/config/group.yaml", legacyGroupDefaults, `${yenai}thumbUp.yaml`,
   "config/groupAdmin.yaml", `${yenai}groupAdmin.yaml`,
   "config/group-notice.yaml", `${yenai}notice.yaml`, "config/notice.yaml",
   ...screenedConfigPaths,
@@ -349,9 +349,41 @@ export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory:
     await ensureDirectory(dirname(destination));
     await writeFile(destination, bytes, { mode: 0o600, flag: "wx" });
   }
+  // Migrated throttles must not silently discard consecutive commands.
+  const runtimeRouting = "config/config/group.yaml";
+  const runtimeSnapshot = inputs.get(runtimeRouting);
+  if (runtimeSnapshot && !await named(join(stage, runtimeRouting))) {
+    await ensureDirectory(dirname(join(stage, runtimeRouting)));
+    await writeFile(join(stage, runtimeRouting), runtimeSnapshot.bytes, { mode: 0o600, flag: "wx" });
+  }
+  for (const path of ["config/group.yaml", runtimeRouting, legacyGroupDefaults]) {
+    const snapshot = await readSnapshot(join(stage, path), signal);
+    if (!snapshot) continue;
+    const settings = decode(snapshot.bytes);
+    const keys = [...settings.keys()].filter(key => scope(key, groupRoutingScopePattern));
+    if (!keys.length && path === "config/group.yaml") continue;
+    const doc = parseDocument(snapshot.bytes.toString("utf8"), { merge: true });
+    if (!settings.has("default")) keys.push("default");
+    const defaultSnapshot = path === runtimeRouting && !settings.has("default")
+      ? await readSnapshot(join(stage, legacyGroupDefaults), signal) : undefined;
+    const inheritedDefault = defaultSnapshot
+      ? section(decode(defaultSnapshot.bytes).get("default"), $t("lib.migration-group-config.text_91e9aab113"))
+      : new Map(Object.entries(groupRoutingDefaults));
+    let changed = false;
+    for (const key of keys) {
+      const values = path === runtimeRouting && key === "default" && !settings.has(key)
+        ? inheritedDefault : section(settings.get(key), $t("lib.migration-group-config.text_91e9aab113"));
+      if (values.get("groupCD") === 0 && values.get("singleCD") === 0) continue;
+      if (!isMap(doc.get(key as string, true))) doc.set(key as string, doc.createNode(new Map(values)));
+      doc.setIn([key, "groupCD"], 0);
+      doc.setIn([key, "singleCD"], 0);
+      changed = true;
+    }
+    if (changed) await writeFile(join(stage, path), String(doc), { mode: 0o600 });
+  }
   const scopes = noticeDirectories.flatMap(directory => [directory + "config_default.yaml", directory + "config.yaml"]).flatMap(path => {
     try { return load(path) ?? []; } catch { return []; }
   });
   const deferred = ["multiAccount", "pushSettings"].filter(key => scopes.some(config => config.has(key))).map(key => `notice.${key}`);
-  return { active: [...active.keys(), ...screened.keys()], archived: [...archives.keys()], deferred };
+  return { active: [...active.keys(), ...(runtimeSnapshot ? [runtimeRouting] : []), ...screened.keys()], archived: [...archives.keys()], deferred };
 }

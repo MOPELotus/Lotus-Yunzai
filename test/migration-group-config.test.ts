@@ -90,8 +90,8 @@ test("group and notice configs use the active paths with original defaults, scop
   await file(state, "config/config/group.yaml", sample["config/config/group.yaml"]);
   const report = await stageLegacyGroupConfig(source, state);
   expect(report.active).toEqual(["config/auto-group-card.yaml", "config/group-leave-blacklist.yaml", "config/group.yaml",
-    "config/groupAdmin.yaml", "config/group-notice.yaml", "config/notice.yaml"]);
-  expect(report.archived).toHaveLength(Object.keys(sample).length - 1);
+    "config/groupAdmin.yaml", "config/group-notice.yaml", "config/notice.yaml", "config/config/group.yaml"]);
+  expect(report.archived).toHaveLength(Object.keys(sample).length);
   expect(report.deferred).toEqual(["notice.pushSettings"]);
   for (const path of report.archived) {
     expect(await readFile(join(state, path), "utf8")).toBe(sample[path.slice(archive.length) as keyof typeof sample]);
@@ -191,7 +191,8 @@ test("迁移旧群默认派发并保留运行整段覆盖，实测未覆盖群�
   const { directory } = await stageLegacyState(source, state);
   const report = await stageLegacyGroupConfig(source, directory);
   expect(report.active).toContain(defaultsPath);
-  expect(await readFile(join(directory, runtimePath), "utf8")).toBe(runtime);
+  expect((Bun.YAML.parse(await readFile(join(directory, runtimePath), "utf8")) as Record<string, unknown>)[89]).toEqual({ onlyReplyAt: 0, groupCD: 0, singleCD: 0 });
+  expect(await readFile(join(directory, archive, runtimePath), "utf8")).toBe(runtime);
   expect(await readFile(join(directory, archive, defaultsPath), "utf8")).toBe(defaults);
   expect((await stat(join(directory, defaultsPath))).mode & 0o777).toBe(0o600);
   const routing = await readGroupDispatch(pathToFileURL(directory + sep));
@@ -280,7 +281,7 @@ test("旧安装的顶层群配置迁移后，实际 OneBot 词条保留主人限
   await file(source, keywordPath, keywords);
   const { directory } = await stageLegacyState(source, state);
   const { active } = await stageLegacyGroupConfig(source, directory);
-  expect(active).toEqual([path]);
+  expect(active).toEqual([path, "config/config/group.yaml"]);
   await stageLegacyKeywords(source, directory);
 
   await withDualGatewayFixture("migration-legacy-keyword-routing", "", async ({ onebot, sendOneBot, root }) => {
@@ -306,4 +307,36 @@ test("旧安装的顶层群配置迁移后，实际 OneBot 词条保留主人限
   });
   expect(await readFile(join(directory, archive, path), "utf8")).toBe(original);
   expect(await readFile(join(source, path), "utf8")).toBe(original);
+}));
+
+
+test.each(["config/group.yaml", "config/config/group.yaml", "config/default_config/group.yaml"])("迁入 %s 后各作用域冷却关闭，原件保留", path => fixture(async (source, state) => {
+  const original = "default: &base { groupCD: 500, singleCD: 2000, onlyReplyAt: 0 }\n88: { groupCD: 900, singleCD: 9000 }\n'99:default': { groupCD: 1000 }\n'99:88': { singleCD: 8000 }\n90: *base\n91: null\n";
+  await file(source, path, original);
+  const { directory } = await stageLegacyState(source, state);
+  await stageLegacyGroupConfig(source, directory);
+  const config = Bun.YAML.parse(await readFile(join(directory, path), "utf8")) as Record<string, unknown>;
+  for (const scope of ["default", "88", "99:default", "99:88", "90", "91"]) expect(config[scope]).toMatchObject({groupCD: 0, singleCD: 0});
+  expect(await readFile(join(directory, archive, path), "utf8")).toBe(original);
+  expect(await readFile(join(source, path), "utf8")).toBe(original);
+  const dispatch = await readGroupDispatch(pathToFileURL(directory + sep));
+  const first = {post_type: "message" as const, message_type: "group" as const, self_id: 99, user_id: 42, group_id: 88,
+    msg: "#状态", raw_message: "#状态", message: "#状态", isGroup: true, isPrivate: false, isMaster: false, reply: () => true};
+  expect(dispatch.admit(first)).toBe(true);dispatch.prepare(first);
+  expect(dispatch.admit({...first,msg: "#帮助",raw_message: "#帮助",message: "#帮助"})).toBe(true);
+}));
+
+
+test.each([false, true])("迁移关闭冷却时保留缺省称呼和词条设置：旧默认文件 %s", hasDefaults => fixture(async (source, state) => {
+  await file(source, "config/config/group.yaml", "{}\n");
+  if (hasDefaults) await file(source, "config/default_config/group.yaml", "default: { botAlias: [自定义称呼], onlyReplyAt: 0, addRecall: 37 }\n");
+  const { directory } = await stageLegacyState(source, state);
+  const before = await readGroupDispatch(pathToFileURL(source + sep));
+  const scope = {post_type: "message" as const,message_type: "group" as const,self_id: 99,user_id: 42,group_id: 88,
+    msg: hasDefaults ? "自定义称呼#状态" : "云崽#状态",raw_message: "消息",message: "消息",isGroup: true,isPrivate: false,isMaster: false,reply: () => true};
+  const prior = before.keywordSettings(scope, 88);
+  await stageLegacyGroupConfig(source, directory);
+  const after = await readGroupDispatch(pathToFileURL(directory + sep));
+  expect(after.commandText(scope)).toBe(before.commandText(scope));
+  expect(after.keywordSettings(scope, 88)).toEqual(prior);
 }));
