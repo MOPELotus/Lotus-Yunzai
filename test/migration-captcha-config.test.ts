@@ -106,6 +106,17 @@ for(const captcha of [{type:1,key:"synthetic-key-only"},{key:"synthetic-key-only
  expect(captchaConfig((await readLocalConfig(pathToFileURL(stage+"/"),"global")).captcha).ttocr).toMatchObject({enabled:true,key:"synthetic-key-only",api:"http://api.ttocr.com/api/recognize",resultApi:"http://api.ttocr.com/api/results"});
 }));
 
+test("旧人工验证小写地址与类型字段迁入有效节点及独立域名",()=>fixture(async(source,stage)=>{
+ await put(source,"plugins/Lotus-Plugin/config/global.yaml",{captcha:{address:"https://manual.example.invalid"}});
+ const report=await stageLegacyGlobalConfig(source,stage);
+ expect(captchaConfig((await readLocalConfig(pathToFileURL(stage+"/"),"global")).captcha).order).toContain("manual");
+ expect((await readServerSettings(pathToFileURL(stage+"/"),{})).manualCaptchaUrl).toBe("https://manual.example.invalid");
+ expect(report.deferredCaptcha).toContain("captcha.manual.reverse_proxy");
+ const {normalizeLegacyCaptchaGlobal}=await import("../lib/migration-captcha-config.ts");
+ expect(normalizeLegacyCaptchaGlobal({captcha:{gtestType:2}}).captcha).toHaveProperty("gtmanual");
+ expect(normalizeLegacyCaptchaGlobal({address:"https://unrelated.example.invalid"})).not.toHaveProperty("captcha");
+}));
+
 test("全局不相关key不当验证码；明确TTOCR类型加密钥及混合旧配置保留显式新字段",()=>fixture(async(source,stage)=>{
  await put(source,"plugins/Lotus-Plugin/config/global.yaml",{key:"unrelated-config-key",type:"music"});await stageLegacyGlobalConfig(source,stage);
  expect((await readLocalConfig(pathToFileURL(stage+"/"),"global")).captcha).toBeUndefined();

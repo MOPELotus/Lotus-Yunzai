@@ -10,8 +10,8 @@ export function normalizeLegacyCaptchaGlobal(input: Fields): Fields {
   const candidate = Object.hasOwn(input, "captcha") ? nested : input;
   const kind = String(candidate.type ?? "").toLowerCase();
   const ttocrKind = kind === "1" || kind.includes("ttocr");
-  const flattened = ["api", "resapi", "verifyAddr", "verify_addr", "Address", "GtestType", "startApi"].some(key => Object.hasOwn(candidate, key)) ||
-    (Object.hasOwn(input, "captcha") && Object.hasOwn(candidate, "key")) || (ttocrKind && Object.hasOwn(candidate, "key"));
+  const flattened = ["api", "resapi", "verifyAddr", "verify_addr", "Address", "GtestType", "gtestType", "startApi"].some(key => Object.hasOwn(candidate, key)) ||
+    (Object.hasOwn(input, "captcha") && ["key", "address"].some(key => Object.hasOwn(candidate, key))) || (ttocrKind && Object.hasOwn(candidate, "key"));
   if (!flattened) return input;
   const old = candidate;
   const providers = ["test_nine"];
