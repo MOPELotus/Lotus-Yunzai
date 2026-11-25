@@ -515,6 +515,135 @@ async function fixture() {
   return { cwd, config, attempts, launch, start };
 }
 
+test("共享PM2接管映射对status/logs/restart/stop核对本安装，保留其他应用", async () => {
+  const { cwd, start } = await fixture();
+  const parent = dirname(cwd), home = join(parent, "old-shared-pm2"), stateHome = join(parent, ".checkout.lotus-pm2"), bin = join(parent, "bin");
+  await Promise.all([mkdir(home, { mode: 0o755 }), mkdir(stateHome, { mode: 0o700 }), mkdir(bin), mkdir(join(cwd, "data"))]);
+  const cli = join(bin, "pm2"), appName = "my-existing-bot", token = "mapped-attempt";
+  await writeFile(join(cwd, "data/pm2-handoff.json"), JSON.stringify({ format: 1, root: cwd, home, name: appName, cli }), { mode: 0o600 });
+  const other = { name: "other-app", pid: 999, pm_id: 7, pm2_env: { status: "online", future: [1, 2, 3] } };
+  const own = { name: appName, pid: 303, pm_id: 3, pm2_env: { status: "online", exec_interpreter: "none", pm_cwd: parent,
+    args: ["--no-env-file", join(stateHome, "host-entry.js"), cwd, join(stateHome, "host-ready"), token],
+    env: { LOTUS_PM2_START_TOKEN: token, LOTUS_PM2_WORKER_READINESS: "1" } } };
+  await writeFile(join(home, "apps.json"), JSON.stringify([other, own]));
+  await writeFile(join(stateHome, "host-ready"), "303");
+  await writeFile(join(stateHome, "host-start-attempt"), token);
+  await writeFile(cli, `#!${process.execPath}
+    const [action,id]=Bun.argv.slice(2),home=Bun.env.PM2_HOME;
+    const file=home+"/apps.json",apps=await Bun.file(file).json();
+    if(action==="jlist")console.log(JSON.stringify(apps));
+    else {
+      await Bun.write(home+"/last-command",JSON.stringify([action,id]));
+      const own=apps.find(row=>String(row.pm_id)===id);
+      if(action==="restart"){own.pid=404;await Bun.write(own.pm2_env.args[3],"404")}
+      if(action==="stop"){own.pid=0;own.pm2_env.status="stopped"}
+      await Bun.write(file,JSON.stringify(apps));
+    }
+  `, { mode: 0o700 });
+  const daemon = Bun.listen({ unix: join(home, "rpc.sock"), socket: { data() {} } });
+  const env = { PATH: bin + ":" + process.env.PATH };
+  try {
+    for (const [action, args] of [["status", []], ["logs", ["--nostream"]], ["restart", []], ["stop", []]] as const) {
+      const [code, , error] = await start([action, ...args], env);
+      expect({ code, error }).toEqual({ code: 0, error: "" });
+      expect(await Bun.file(join(home, "last-command")).json()).toEqual([action, "3"]);
+      expect((await Bun.file(join(home, "apps.json")).json())[0]).toEqual(other);
+    }
+    expect(await Bun.file(join(home, "host-entry.js")).exists()).toBe(false);
+  } finally { daemon.stop(true); }
+});
+
+test("专用service就绪文件等待真实ready回调，降为未就绪和停止时删除", async () => {
+  const { cwd, start } = await fixture();
+  await mkdir(join(cwd, "data"), { mode: 0o700 });
+  await mkdir(join(cwd, "data/atlas/data"), { recursive: true });
+  await writeFile(join(cwd, "data/atlas/data/map.json"), index);
+  await writeFile(join(cwd, "scripts/run-managed.ts"), `
+    export async function runManaged(root,ready,onWorkerReady){
+      const file=Bun.env.LOTUS_SERVICE_READY_FILE;
+      if(await Bun.file(file).exists())throw Error("premature ready marker");
+      onWorkerReady?.(true);await ready?.();
+      const report=await Bun.file(file).json();
+      if(report.pid!==process.pid||report.root!==root)throw Error("wrong service identity");
+      onWorkerReady?.(false);await Bun.sleep(20);
+      if(await Bun.file(file).exists())throw Error("stale service marker");
+      return 0;
+    }
+  `);
+  const marker = join(cwd, "data/boot-handoff/service-ready.json");
+  const [code, , error] = await start(["start"], { LOTUS_SERVICE_READY_FILE: marker });
+  expect({ code, error }).toEqual({ code: 0, error: "" });
+  expect(await Bun.file(marker).exists()).toBe(false);
+});
+
+test("专用unit映射接管日常运维，日志中断不停止服务，管理员改指向后拒绝操作", async () => {
+  const { cwd, start, launch } = await fixture();
+  const bin = join(dirname(cwd), "service-bin");
+  await mkdir(bin); await mkdir(join(cwd, "data"), { mode: 0o700 });
+  await mkdir(join(cwd, "data/boot-handoff"), { mode: 0o700 });
+  await mkdir(join(cwd, "data/atlas/data"), { recursive: true });
+  await writeFile(join(cwd, "data/atlas/data/map.json"), index);
+  const marker = join(cwd, "data/boot-handoff/service-ready.json"), state = join(cwd, "fake-service-pid");
+  await writeFile(join(cwd, "data/boot-handoff/service.json"), JSON.stringify({ format: 1, root: cwd,
+    unit: "fixture-bot.service", scope: "user", uid: process.getuid?.() }), { mode: 0o600 });
+  await writeFile(join(cwd, "scripts/run-managed.ts"), `
+    export async function runManaged(root,ready,changed){
+      changed?.(true);await ready?.();
+      return await new Promise(done=>{const timer=setInterval(()=>{},1000);
+        for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>{clearInterval(timer);done(0)})});
+    }
+  `);
+  await writeFile(join(bin, "systemctl"), `#!${process.execPath}
+    const root=Bun.env.FIXTURE_SERVICE_ROOT,file=root+'/fake-service-pid';
+    const args=Bun.argv.slice(2),action=['show','status','start','stop','restart','reset-failed'].find(item=>args.includes(item));
+    let pid=Number(await Bun.file(file).text().catch(()=>0));
+    if(action==='show'){
+      const foreign=await Bun.file(root+'/foreign-service-override').exists();
+      console.log('MainPID='+pid+'\\nType=simple\\nWorkingDirectory='+(foreign?'/foreign':root)+
+        '\\nExecStart='+${JSON.stringify(process.execPath)}+' --no-env-file '+root+'/scripts/launcher.ts start'+
+        '\\nUser='+process.getuid()+'\\nActiveState='+(pid?'active':'inactive'));
+    }else{
+      await Bun.write(root+'/service-last-command',action);
+      if(action==='stop'||action==='restart'){
+        if(pid){try{process.kill(pid,'SIGTERM')}catch{}
+          for(let i=0;i<100;i++){const stat=await Bun.file('/proc/'+pid+'/stat').text().catch(()=>null);
+            if(!stat||stat.slice(stat.lastIndexOf(')')+2).startsWith('Z'))break;await Bun.sleep(10)}}
+        await Bun.write(file,'0');pid=0;
+      }
+      if(action==='start'||action==='restart'){
+        const child=Bun.spawn([${JSON.stringify(process.execPath)},'--no-env-file',root+'/scripts/launcher.ts','start'],
+          {cwd:root,env:{...Bun.env,LOTUS_SERVICE_READY_FILE:root+'/data/boot-handoff/service-ready.json'},
+            stdin:'ignore',stdout:'ignore',stderr:'ignore',detached:true});
+        await Bun.write(file,String(child.pid));child.unref();
+      }
+    }
+  `, { mode: 0o700 });
+  await writeFile(join(bin, "journalctl"), `#!${process.execPath}
+    console.log('journal fixture ready');
+    if(Bun.argv.includes('--follow')){await Bun.write(Bun.env.FIXTURE_SERVICE_ROOT+'/journal-viewer-pid',String(process.pid));
+      await new Promise(()=>setInterval(()=>{},1000));}
+  `, { mode: 0o700 });
+  const env = { PATH: bin + ":" + process.env.PATH, FIXTURE_SERVICE_ROOT: cwd };
+  let main = 0;
+  try {
+    const initial = await start(["start:bg"], env); expect(initial[0]).toBe(0);
+    main = Number(await readFile(state, "utf8")); expect(main).toBeGreaterThan(1);
+    expect((await start(["status"], env))[0]).toBe(0);
+    const viewer = launch(["logs"], env);
+    for (let attempt = 0; attempt < 100 && !await Bun.file(join(cwd, "journal-viewer-pid")).exists(); attempt++) await Bun.sleep(10);
+    expect(await Bun.file(join(cwd, "journal-viewer-pid")).exists()).toBe(true);
+    viewer.kill("SIGINT"); expect(await viewer.exited).toBe(0);
+    expect(() => process.kill(main, 0)).not.toThrow();
+    expect((await start(["restart"], env))[0]).toBe(0);
+    const restarted = Number(await readFile(state, "utf8")); expect(restarted).not.toBe(main); main = restarted;
+    expect((await start(["stop"], env))[0]).toBe(0); main = 0;
+    expect(await Bun.file(marker).exists()).toBe(false);
+    await writeFile(join(cwd, "foreign-service-override"), "yes");
+    expect((await start(["stop"], env))[0]).toBe(1);
+    expect(await readFile(join(cwd, "service-last-command"), "utf8")).toBe("stop");
+  } finally { if (main) try { process.kill(main, "SIGTERM"); } catch {} }
+}, 15_000);
+
 test("noninteractive first start requires a source choice before starting the host", async () => {
   const { cwd, config, attempts, start } = await fixture();
   const [code, output, error] = await start(["start"]);

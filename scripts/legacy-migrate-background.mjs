@@ -1,5 +1,5 @@
-import { readFile, mkdir, lstat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, mkdir, lstat, realpath } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 
 const catalog = JSON.parse(await readFile(new URL('../i18n/legacy-migrate/zh-CN.json', import.meta.url), 'utf8')).messages;
 const text = key => catalog[key] || key;
@@ -11,7 +11,11 @@ export async function prepareMigrationPm2(target, bun, work, options, io) {
   const entry = await lstat(script).catch(error => { if (error.code !== 'ENOENT') throw error; });
   if (!entry?.isFile()) throw Error(text('background_failed'));
   const home = join(work, 'pm2-preflight');
-  await mkdir(home, { mode: 0o700 });
+  await mkdir(home, { mode: 0o700, recursive: true });
+  const homeInfo = await lstat(home);
+  if (!homeInfo.isDirectory() || homeInfo.uid !== process.getuid?.() || homeInfo.mode & 0o077 || await realpath(home) !== home) {
+    throw Error(text('background_failed'));
+  }
   const clean = Object.fromEntries(Object.entries(options.env).filter(([key]) => !key.startsWith('PM2_')));
   const isolated = { ...options, env: { ...clean, PM2_HOME: home } };
   const controller = new AbortController();
@@ -89,7 +93,8 @@ export async function inspectLegacyBoot(old, options, io, { read = readFile } = 
     let properties;
     try {
       properties = parseShow(await io.capture('systemctl', [...(user ? ['--user'] : []), 'show', unit,
-        '--property=MainPID', '--property=Restart', '--property=ExecStart', '--property=UnitFileState', '--property=Environment', '--no-pager'],
+        '--property=MainPID', '--property=Restart', '--property=ExecStart', '--property=UnitFileState', '--property=Environment',
+        '--property=WorkingDirectory', '--property=ControlGroup', '--property=Type', '--property=FragmentPath', '--property=User', '--no-pager'],
       { ...options, env: old.env || options.env, signal: AbortSignal.timeout(5_000) }));
     } catch {
       options.signal?.throwIfAborted();
@@ -100,19 +105,43 @@ export async function inspectLegacyBoot(old, options, io, { read = readFile } = 
     const bootEnabled = /^(?:enabled|enabled-runtime|generated)$/u.test(properties.UnitFileState || '');
     // Equality with the already-verified old bot also covers ExecStart wrappers
     // that exec Node. SSH/session/container managers have a different MainPID.
-    const directlyManaged = Number(properties.MainPID) === old.pid && !!properties.ExecStart;
+    const entryArguments = [...(old.restoreArgv || []), ...(old.argv || [])].filter(value =>
+      typeof value === 'string' && !value.startsWith('-') && /\.(?:[cm]?js|ts|sh)$/u.test(value));
+    const entries = entryArguments.map(value => resolve(old.cwd, value));
+    const group = properties.ControlGroup;
+    const sameGroup = group && cgroup.split(/\r?\n/u).some(line => {
+      const path = /^[^:]*:[^:]*:(.*)$/u.exec(line)?.[1];
+      return path === group || path?.startsWith(group + '/');
+    });
+    const wrapperManaged = sameGroup && properties.WorkingDirectory === old.cwd &&
+      entries.some(entry => properties.ExecStart?.includes(entry));
+    const directlyManaged = Number(properties.MainPID) === old.pid && !!properties.ExecStart || wrapperManaged;
     const homeMatch = pm2Home && (properties.Environment?.includes(`PM2_HOME=${pm2Home} `) ||
       properties.Environment?.endsWith(`PM2_HOME=${pm2Home}`) || properties.Environment?.includes(`PM2_HOME="${pm2Home}"`));
     const pm2Resurrects = old.pm2 && persistedOldPm2 && homeMatch &&
       /(?:^|[\s/])pm2(?:\s|$)/u.test(properties.ExecStart || '') && /\bresurrect\b/u.test(properties.ExecStart || '');
     if ((directlyManaged || pm2Resurrects) && (activeRestart || bootEnabled)) {
       const command = `systemctl${user ? ' --user' : ''}`;
-      return { status: 'blocked', newAutostartConfigured: false, unit, scope: user ? 'user' : 'system',
+      const plan = { status: 'handoff-required', newAutostartConfigured: false, unit, scope: user ? 'user' : 'system',
         ...(pm2Home && { pm2Home }), reason: directlyManaged ? 'old-bot-service' : 'persisted-old-pm2',
+        dedicated: !!directlyManaged, mainPid: Number(properties.MainPID), controlGroup: properties.ControlGroup,
+        unitFileState: properties.UnitFileState,
         inspectCommand: `${command} show ${unit} -p ExecStart -p Restart -p UnitFileState`,
-        message: `${text('boot_blocked')} ${unit} (${user ? 'user' : 'system'})。${text('boot_action')}` };
+        message: `${text('boot_takeover')} ${unit}` };
+      Object.defineProperty(plan, 'properties', { value: properties });
+      return plan;
     }
   }
   return { status: 'not-configured', newAutostartConfigured: false, ...(pm2Home && { pm2Home }),
     persistedOldPm2, checkedUnits: units, ...(unverifiedUnits.length && { unverifiedUnits }) };
+}
+
+export async function prepareBootTakeover(plan, old, target, bun, work, options, io) {
+  if (plan.status !== 'handoff-required') return;
+  if (plan.reason === 'persisted-old-pm2') {
+    const { preparePm2Takeover } = await import('./legacy-migrate-pm2.mjs');
+    return preparePm2Takeover(plan, old, target, bun, work, options, io);
+  }
+  const { prepareSystemdTakeover } = await import('./legacy-migrate-systemd.mjs');
+  return prepareSystemdTakeover(plan, old, target, bun, work, options, io);
 }

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile, readFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { runLegacyMigration, processIdentity, updateMigrationState, prepareBun } from '../scripts/legacy-migrate.mjs';
@@ -52,9 +52,9 @@ test('PM2真实预检失败发生在交接前，旧机器人不停止', () => fi
   assert.equal(x.running(), true);
   assert.equal(x.calls.some(call => call.includes('migrate')), false);
 }));
-test('已确认旧自启冲突在ready之前阻断，不写旧服务且不停止旧机器人', () => fixture(async x => {
-  x.dependencies.inspectBoot = async () => ({ status: 'blocked', unit: 'old-bot.service', scope: 'system',
-    newAutostartConfigured: false, message: 'old service conflict' });
+test('无法取得原托管接管权限时在ready之前失败，不停止旧机器人', () => fixture(async x => {
+  x.dependencies.inspectBoot = async () => ({ status: 'handoff-required', unit: 'old-bot.service', scope: 'system',newAutostartConfigured:false });
+  x.dependencies.prepareBoot = async () => {throw Error('old service conflict')};
   await assert.rejects(runLegacyMigration(x, x.dependencies), /old service conflict/u);
   const state = JSON.parse(await readFile(x.statePath, 'utf8'));
   assert.equal(state.failedStage, 'checking-boot');
@@ -63,6 +63,113 @@ test('已确认旧自启冲突在ready之前阻断，不写旧服务且不停止
   assert.equal(x.running(), true);
   assert.equal(x.calls.some(call => call.includes('migrate')), false);
 }));
+test('已有托管自动替换旧端，使用接管启动并持久化已完成状态', () => fixture(async x => {
+  let status = 'prepared', stopped = false, started = false;
+  x.dependencies.inspectBoot = async () => ({ status: 'handoff-required', unit: 'fixture.service' });
+  x.dependencies.prepareBoot = async () => ({
+    report: () => ({status,newAutostartConfigured:status==='completed'}),
+    stopOld: async () => {stopped=true;x.dependencies.kill();},
+    startNew: async () => {started=true;status='completed';},
+    rollback: async () => {throw Error('unexpected rollback');},
+  });
+  const result=await runLegacyMigration(x,x.dependencies);
+  assert.equal(stopped,true);assert.equal(started,true);
+  assert.equal(result.boot.status,'completed');assert.equal(result.boot.newAutostartConfigured,true);
+  assert.equal(x.calls.some(call=>call.includes('start:bg')),false);
+}));
+test('接管后的失败经事务恢复原托管，不绕过controller直接启动旧端', () => fixture(async x => {
+  let status='prepared',rolledBack=false;
+  x.dependencies.inspectBoot=async()=>({status:'handoff-required',unit:'fixture.service'});
+  x.dependencies.prepareBoot=async()=>({
+    report:()=>({status}),stopOld:async()=>x.dependencies.kill(),startNew:async()=>{},
+    rollback:async()=>{rolledBack=true;await x.dependencies.restore();status='rolled-back';},
+  });
+  x.dependencies.execute=async(_,args)=>{if(args[1]==='bootstrap')throw Error('fixture failure');};
+  await assert.rejects(runLegacyMigration(x,x.dependencies));
+  assert.equal(rolledBack,true);assert.equal(x.running(),true);
+  const state=JSON.parse(await readFile(x.statePath,'utf8'));
+  assert.equal(state.recovery,'old-restored');assert.equal(state.boot.status,'rolled-back');
+}));
+test('旧unit内的迁移worker先独立重启并以一次性私有token续接，原worker不停止旧端', () => fixture(async x => {
+  x.dependencies.inspectBoot=async()=>({status:'handoff-required',reason:'old-bot-service',unit:'fixture.service'});
+  let isolated=false;
+  x.dependencies.isolateWorker=async()=>{if(isolated)return{isolated:false};isolated=true;return{isolated:true,pid:789,unit:'migration-only.service'}};
+  x.dependencies.prepareBoot=async()=>({report:()=>({status:'prepared'}),stopOld:async()=>x.dependencies.kill(),
+    startNew:async()=>{},rollback:async()=>x.dependencies.restore()});
+  const waiting=await runLegacyMigration(x,x.dependencies);
+  assert.equal(waiting.phase,'isolating-worker');assert.equal(x.running(),true);
+  assert.equal(x.calls.some(call=>call.includes('migrate')),false);
+  const previous=process.env.LOTUS_MIGRATION_RESUME_TOKEN;
+  try{
+    await assert.rejects(runLegacyMigration({...x,resume:true},x.dependencies));
+    process.env.LOTUS_MIGRATION_RESUME_TOKEN=waiting.resumeToken;
+    assert.equal((await runLegacyMigration({...x,resume:true},x.dependencies)).phase,'completed');
+    assert.equal(JSON.parse(await readFile(x.statePath,'utf8')).resumeToken,undefined);
+  }finally{if(previous===undefined)delete process.env.LOTUS_MIGRATION_RESUME_TOKEN;else process.env.LOTUS_MIGRATION_RESUME_TOKEN=previous}
+}));
+test('旧附属数据库先准备，交接时冻结，退出旧树后发布，初始化后释放临时库',()=>fixture(async x=>{
+  await mkdir(join(x.target,'scripts'));
+  await writeFile(join(x.target,'scripts/legacy-migrate-valkey.ts'),'// fixture');
+  const plan=join(dirname(x.statePath),'legacy-valkey-plan.json'),events=[];
+  x.dependencies.capture=async(_,args)=>{if(args[1]==='quiesce'){events.push('quiesce');return JSON.stringify({pauseExpiresAt:Date.now()+300000})}return JSON.stringify({status:'prepared',plan})};
+  let alive=true;
+  x.dependencies.identity=async pid=>alive?{...x.old,pid}:null;
+  x.dependencies.kill=()=>{events.push('stop-old');alive=false};
+  x.dependencies.execute=async(_,args)=>{
+    if(args[0]?.endsWith('legacy-migrate-valkey.ts'))events.push(args[1]);
+    else if(args[0]==='run')events.push(args[1]);
+  };
+  const state=await runLegacyMigration(x,x.dependencies);
+  assert.equal(state.phase,'completed');
+  assert.deepEqual(events,['quiesce','stop-old','migrate','publish','start','bootstrap','stop','start:bg']);
+}));
+test('数据库冻结失败仍解除原实例暂停，绝不停止旧机器人',()=>fixture(async x=>{
+  await mkdir(join(x.target,'scripts'));await writeFile(join(x.target,'scripts/legacy-migrate-valkey.ts'),'// fixture');
+  const events=[];
+  x.dependencies.capture=async(_,args)=>{if(args[1]==='quiesce'){events.push('quiesce');throw Error('flush failure')}return JSON.stringify({status:'prepared',plan:join(dirname(x.statePath),'legacy-valkey-plan.json')})};
+  x.dependencies.execute=async(_,args)=>{if(args[0]?.endsWith('legacy-migrate-valkey.ts')){events.push(args[1]);if(args[1]==='quiesce')throw Error('flush failure')}};
+  await assert.rejects(runLegacyMigration(x,x.dependencies));
+  assert.deepEqual(events,['quiesce','resume']);assert.equal(x.running(),true);
+  assert.equal(JSON.parse(await readFile(x.statePath,'utf8')).recovery,'old-untouched');
+}));
+test('初始化失败先停自身临时库并解冻原实例，再恢复旧机器人',()=>fixture(async x=>{
+  await mkdir(join(x.target,'scripts'));await writeFile(join(x.target,'scripts/legacy-migrate-valkey.ts'),'// fixture');
+  const events=[];const restore=x.dependencies.restore;
+  x.dependencies.capture=async(_,args)=>{if(args[1]==='quiesce'){events.push('quiesce');return JSON.stringify({pauseExpiresAt:Date.now()+300000})}return JSON.stringify({status:'prepared',plan:join(dirname(x.statePath),'legacy-valkey-plan.json')})};
+  x.dependencies.restore=async()=>{events.push('restore-old');return restore()};
+  x.dependencies.execute=async(_,args)=>{if(args[0]?.endsWith('legacy-migrate-valkey.ts'))events.push(args[1]);else if(args[1]==='bootstrap')throw Error('fixture failure')};
+  await assert.rejects(runLegacyMigration(x,x.dependencies));
+  assert.deepEqual(events,['quiesce','publish','start','stop','resume','restore-old']);assert.equal(x.running(),true);
+}));
+test('旧写冻结过期时停止迁移，不复制旧快照并恢复旧机器人',()=>fixture(async x=>{
+  await mkdir(join(x.target,'scripts'));await writeFile(join(x.target,'scripts/legacy-migrate-valkey.ts'),'// fixture');
+  const events=[];
+  x.dependencies.capture=async(_,args)=>args[1]==='quiesce'?JSON.stringify({pauseExpiresAt:Date.now()-1}):
+    JSON.stringify({status:'prepared',plan:join(dirname(x.statePath),'legacy-valkey-plan.json')});
+  x.dependencies.execute=async(_,args)=>{events.push(args[1]);};
+  await assert.rejects(runLegacyMigration(x,x.dependencies));
+  assert.ok(!events.includes('migrate'));assert.ok(events.includes('resume'));assert.equal(x.running(),true);
+  assert.equal(JSON.parse(await readFile(x.statePath,'utf8')).recovery,'old-restored');
+}));
+for (const cannotStop of [false, true]) {
+  test(`新托管启动失败先停止新manager及其重启的数据库，再恢复旧端（停止失败=${cannotStop}）`,()=>fixture(async x=>{
+    await mkdir(join(x.target,'scripts'));await writeFile(join(x.target,'scripts/legacy-migrate-valkey.ts'),'// fixture');
+    const events=[];
+    x.dependencies.capture=async(_,args)=>args[1]==='quiesce'?JSON.stringify({pauseExpiresAt:Date.now()+300000}):
+      JSON.stringify({status:'prepared',plan:join(dirname(x.statePath),'legacy-valkey-plan.json')});
+    x.dependencies.inspectBoot=async()=>({status:'handoff-required',unit:'fixture.service'});
+    x.dependencies.prepareBoot=async()=>({report:()=>({status:'prepared'}),stopOld:async()=>x.dependencies.kill(),
+      startNew:async()=>{events.push('start-new-db');throw Error('ready failure')},
+      stopNew:async()=>{events.push('stop-new-manager');if(cannotStop)throw Error('stop failed')},
+      rollback:async()=>{events.push('restore-old');await x.dependencies.restore()}});
+    x.dependencies.execute=async(_,args)=>{if(args[0]?.endsWith('legacy-migrate-valkey.ts'))events.push(args[1]);};
+    await assert.rejects(runLegacyMigration(x,x.dependencies),/ready failure/u);
+    assert.deepEqual(events,cannotStop?['publish','start','stop','start-new-db','stop-new-manager']:
+      ['publish','start','stop','start-new-db','stop-new-manager','stop','resume','restore-old']);
+    assert.equal(x.running(),!cannotStop);
+    assert.equal(JSON.parse(await readFile(x.statePath,'utf8')).recovery,cannotStop?'failed':'old-restored');
+  }));
+}
 for (const failure of ['migrate', 'bootstrap', 'start:bg']) {
   test(`${failure}失败时停止已尝试的新端并恢复旧端`, () => fixture(async x => {
     const original = x.dependencies.execute;

@@ -43,10 +43,11 @@ test('actual direct bot system service blocks before handoff and identifies the 
     MainPID: String(old.pid), ExecStart: '{ path=/usr/bin/node ; argv[]=/usr/bin/node app.js ; }', Restart: 'always', UnitFileState: 'enabled',
   } });
   const plan = await inspectLegacyBoot(x.snapshot, { env: {} }, x.io, { read: x.read });
-  assert.equal(plan.status, 'blocked'); assert.equal(plan.reason, 'old-bot-service');
+  assert.equal(plan.status, 'handoff-required'); assert.equal(plan.reason, 'old-bot-service');
   assert.equal(plan.scope, 'system'); assert.equal(plan.unit, 'my-yunzai.service');
   assert.match(plan.inspectCommand, /^systemctl show my-yunzai\.service/u);
-  assert.match(plan.message, /以前台方式/u);
+  assert.match(plan.message, /接管/u);
+  assert.equal(Object.keys(plan).includes('properties'),false);
   assert.ok(x.calls.every(call => !call.includes('stop') && !call.includes('disable')));
 });
 
@@ -55,7 +56,7 @@ test('same-user dedicated bot service is detected without editing the unit', asy
     MainPID: String(old.pid), ExecStart: '/usr/bin/node app.js', Restart: 'on-failure', UnitFileState: 'disabled',
   } });
   const plan = await inspectLegacyBoot(x.snapshot, { env: {} }, x.io, { read: x.read });
-  assert.equal(plan.status, 'blocked'); assert.equal(plan.scope, 'user');
+  assert.equal(plan.status, 'handoff-required'); assert.equal(plan.scope, 'user');
   assert.match(plan.inspectCommand, /^systemctl --user show bot\.service/u);
 });
 
@@ -63,7 +64,19 @@ test('a dedicated wrapper service is identified by verified MainPID rather than 
   const x = environment({ cgroup: '0::/system.slice/start-wrapper.service\n', service: {
     MainPID: String(old.pid), ExecStart: '/fixture/launch-bot.sh', Restart: 'always', UnitFileState: 'disabled',
   } });
-  assert.equal((await inspectLegacyBoot(x.snapshot, { env: {} }, x.io, { read: x.read })).status, 'blocked');
+  assert.equal((await inspectLegacyBoot(x.snapshot, { env: {} }, x.io, { read: x.read })).status, 'handoff-required');
+});
+
+test('a wrapper MainPID may differ only with exact bot cgroup, source working directory and absolute entry', async () => {
+  for (const working of [old.cwd, '/foreign']) {
+    const x=environment({cgroup:'0::/system.slice/wrapped-bot.service/worker\n',service:{
+      MainPID:'99',ExecStart:`/bin/sh -c "/usr/bin/node ${old.cwd}/app.js"`,WorkingDirectory:working,
+      ControlGroup:'/system.slice/wrapped-bot.service',Restart:'always',UnitFileState:'enabled',
+    }});
+    const plan=await inspectLegacyBoot(x.snapshot,{env:{}},x.io,{read:x.read});
+    assert.equal(plan.status,working===old.cwd?'handoff-required':'not-configured');
+    if(working===old.cwd){assert.equal(plan.dedicated,true);assert.equal(plan.mainPid,99)}
+  }
 });
 
 test('PM2 boot service blocks only with its exact home and saved old application', async () => {
@@ -74,7 +87,7 @@ test('PM2 boot service blocks only with its exact home and saved old application
       Environment: 'PATH=/bin PM2_HOME=/fixture/pm2-home',
     } });
     const plan = await inspectLegacyBoot(x.snapshot, { env: {} }, x.io, { read: x.read });
-    assert.equal(plan.status, saved === record ? 'blocked' : 'not-configured');
+    assert.equal(plan.status, saved === record ? 'handoff-required' : 'not-configured');
     if (saved === record) { assert.equal(plan.reason, 'persisted-old-pm2'); assert.equal(plan.pm2Home, '/fixture/pm2-home'); }
   }
 });
@@ -96,7 +109,7 @@ test('saved old PM2 app plus enabled boot unit is detected even when its daemon 
     return 'MainPID=0\nExecStart=/fixture/pm2 resurrect\nRestart=on-failure\nUnitFileState=enabled\nEnvironment=PM2_HOME=/fixture/pm2-home';
   };
   const plan = await inspectLegacyBoot(x.snapshot, { env: {} }, x.io, { read: x.read });
-  assert.equal(plan.status, 'blocked'); assert.equal(plan.unit, 'pm2-fixture.service');
+  assert.equal(plan.status, 'handoff-required'); assert.equal(plan.unit, 'pm2-fixture.service');
   assert.equal(plan.scope, 'system'); assert.equal(plan.reason, 'persisted-old-pm2');
 });
 

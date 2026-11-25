@@ -5,7 +5,7 @@ import { constants } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { migrationEnvironment } from './legacy-migrate-environment.mjs';
-import { prepareMigrationPm2, inspectLegacyBoot } from './legacy-migrate-background.mjs';
+import { prepareMigrationPm2, inspectLegacyBoot, prepareBootTakeover } from './legacy-migrate-background.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const catalog = JSON.parse(await readFile(new URL('../i18n/legacy-migrate/zh-CN.json', import.meta.url), 'utf8')).messages;
@@ -117,26 +117,51 @@ export async function prepareBun(work, options, injected = {}) {
   throw last;
 }
 
-export async function runLegacyMigration({ source, statePath, target = root, signal }, injected = {}) {
+export async function runLegacyMigration({ source, statePath, target = root, signal, resume = false }, injected = {}) {
   source = resolve(source); target = resolve(target); statePath = resolve(statePath);
   await validatePaths(source, target, statePath);
   const lock = statePath + '.worker-lock';
-  await mkdir(lock, { mode: 0o700 });
+  async function verifyResume() {
+    const saved = JSON.parse(await readFile(statePath, 'utf8'));
+    const token = process.env.LOTUS_MIGRATION_RESUME_TOKEN;
+    if (!token || saved.resumeToken !== token || saved.phase !== 'isolating-worker') throw Error(text('unsafe'));
+  }
+  if (resume) await verifyResume();
+  for (let attempt = 0; ; attempt++) {
+    try { await mkdir(lock, { mode: 0o700 }); break; }
+    catch (error) {
+      if (!resume || error.code !== 'EEXIST' || attempt >= 200) throw error;
+      signal?.throwIfAborted(); await sleep(50);
+    }
+  }
+  if (resume) {
+    try { await verifyResume(); }
+    catch (error) { await rm(lock, { recursive: true }); throw error; }
+  }
   const logFile = await open(join(dirname(statePath), 'worker.log'), constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW, 0o600);
   const io = { execute, capture, identity: processIdentity, kill: (pid, sig) => process.kill(pid, sig), sleep, prepareBun,
-    preparePm2: prepareMigrationPm2, inspectBoot: inspectLegacyBoot, parsePm2ProcessList,
+    preparePm2: prepareMigrationPm2, inspectBoot: inspectLegacyBoot, prepareBoot: prepareBootTakeover, parsePm2ProcessList,
+    isolateWorker: async (...args) => {
+      const { isolateMigrationWorker } = await import('./legacy-migrate-systemd.mjs');
+      return isolateMigrationWorker(...args);
+    },
     restore: async old => {
       const child = spawn(old.execPath, old.restoreArgv || old.argv, { cwd: old.cwd, env: old.env || process.env, detached: true,
         stdio: ['ignore', logFile.fd, logFile.fd] });
       await new Promise((done, reject) => { child.once('spawn', done); child.once('error', reject); });
       child.unref(); return child.pid;
     }, ...injected };
-  let phase = 'preparing', stopped = false, startupAttempted = false, old, bun, result;
+  let phase = 'preparing', stopped = false, startupAttempted = false, old, bun, result, takeover, storagePlan, storageStarted = false, storageQuiesced = false, storagePauseExpiresAt;
   const originalEnvironment = { ...process.env };
+  delete originalEnvironment.LOTUS_MIGRATION_RESUME_TOKEN;
   const environment = migrationEnvironment(originalEnvironment);
   const options = { cwd: target, env: environment, log: logFile.fd, signal };
   const recoveryOptions = { ...options, signal: undefined };
   const oldOptions = { cwd: source, env: originalEnvironment, log: logFile.fd };
+  const storageCommand = async (action, value, recovering = false, captured = false) => {
+    const helper = join(target, 'scripts/legacy-migrate-valkey.ts');
+    return io[captured ? 'capture' : 'execute'](bun, [helper, action, value], recovering ? recoveryOptions : options);
+  };
   const state = async patch => { result = await updateMigrationState(statePath, { ...patch, workerPid: process.pid }); return result; };
   const stage = async (value, key) => { signal?.throwIfAborted(); phase = value; await state({ phase, message: text(key) }); };
   async function alive() { const current = await io.identity(old.pid); return matching(current, old); }
@@ -147,7 +172,7 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
   try {
     signal?.throwIfAborted();
     result = JSON.parse(await readFile(statePath, 'utf8'));
-    if (result.phase && !['created', 'cloned'].includes(result.phase)) throw Error(text('unsafe'));
+    if (result.phase && !['created', 'cloned'].includes(result.phase) && !(resume && result.phase === 'isolating-worker')) throw Error(text('unsafe'));
     old = result.oldHost;
     if (!old || !Array.isArray(old.argv) || old.argv.some(x => typeof x !== 'string')) throw Error(text('identity'));
     if (old.cwd !== source) throw Error(text('identity'));
@@ -162,7 +187,8 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
     oldOptions.env = old.env || originalEnvironment;
     for (const name of ['config', 'data', 'backup']) if (await exists(join(target, name))) throw Error(text('unsafe'));
     if (old.pm2 && (!Number.isSafeInteger(Number(old.pm2.id)) || Number(old.pm2.id) < 0 || typeof old.pm2.cli !== 'string')) throw Error(text('identity'));
-    await state({ phase, oldHost: old, workerPid: process.pid, target, log: join(dirname(statePath), 'worker.log'), handoffApproved: false });
+    await state({ phase, oldHost: old, workerPid: process.pid, target, log: join(dirname(statePath), 'worker.log'), handoffApproved: false,
+      ...(resume && { resumeToken: undefined }) });
     bun = await io.prepareBun(dirname(statePath), options);
     options.env.PATH = dirname(bun) + delimiter + (options.env.PATH || '');
     async function retry(command, args) {
@@ -183,7 +209,28 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
     await stage('checking-boot', 'boot_check');
     const boot = await io.inspectBoot(old, { ...oldOptions, signal }, io);
     await state({ boot });
+    if (boot.status === 'handoff-required' && boot.reason === 'old-bot-service') {
+      const token = randomUUID();
+      await state({ phase: 'isolating-worker', resumeToken: token });
+      const isolation = await io.isolateWorker(boot, old, target, dirname(statePath), { ...options, statePath }, io, token);
+      if (isolation.isolated) return await state({ isolation, phase: 'isolating-worker', message: text('worker_isolating') });
+      await state({ phase, resumeToken: undefined });
+    }
+    takeover = await io.prepareBoot(boot, old, target, bun, dirname(statePath), options, io);
+    if (takeover) await state({ boot: takeover.report() });
     if (boot.status === 'blocked') throw Error(boot.message);
+    const storageHelper = join(target, 'scripts/legacy-migrate-valkey.ts');
+    if (await exists(storageHelper)) {
+      await stage('preparing-storage', 'storage_preparing');
+      const prepared = JSON.parse(await io.capture(bun, [storageHelper, 'prepare', source, target, String(old.pid), dirname(statePath),
+        ...(boot.reason === 'old-bot-service' && boot.dedicated === true && typeof boot.controlGroup === 'string' && boot.controlGroup.split('/').includes(boot.unit) ? [boot.controlGroup] : [])], options));
+      if (!['prepared', 'none', 'external'].includes(prepared?.status) || prepared.status === 'prepared' && typeof prepared.plan !== 'string') throw Error(text('storage_failed'));
+      if (prepared.status === 'prepared') {
+        storagePlan = prepared.plan;
+        if (!isAbsolute(storagePlan) || !within(dirname(statePath), storagePlan)) throw Error(text('storage_failed'));
+      }
+      await state({ storage: prepared });
+    }
     await stage('ready-to-stop', 'ready');
     let approved = false;
     for (let i = 0; i < 3600; i++) {
@@ -194,32 +241,66 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
       await io.sleep(500);
     }
     if (!approved) throw Error(text('timeout'));
-    await stage('stopping-old', 'stopping');
     if (!await alive()) throw Error(text('identity'));
     if (old.pm2) {
       const entries = parsePm2ProcessList(await io.capture(old.pm2.cli, ['jlist'], { cwd: source, env: oldOptions.env }));
       const registered = entries.find(entry => String(entry.pm_id) === String(old.pm2.id));
       if (registered?.pid !== old.pid || registered.pm2_env?.status !== 'online') throw Error(text('identity'));
     }
+    if (storagePlan) {
+      await stage('quiescing-storage', 'storage_quiescing');
+      storageQuiesced = true;
+      const frozen = JSON.parse(await storageCommand('quiesce', storagePlan, false, true));
+      if (frozen.pauseExpiresAt !== undefined && (!Number.isFinite(frozen.pauseExpiresAt) || frozen.pauseExpiresAt <= 0)) throw Error(text('storage_failed'));
+      storagePauseExpiresAt = frozen.pauseExpiresAt;
+    }
+    await stage('stopping-old', 'stopping');
     stopped = true;
-    if (old.pm2) await io.execute(old.pm2.cli, ['stop', String(old.pm2.id)], { ...oldOptions, signal });
+    if (takeover) await takeover.stopOld();
+    else if (old.pm2) await io.execute(old.pm2.cli, ['stop', String(old.pm2.id)], { ...oldOptions, signal });
     else io.kill(old.pid, 'SIGTERM');
     await waitGone();
+    if (storagePauseExpiresAt !== undefined && Date.now() >= storagePauseExpiresAt) throw Error(text('storage_failed'));
     await stage('migrating', 'migrating');
     await io.execute(bun, ['run', 'migrate', source], options);
+    if (storagePlan) {
+      await stage('publishing-storage', 'storage_publishing');
+      await storageCommand('publish', storagePlan);
+      storageStarted = true;
+      await storageCommand('start', target);
+    }
     await stage('initializing', 'initializing');
     await io.execute(bun, ['run', 'bootstrap'], options);
+    if (storageStarted) { await storageCommand('stop', target); storageStarted = false; }
     await stage('starting-new', 'starting');
     startupAttempted = true;
-    await io.execute(bun, ['run', 'start:bg'], options);
+    if (takeover) {
+      await takeover.startNew();
+      await state({ boot: takeover.report() });
+    } else await io.execute(bun, ['run', 'start:bg'], options);
+    if (storagePlan) await state({ storage: { status: 'completed', plan: storagePlan } });
     await stage('completed', 'completed');
     return result;
   } catch (error) {
     const failedStage = phase;
     let recovery = stopped ? 'pending' : 'old-untouched';
+    if (!stopped && storageQuiesced) {
+      try { await storageCommand('resume', storagePlan, true); }
+      catch { recovery = 'failed'; }
+    }
     if (stopped) {
       try {
-        if (startupAttempted) await io.execute(bun, ['run', 'stop'], recoveryOptions);
+        if (startupAttempted) {
+          if (takeover) await takeover.stopNew();
+          else await io.execute(bun, ['run', 'stop'], recoveryOptions);
+        }
+        if (storagePlan) { await storageCommand('stop', target, true); storageStarted = false; }
+        if (storageQuiesced) await storageCommand('resume', storagePlan, true);
+        if (takeover) {
+          await takeover.rollback();
+          recovery = 'old-restored';
+          await state({ boot: takeover.report() });
+        } else {
         if (await alive()) recovery = 'old-still-running';
         else if (old.pm2) {
           await io.execute(old.pm2.cli, ['restart', String(old.pm2.id)], oldOptions);
@@ -234,6 +315,7 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
           if (!restored || restored.zombie || restored.execPath !== old.execPath || restored.cwd !== old.cwd ||
               !([old.argv, old.restoreArgv].filter(Boolean).some(argv => JSON.stringify(restored.argv) === JSON.stringify(argv)))) throw Error(text('recovery'));
           recovery = 'old-restored';
+        }
         }
       } catch { recovery = 'failed'; }
     }
@@ -255,7 +337,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       const current = JSON.parse(await readFile(statePath, 'utf8'));
       if (current.phase !== 'ready-to-stop') throw Error(text('unsafe'));
       await updateMigrationState(statePath, { handoffApproved: true });
-    } else await runLegacyMigration({ source, statePath, signal: controller.signal });
+    } else await runLegacyMigration({ source, statePath, signal: controller.signal, resume: args.includes('--resume') });
   } catch (error) { console.error(error.message); process.exitCode = 1; }
   finally { process.off('SIGTERM', abort); process.off('SIGINT', abort); }
 }
