@@ -25,7 +25,7 @@ function endpoint(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
-/** Projects supported settings without activating obsolete executables or forwarding credentials to another service. */
+/** Projects supported settings without executing tools or forwarding provider credentials to another service. */
 export function projectLegacyMediaConfig(current: Fields, legacy: readonly Fields[]) {
   const config: Record<string, unknown> = {};
   const deferred = new Set<string>();
@@ -95,9 +95,21 @@ export function projectLegacyMediaConfig(current: Fields, legacy: readonly Field
         const settings = scalars(source, ["enable", "auto_catch_up", "notify_master", "schedule",
           "login_timeout_ms", "login_poll_ms", "delay_ms_min", "delay_ms_max"]);
         const review = fields(source.review);
-        const externalReview = review.mode === "codex" || review.mode === "responses";
+        const externalReview = review.mode === "responses";
         const reviewSettings = scalars(review, ["mode", "max_chars", "timeout_ms"]);
-        for (const field of ["codex_command", "api_key", "api_url", "model"]) {
+        if (review.mode === "codex") {
+          for (const field of ["codex_command", "model"] as const) {
+            const value = review[field];
+            // Empty settings retain the runtime's PATH/default-model behavior.
+            if (value == null || value === "") continue;
+            if (typeof value !== "string" || value.trim() !== value || /[\u0000-\u001f\u007f]/u.test(value)) {
+              throw new Error($t("lib.migration-media-config.invalid_cli_setting", { field }));
+            }
+            reviewSettings[field] = value;
+          }
+          if (reviewSettings.codex_command) deferred.add("netease_partner.review.codex_command.availability");
+        }
+        for (const field of review.mode === "codex" ? ["api_key", "api_url"] : ["codex_command", "api_key", "api_url", "model"]) {
           if (review[field]) deferred.add("netease_partner.review." + field);
         }
         if (externalReview) {

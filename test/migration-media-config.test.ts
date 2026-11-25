@@ -49,7 +49,7 @@ test("never changes the service origin when old settings conflict or contain URL
   }
 });
 
-test("holds executable and provider settings while retaining fixed review and download preferences", () => {
+test("preserves CLI review while keeping unrelated tools and provider settings deferred", () => {
   const { config, deferred } = projectLegacyMediaConfig({}, [{
     tools: { dir: "/outside/tools", github_api: "https://unverified.example", timeout_ms: 7000,
       ffmpeg: { command: "/outside/custom-binary", asset_patterns: ["specific"] } },
@@ -59,10 +59,49 @@ test("holds executable and provider settings while retaining fixed review and do
     } },
   }]);
   expect(config).toEqual({ tools: { timeout_ms: 7000 }, douyin: { enable: true, download: { quality: "1080p" } },
-    netease_partner: { enable: false, schedule: "5 0 * * *", comments: ["test"], review: { mode: "disabled", max_chars: 80 } } });
-  expect(deferred).toEqual(["douyin.download.tools_path", "netease_partner.enable", "netease_partner.review.api_key",
-    "netease_partner.review.codex_command", "netease_partner.review.mode", "tools.dir",
+    netease_partner: { enable: true, schedule: "5 0 * * *", comments: ["test"], review: { mode: "codex", max_chars: 80, codex_command: "custom-command" } } });
+  expect(deferred).toEqual(["douyin.download.tools_path", "netease_partner.review.api_key",
+    "netease_partner.review.codex_command.availability", "tools.dir",
     "tools.ffmpeg.asset_patterns", "tools.ffmpeg.command", "tools.github_api"]);
   expect(projectLegacyMediaConfig({}, [{ netease_partner: { enable: true, review: { mode: "fixed" } } }]))
     .toEqual({ config: { netease_partner: { enable: true, review: { mode: "fixed" } } }, deferred: [] });
+});
+
+
+test("CLI review survives migration with command/model preferences and explicit disabled state", () => {
+  for (const command of ["codex", "/opt/CLI Tools/codex"]) {
+    for (const enable of [true, false]) {
+      const partner = { enable, notify_master: false, auto_catch_up: true, delay_ms_min: 8000, delay_ms_max: 11000,
+        review: { mode: "codex", codex_command: command, model: "test-model", max_chars: 120, timeout_ms: 180000 } };
+      const result = projectLegacyMediaConfig({}, [{ netease_partner: partner }]);
+      expect(result.config.netease_partner).toEqual(partner);
+      expect(result.deferred).toEqual(["netease_partner.review.codex_command.availability"]);
+    }
+  }
+  expect(projectLegacyMediaConfig({ netease_partner: { enable: false, review: { mode: "codex", model: "" } } },
+    [{ netease_partner: { enable: true, review: { mode: "fixed" } } }])).toEqual({
+      config: { netease_partner: { enable: false, review: { mode: "codex" } } }, deferred: [],
+    });
+  expect(projectLegacyMediaConfig({}, [{ netease_partner: { review: { mode: "codex", codex_command: "" } } }]))
+    .toEqual({ config: { netease_partner: { review: { mode: "codex" } } }, deferred: [] });
+});
+
+test("invalid CLI fields stop migration without silently selecting a different executable", () => {
+  for (const field of ["codex_command", "model"]) {
+    for (const value of [" ", " codex", "codex\nexec", "codex\0", 1, true]) {
+      expect(() => projectLegacyMediaConfig({}, [{ netease_partner: { enable: true,
+        review: { mode: "codex", [field]: value } } }])).toThrow("合伙人 CLI 乐评配置");
+    }
+  }
+});
+
+test("Responses provider credentials retain their existing migration review policy", () => {
+  expect(projectLegacyMediaConfig({}, [{ netease_partner: { enable: true, review: {
+    mode: "responses", api_key: "synthetic-key", api_url: "https://fixture.invalid/v1/responses", model: "fixture-model",
+    max_chars: 100, timeout_ms: 5000,
+  } } }])).toEqual({ config: { netease_partner: { enable: false,
+    review: { mode: "disabled", max_chars: 100, timeout_ms: 5000 } } }, deferred: [
+    "netease_partner.enable", "netease_partner.review.api_key", "netease_partner.review.api_url",
+    "netease_partner.review.mode", "netease_partner.review.model",
+  ] });
 });

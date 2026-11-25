@@ -4916,7 +4916,8 @@
     "web.miyoushe.app.text_f94620a9c5": "暂时无法读取商城商品。",
     "web.miyoushe.app.text_faa93dadc4": "查看商品详情",
     "web.miyoushe.app.text_fd7147a900": "已到开放时间，请刷新官方库存",
-    "web.miyoushe.app.text_fff0472ba2": "已兑完"
+    "web.miyoushe.app.text_fff0472ba2": "已兑完",
+    "lib.migration-media-config.invalid_cli_setting": "合伙人 CLI 乐评配置 {field} 无效，请修正后重新迁移。"
   },
   "parameters": {
     "app.text_242958f459": {
@@ -6970,6 +6971,9 @@
       "group": "group",
       "selection": "selection",
       "limit": "limit"
+    },
+    "lib.migration-media-config.invalid_cli_setting": {
+      "field": "无效的 CLI 配置字段名，不包含配置值"
     }
   }
 }
