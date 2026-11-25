@@ -35,6 +35,10 @@ const scopes = [
   { path: "data/PlayerData/gs", nesting: 0, active: (name: string) => panelUid.test(name), maxMiB: 8 },
   { path: "data/PlayerData/sr", nesting: 0, active: (name: string) => panelUid.test(name), maxMiB: 8 },
   { path: "data/ZZZ-Plugin/gacha", nesting: 0, active: (name: string) => zzzUid.test(name), maxMiB: 32 },
+  { path: "data/NoteData", nesting: 0, active: (name: string) => panelUid.test(name), maxMiB: 4 },
+  ...["abyss", "deadly", "holoBoss", "voidFrontBattle", "climbingTower"].map(folder => ({
+    path: `data/ZZZ-Plugin/${folder}`, nesting: 0, active: (name: string) => zzzUid.test(name), maxMiB: 2,
+  })),
   { path: "data/SR_NoteData", nesting: 0, active: () => false, maxMiB: 4 },
   { path: "data/textJson", nesting: 0, active: () => false, maxMiB: 32 },
 ] as const;
@@ -93,6 +97,8 @@ async function validateActive(scope: Scope, name: string, bytes: Buffer, destina
       return;
     }
     const input: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    if ((scope === "data/NoteData" || scope.startsWith("data/ZZZ-Plugin/")) &&
+        (!input || typeof input !== "object" || Array.isArray(input))) throw new Error("Expected historical record");
     if (scope === "data/gachaJson" && !Array.isArray(input)) throw new Error("Expected pool array");
     if (scope === "data/PlayerData/gs" && !readPanel(uid, input, panelCatalog, true, true)) throw new Error("Missing panel");
     if (scope === "data/PlayerData/sr") readLegacyPanel(uid, input);

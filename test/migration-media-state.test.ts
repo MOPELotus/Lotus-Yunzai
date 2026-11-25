@@ -131,3 +131,33 @@ test("duplicate old NetEase identities cannot become two active scheduled entrie
   });
   expect(await readFile(join(stage, "backup/media-state", oldRoot, netease), "utf8")).toBe(duplicate);
 }));
+
+for (const plugin of ["Lotus-Plugin", "Lotus-ReFactor"]) {
+  test(`${plugin} 的 TuneWeave 空锁文件不应阻止六份凭据与设备资料迁移`, () => fixture(async (source, stage) => {
+    const prefix = `plugins/${plugin}`;
+    const store = "data/tuneweave/accounts";
+    const lock = `${store}/accounts/.credential-store.lock`;
+    await put(source, join(prefix, "config/global.yaml"), "tuneweave: {api_url: 'http://127.0.0.1:7832'}\n");
+    const files = ["device.json", "kugou-device.json", ...["bilibili", "netease", "qq", "kugou"].map(provider =>
+      `accounts/${provider}/66697874757265/1.json`)];
+    for (const [index, file] of files.entries()) await put(source, join(prefix, store, file), JSON.stringify({ version: 1, credential: `fixture-${index}` }));
+    await put(source, join(prefix, lock), "");
+    const result = await stageLegacyMediaState(source, stage, { tuneweaveUrl: "http://127.0.0.1:7832" });
+    expect(result).toEqual({ active: [{ path: store, files: 6 }], held: [] });
+    for (const file of files) {
+      expect(await readFile(join(stage, store, file))).toEqual(await readFile(join(source, prefix, store, file)));
+      expect((await lstat(join(stage, store, file))).mode & 0o777).toBe(0o600);
+    }
+    expect(await Bun.file(join(stage, lock)).exists()).toBe(false);
+    expect(await readFile(join(stage, "backup/media-state", prefix, lock), "utf8")).toBe("");
+    expect(await readFile(join(source, prefix, lock), "utf8")).toBe("");
+  }));
+}
+
+test("未知或非空的 TuneWeave 锁文件仍应私有保留并标记待处理", () => fixture(async (source, stage) => {
+  await put(source, join(oldRoot, managed), "{}\n");
+  await put(source, join(oldRoot, "data/tuneweave/accounts/accounts/.credential-store.lock"), "unexpected");
+  const result = await stageLegacyMediaState(source, stage);
+  expect(result.held).toEqual([{ path: "data/tuneweave/accounts", files: 2, reason: "format" }]);
+  expect(await Bun.file(join(stage, managed)).exists()).toBe(false);
+}));

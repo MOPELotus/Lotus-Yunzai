@@ -221,6 +221,12 @@ export async function stageLegacyMediaState(sourcePath: string, stagePath: strin
           if (!record) throw new Error($t("lib.migration-media-state.text_a7e096f7bf"));
           bytesRead += record.bytes.length;
           if (entries.size >= 4096 || bytesRead > maxLocalTotal) throw new Error($t("lib.migration-media-state.text_4bdcee847c"));
+          // TuneWeave leaves an empty flock inode beside its credential JSON files.
+          // Preserve the original for audit, but let the new process create its own lock.
+          if (relativePath === join("accounts", ".credential-store.lock") && !record.bytes.length) {
+            await write(join("backup/media-state", prefix, localStore, relativePath), record.bytes);
+            continue;
+          }
           if (!name.endsWith(".json")) supported = false;
           else try { JSON.parse(decode(record.bytes)); } catch { supported = false; }
           entries.set(relativePath, record.bytes);
