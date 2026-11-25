@@ -5,1135 +5,1135 @@
   "description": "机器人核心、账号命令、启动初始化与日志",
   "sections": {
     "app": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "机器人核心运行入口，负责存储与协议服务监听、账号及签到计划调度、命令分发、群管权限控制与进程生命周期管理",
       "source": "app.ts"
     },
     "lib.account-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：账号 · 命令",
+      "description": "处理账号相关指令，包括刷新 Cookie、同步游戏角色、清除登录凭据、查看档案配置详情、列出登录档案及统计本机用户凭据。",
       "source": "lib/account-commands.ts"
     },
     "lib.account-cookie-status": {
-      "description": "机器人核心、账号命令、启动初始化与日志：账号 · 运行状态",
+      "description": "米游社账号 Cookie 与登录状态查询命令处理",
       "source": "lib/account-cookie-status.ts"
     },
     "lib.adapters.mention-like": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "艾特成员点赞操作的成员核验与计数校验",
       "source": "lib/adapters/mention-like.ts"
     },
     "lib.adapters.milky-config": {
-      "description": "机器人核心、账号命令、启动初始化与日志：配置",
+      "description": "Milky 协议配置文件解析与字段校验",
       "source": "lib/adapters/milky-config.ts"
     },
     "lib.adapters.milky-group-reviews": {
-      "description": "机器人核心、账号命令、启动初始化与日志：群管理",
+      "description": "Milky 协议入群请求审核状态追踪与确认",
       "source": "lib/adapters/milky-group-reviews.ts"
     },
     "lib.adapters.milky-message": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "Milky 协议消息封装、合并转发与定时撤回处理",
       "source": "lib/adapters/milky-message.ts"
     },
     "lib.adapters.milky-session": {
-      "description": "机器人核心、账号命令、启动初始化与日志：会话",
+      "description": "Milky 协议会话事件分发、消息收发、撤回与审批处理",
       "source": "lib/adapters/milky-session.ts"
     },
     "lib.adapters.notice-groups": {
-      "description": "机器人核心、账号命令、启动初始化与日志：订阅与通知",
+      "description": "跨协议群公告发送与撤回的会话路由管理",
       "source": "lib/adapters/notice-groups.ts"
     },
     "lib.adapters.onebot": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "OneBot 11 协议 WebSocket 连接、事件分发与消息回复适配器",
       "source": "lib/adapters/onebot.ts"
     },
     "lib.adapters.onebot-calls": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "OneBot 协议请求调用、消息发送撤回与群友列表校验",
       "source": "lib/adapters/onebot-calls.ts"
     },
     "lib.adapters.onebot-groups": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "OneBot 协议群公告发送与撤回封装",
       "source": "lib/adapters/onebot-groups.ts"
     },
     "lib.adapters.own-group-card": {
-      "description": "机器人核心、账号命令、启动初始化与日志：群管理 · 图片卡片",
+      "description": "机器人自身群名片会话标记与操作接口定义模块",
       "source": "lib/adapters/own-group-card.ts"
     },
     "lib.ark-custom-rank": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "Ark 自定义排行查询与面板快照接口",
       "source": "lib/ark-custom-rank.ts"
     },
     "lib.ark-custom-rank-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：命令",
+      "description": "Ark 自定义排行与面板查看命令",
       "source": "lib/ark-custom-rank-command.ts"
     },
     "lib.ark-rank-credentials": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "Ark 排行服务凭据配置与用量查询命令",
       "source": "lib/ark-rank-credentials.ts"
     },
     "lib.ark-self-rank": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "原神与星穹铁道本人角色全服伤害排名私聊查询命令与结果格式化",
       "source": "lib/ark-self-rank.ts"
     },
     "lib.auto-quit": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "禁止拉群时自动发送提示并退出群聊的处理与日志",
       "source": "lib/auto-quit.ts"
     },
     "lib.builtin-resource-validation": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "内置资源清单解析、文件完整性与 SHA-256 校验",
       "source": "lib/builtin-resource-validation.ts"
     },
     "lib.builtin-resources": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "内置默认素材目录路径解析与合法性校验",
       "source": "lib/builtin-resources.ts"
     },
     "lib.captcha.initialize": {
-      "description": "机器人核心、账号命令、启动初始化与日志：验证码",
+      "description": "本地验证码模型的初始化检查、下载校验与进度上报",
       "source": "lib/captcha/initialize.ts"
     },
     "lib.captcha.manual-relay": {
-      "description": "机器人核心、账号命令、启动初始化与日志：验证码 · 转发",
+      "description": "人工验证码中继服务的配置校验与公开地址路径解析",
       "source": "lib/captcha/manual-relay.ts"
     },
     "lib.captcha.providers": {
-      "description": "机器人核心、账号命令、启动初始化与日志：验证码",
+      "description": "验证码识别提供方顺序及服务端点配置解析",
       "source": "lib/captcha/providers.ts"
     },
     "lib.character-gallery-source": {
-      "description": "机器人核心、账号命令、启动初始化与日志：图库",
+      "description": "上游 Git 角色图库索引拉取、目录树校验与图片资源下载",
       "source": "lib/character-gallery-source.ts"
     },
     "lib.character-gallery-sync": {
-      "description": "机器人核心、账号命令、启动初始化与日志：图库",
+      "description": "托管角色图库本地快照的校验、增量复用同步与原子发布",
       "source": "lib/character-gallery-sync.ts"
     },
     "lib.chat-media-links": {
-      "description": "机器人核心、账号命令、启动初始化与日志：媒体",
+      "description": "会话图片与文件附件的直链生成、数量限制及交互回复处理",
       "source": "lib/chat-media-links.ts"
     },
     "lib.chat-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：设置",
+      "description": "聊天系统设置读取、保存与设置卡片渲染",
       "source": "lib/chat-settings.ts"
     },
     "lib.checkin-audit": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到",
+      "description": "签到审计日志的文件安全读写以及各阶段与状态文本定义",
       "source": "lib/checkin-audit.ts"
     },
     "lib.checkin-audit-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 命令",
+      "description": "自动签到日志查询命令处理与卡片渲染",
       "source": "lib/checkin-audit-commands.ts"
     },
     "lib.checkin-batch-refresh-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 命令",
+      "description": "批量刷新所有签到档案 Cookie 与同步角色信息的机器人命令处理",
       "source": "lib/checkin-batch-refresh-commands.ts"
     },
     "lib.checkin-group-registration-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 群管理 · 注册 · 命令",
+      "description": "群内批量注册签到通知的机器人命令处理与结果卡片输出",
       "source": "lib/checkin-group-registration-commands.ts"
     },
     "lib.checkin-plan-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 命令",
+      "description": "签到计划查询、个人签到时间展示及到期签到执行命令",
       "source": "lib/checkin-plan-commands.ts"
     },
     "lib.checkin-profile-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 档案 · 命令",
+      "description": "签到档案设置、通知绑定与时间调度命令",
       "source": "lib/checkin-profile-commands.ts"
     },
     "lib.checkin-registration-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 注册 · 命令",
+      "description": "自动签到注册、状态查询与关闭命令",
       "source": "lib/checkin-registration-commands.ts"
     },
     "lib.checkin-roster-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 命令",
+      "description": "签到名单查询与状态卡片展示命令",
       "source": "lib/checkin-roster-commands.ts"
     },
     "lib.checkin-schedule-handback": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 排期",
+      "description": "新旧版本自动签到计划交接、回执核验与补跑冻结控制",
       "source": "lib/checkin-schedule-handback.ts"
     },
     "lib.checkin-schedule-plan": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 排期",
+      "description": "自动签到排期计划生成、时间窗口与参数校验",
       "source": "lib/checkin-schedule-plan.ts"
     },
     "lib.checkin-schedule-runtime": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 排期 · 运行环境",
+      "description": "自动签到定时任务调度、补偿与明日计划运行环境",
       "source": "lib/checkin-schedule-runtime.ts"
     },
     "lib.checkin-schedule-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 排期 · 设置",
+      "description": "全局自动签到调度配置读取、更新与错误定义",
       "source": "lib/checkin-schedule-settings.ts"
     },
     "lib.checkin-schedule-store": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 排期",
+      "description": "负责自动签到计划文件的安全读写、文件锁控制与数据校验",
       "source": "lib/checkin-schedule-store.ts"
     },
     "lib.checkin-scheduler": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到 · 定时调度",
+      "description": "负责自动签到与手动签到的定时调度、写入日志记录与补跑状态管理",
       "source": "lib/checkin-scheduler.ts"
     },
     "lib.cloud-profile-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：档案 · 命令",
+      "description": "处理云游戏（云原神、云绝区零）凭据绑定、钱包查询及开关设置等档案指令",
       "source": "lib/cloud-profile-commands.ts"
     },
     "lib.command-delegation": {
-      "description": "机器人核心、账号命令、启动初始化与日志：命令",
+      "description": "管理批量委托执行命令的目标解析与数量限制",
       "source": "lib/command-delegation.ts"
     },
     "lib.command-prefix": {
-      "description": "机器人核心、账号命令、启动初始化与日志：命令",
+      "description": "规范化处理游戏与原图相关消息指令的前缀",
       "source": "lib/command-prefix.ts"
     },
     "lib.commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：命令",
+      "description": "注册模块指令与别名、校验指令格式，并处理命令回复与合并转发。",
       "source": "lib/commands.ts"
     },
     "lib.config": {
-      "description": "机器人核心、账号命令、启动初始化与日志：配置",
+      "description": "读取并校验配置对象及配置中的 ID 列表。",
       "source": "lib/config.ts"
     },
     "lib.daily-note": {
-      "description": "机器人核心、账号命令、启动初始化与日志：每日便笺",
+      "description": "查询原神、星铁、绝区零每日便笺及体力等资源状态，并格式化输出查询结果。",
       "source": "lib/daily-note.ts"
     },
     "lib.daily-note-reminders": {
-      "description": "机器人核心、账号命令、启动初始化与日志：每日便笺",
+      "description": "管理群聊体力推送的订阅、阈值配置、数据库存储及定时轮询提醒。",
       "source": "lib/daily-note-reminders.ts"
     },
     "lib.device-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：设备信息 · 命令",
+      "description": "档案设备信息的私聊绑定、解绑与帮助命令处理",
       "source": "lib/device-commands.ts"
     },
     "lib.dispatch-power": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "机器人软开关机控制与运行/停机时长统计",
       "source": "lib/dispatch-power.ts"
     },
     "lib.dispatch-power-schedule": {
-      "description": "机器人核心、账号命令、启动初始化与日志：排期",
+      "description": "基于 Cron 配置的定时开关机任务调度",
       "source": "lib/dispatch-power-schedule.ts"
     },
     "lib.donation-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：捐赠 · 命令",
+      "description": "捐赠命令处理及卡片图片与链接回复",
       "source": "lib/donation-command.ts"
     },
     "lib.file-lock": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "基于 SQLite 的文件互斥锁管理",
       "source": "lib/file-lock.ts"
     },
     "lib.file-to-url": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "文件与本地图像校验及临时 HTTP 访问链接生成",
       "source": "lib/file-to-url.ts"
     },
     "lib.filesystem-transaction": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "文件系统安全移动与目录同步事务工具",
       "source": "lib/filesystem-transaction.ts"
     },
     "lib.fixed-theme": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "固定主题所需原始素材的本地读取、远程下载与准备进度上报",
       "source": "lib/fixed-theme.ts"
     },
     "lib.foreground-control": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "前台托管宿主的本地控制套接字、锁校验与跨终端安全停止控制",
       "source": "lib/foreground-control.ts"
     },
     "lib.friend-requests": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "自动处理好友申请并记录审批确认状态的日志输出",
       "source": "lib/friend-requests.ts"
     },
     "lib.gacha-batch": {
-      "description": "机器人核心、账号命令、启动初始化与日志：抽卡记录",
+      "description": "批量更新账号下各游戏档案抽卡记录的命令处理与结果汇总",
       "source": "lib/gacha-batch.ts"
     },
     "lib.gacha-expectation-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：抽卡记录 · 命令",
+      "description": "抽卡期望计算命令解析与结果报告",
       "source": "lib/gacha-expectation-commands.ts"
     },
     "lib.gacha-image-reply": {
-      "description": "机器人核心、账号命令、启动初始化与日志：抽卡记录",
+      "description": "抽卡记录图片渲染与分段合并转发回复",
       "source": "lib/gacha-image-reply.ts"
     },
     "lib.game-character-aliases": {
-      "description": "机器人核心、账号命令、启动初始化与日志：游戏",
+      "description": "游戏角色别名管理、查询与旧配置迁移",
       "source": "lib/game-character-aliases.ts"
     },
     "lib.game-checkin-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：游戏 · 签到 · 命令",
+      "description": "游戏每日签到命令执行、验证码处理与回执生成",
       "source": "lib/game-checkin-commands.ts"
     },
     "lib.game-profile-defaults": {
-      "description": "机器人核心、账号命令、启动初始化与日志：游戏 · 档案",
+      "description": "各游戏默认档案配置读取与变更校验存储",
       "source": "lib/game-profile-defaults.ts"
     },
     "lib.general-tools": {
-      "description": "机器人核心、账号命令、启动初始化与日志：工具",
+      "description": "群聊实用工具命令（随机猫图与软件推荐查询）",
       "source": "lib/general-tools.ts"
     },
     "lib.generated-device-runtime": {
-      "description": "机器人核心、账号命令、启动初始化与日志：设备信息 · 运行环境",
+      "description": "自动设备指纹申请与重试运行时",
       "source": "lib/generated-device-runtime.ts"
     },
     "lib.genshin-wish-settings-model": {
-      "description": "机器人核心、账号命令、启动初始化与日志：原神 · 模拟祈愿 · 设置",
+      "description": "原神模拟祈愿配置校验与解析模型",
       "source": "lib/genshin-wish-settings-model.ts"
     },
     "lib.group-avatar-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：群管理 · 命令",
+      "description": "修改群头像与机器人头像命令",
       "source": "lib/group-avatar-command.ts"
     },
     "lib.group-cleanup-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：群管理 · 命令",
+      "description": "退群档案清理命令（#群清理退群），负责权限校验、审计记录及群通知回退清理结果卡片渲染",
       "source": "lib/group-cleanup-commands.ts"
     },
     "lib.group-dispatch": {
-      "description": "机器人核心、账号命令、启动初始化与日志：群管理",
+      "description": "群聊消息派发与路由配置模块，负责默认路由参数、功能映射表及 YAML 配置文件读取与热重载",
       "source": "lib/group-dispatch.ts"
     },
     "lib.group-join-review": {
-      "description": "机器人核心、账号命令、启动初始化与日志：群管理",
+      "description": "入群申请审核确认模块，负责跟踪并确认加群请求的审批执行结果",
       "source": "lib/group-join-review.ts"
     },
     "lib.group-member-export": {
-      "description": "机器人核心、账号命令、启动初始化与日志：群管理",
+      "description": "整理群成员数据并生成 CSV 导出表格",
       "source": "lib/group-member-export.ts"
     },
     "lib.group-member-export-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：群管理 · 命令",
+      "description": "处理群成员列表 CSV 导出与文件上传命令",
       "source": "lib/group-member-export-command.ts"
     },
     "lib.group-panel-rank-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：群管理 · 面板 · 设置",
+      "description": "定义群面板排行、圣遗物/遗器列表上限、数字分组及幽境危战数据源等配置项",
       "source": "lib/group-panel-rank-settings.ts"
     },
     "lib.host-access-list": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "处理 QQ 用户与群聊的黑名单及白名单管理命令",
       "source": "lib/host-access-list.ts"
     },
     "lib.hoyolab-network": {
-      "description": "机器人核心、账号命令、启动初始化与日志：HoYoLAB · 网络",
+      "description": "配置 HoYoLAB 国际服网络请求代理与重试逻辑",
       "source": "lib/hoyolab-network.ts"
     },
     "lib.hoyolab-profile-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：HoYoLAB · 档案 · 命令",
+      "description": "处理 HoYoLAB 国际服 Cookie 绑定、签到开关及语言设置命令",
       "source": "lib/hoyolab-profile-commands.ts"
     },
     "lib.image-ocr": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "图片文字识别（OCR）指令处理与图片读取校验",
       "source": "lib/image-ocr.ts"
     },
     "lib.image-previews": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "图片预览资源缓存与文件锁管理",
       "source": "lib/image-previews.ts"
     },
     "lib.initialization-progress": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "初始化与准备阶段终端进度日志渲染",
       "source": "lib/initialization-progress.ts"
     },
     "lib.initialization-state": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "完整初始化状态标记检查",
       "source": "lib/initialization-state.ts"
     },
     "lib.initialize-resources": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "运行时角色图库、攻略及媒体环境资源初始化调度",
       "source": "lib/initialize-resources.ts"
     },
     "lib.install-catalog": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "插件安装名录 YAML 配置读取与校验",
       "source": "lib/install-catalog.ts"
     },
     "lib.install-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：命令",
+      "description": "插件列表查询与受管安装指令处理",
       "source": "lib/install-command.ts"
     },
     "lib.keyword-store": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "词条与媒体数据的持久化存储及校验",
       "source": "lib/keyword-store.ts"
     },
     "lib.keywords": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "词条添加、删除、列表查询与触发回复处理",
       "source": "lib/keywords.ts"
     },
     "lib.legacy-anniversary": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "游戏注册时间查询与本地缓存存档管理",
       "source": "lib/legacy-anniversary.ts"
     },
     "lib.legacy-character-alias-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：命令",
+      "description": "角色别名查询与修改命令处理",
       "source": "lib/legacy-character-alias-command.ts"
     },
     "lib.legacy-panel-recovery-flow": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板",
+      "description": "管理从旧档服务恢复玩家角色面板的确认流程与状态校验",
       "source": "lib/legacy-panel-recovery-flow.ts"
     },
     "lib.legacy-write-state": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "解析并校验跨版本数据交还时的商城预约、追踪及前瞻兑换账本状态",
       "source": "lib/legacy-write-state.ts"
     },
     "lib.local-ocr": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "封装本机 Tesseract OCR 引擎与语言模型检查及图片文字识别功能",
       "source": "lib/local-ocr.ts"
     },
     "lib.log-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：命令",
+      "description": "处理运行日志与错误日志的查询命令及参数校验",
       "source": "lib/log-command.ts"
     },
     "lib.log-reply": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "将查询到的日志内容格式化并分片或转发回复给用户或终端",
       "source": "lib/log-reply.ts"
     },
     "lib.lotus-global-config-write": {
-      "description": "机器人核心、账号命令、启动初始化与日志：配置",
+      "description": "提供全局配置与群组配置文件的加锁及安全写入控制",
       "source": "lib/lotus-global-config-write.ts"
     },
     "lib.managed-dispatch-pause": {
-      "description": "机器人核心、账号命令、启动初始化与日志：进程托管",
+      "description": "负责后台软关机状态的持久化读写、启动标记及关机时间戳校验。",
       "source": "lib/managed-dispatch-pause.ts"
     },
     "lib.managed-exit": {
-      "description": "机器人核心、账号命令、启动初始化与日志：进程托管",
+      "description": "负责托管宿主进程的启动收尾与退出码处理。",
       "source": "lib/managed-exit.ts"
     },
     "lib.managed-handoff": {
-      "description": "机器人核心、账号命令、启动初始化与日志：进程托管",
+      "description": "负责受管工作进程与候选宿主之间的启动交接、存储配置一致性校验及重启协调。",
       "source": "lib/managed-handoff.ts"
     },
     "lib.managed-supervisor": {
-      "description": "机器人核心、账号命令、启动初始化与日志：进程托管",
+      "description": "负责托管工作进程的生命周期监管、更新或插件安装时的宿主切换、激活验证与异常回滚。",
       "source": "lib/managed-supervisor.ts"
     },
     "lib.managed-valkey": {
-      "description": "机器人核心、账号命令、启动初始化与日志：进程托管 · 内存数据库",
+      "description": "项目托管 Valkey 实例的下载、编译、启停与运行状态检查",
       "source": "lib/managed-valkey.ts"
     },
     "lib.managed-worker": {
-      "description": "机器人核心、账号命令、启动初始化与日志：进程托管",
+      "description": "托管工作宿主进程的拉起、激活、端点衔接校验与停止控制",
       "source": "lib/managed-worker.ts"
     },
     "lib.manual-group-leave": {
-      "description": "机器人核心、账号命令、启动初始化与日志：群管理",
+      "description": "手动退群命令的权限校验、群号检查与退群执行流程",
       "source": "lib/manual-group-leave.ts"
     },
     "lib.master-config": {
-      "description": "机器人核心、账号命令、启动初始化与日志：配置",
+      "description": "other.yaml 中的主人授权、黑白名单与宿主接入策略配置读写",
       "source": "lib/master-config.ts"
     },
     "lib.master-enrollment": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "主人权限申请、验证码签发与验证绑定处理（#设置主人 / #设置主人验证码）",
       "source": "lib/master-enrollment.ts"
     },
     "lib.media-delivery": {
-      "description": "机器人核心、账号命令、启动初始化与日志：媒体",
+      "description": "基于硬链接的媒体文件临时递送与过期清理",
       "source": "lib/media-delivery.ts"
     },
     "lib.message-counts": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "基于 Redis 的收发消息计数存储与日期桶查询",
       "source": "lib/message-counts.ts"
     },
     "lib.message-statistics": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "#统计 消息收发统计命令的参数解析与结果格式化",
       "source": "lib/message-statistics.ts"
     },
     "lib.messages": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "消息发送回执确认与撤回回执处理",
       "source": "lib/messages.ts"
     },
     "lib.migration-atlas-state": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 图鉴",
+      "description": "旧版图鉴配置与导出数据校验及迁移暂存",
       "source": "lib/migration-atlas-state.ts"
     },
     "lib.migration-checkin-schedules": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 签到",
+      "description": "旧版签到计划数据校验与迁移暂存",
       "source": "lib/migration-checkin-schedules.ts"
     },
     "lib.migration-core-config": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 配置",
+      "description": "旧版核心配置文件解析、过滤与迁移暂存",
       "source": "lib/migration-core-config.ts"
     },
     "lib.migration-daily-note-reminders": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 每日便笺",
+      "description": "旧版体力提醒配置与默认文案迁移暂存",
       "source": "lib/migration-daily-note-reminders.ts"
     },
     "lib.migration-files": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移",
+      "description": "迁移源文件的安全快照读取与变更检测",
       "source": "lib/migration-files.ts"
     },
     "lib.migration-gacha-display": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 抽卡记录",
+      "description": "旧版抽卡展示设置转换与迁移暂存",
       "source": "lib/migration-gacha-display.ts"
     },
     "lib.migration-game-data": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 游戏",
+      "description": "旧版游戏抽卡与角色面板数据校验、合并及迁移暂存",
       "source": "lib/migration-game-data.ts"
     },
     "lib.migration-game-profile-defaults": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 游戏 · 档案",
+      "description": "旧版游戏默认关联档案迁移暂存",
       "source": "lib/migration-game-profile-defaults.ts"
     },
     "lib.migration-genshin-wish": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 原神 · 模拟祈愿",
+      "description": "旧版原神模拟祈愿配置与数据迁移暂存",
       "source": "lib/migration-genshin-wish.ts"
     },
     "lib.migration-global-config": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 配置",
+      "description": "旧版全局配置校验、规范化与迁移暂存",
       "source": "lib/migration-global-config.ts"
     },
     "lib.migration-group-config": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 群管理 · 配置",
+      "description": "群管、通知、公告及屏蔽词旧配置的校验与暂存迁移",
       "source": "lib/migration-group-config.ts"
     },
     "lib.migration-keywords": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移",
+      "description": "旧词条数据与媒体引用的校验、归档与暂存迁移",
       "source": "lib/migration-keywords.ts"
     },
     "lib.migration-lolomi-config": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 配置",
+      "description": "原神伤害计算旧配置的校验与暂存迁移",
       "source": "lib/migration-lolomi-config.ts"
     },
     "lib.migration-media-config": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 媒体 · 配置",
+      "description": "旧媒体与 TuneWeave 服务配置的校验与迁移",
       "source": "lib/migration-media-config.ts"
     },
     "lib.migration-media-state": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 媒体",
+      "description": "旧媒体与 TuneWeave 账号状态数据的校验与暂存迁移",
       "source": "lib/migration-media-state.ts"
     },
     "lib.migration-meme-state": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移",
+      "description": "旧表情预设与统计数据的校验与迁移",
       "source": "lib/migration-meme-state.ts"
     },
     "lib.migration-network-config": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 网络 · 配置",
+      "description": "旧网络 YAML 配置的读取、校验与暂存迁移",
       "source": "lib/migration-network-config.ts"
     },
     "lib.migration-official-bindings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移",
+      "description": "旧官方登录绑定数据库快照的校验与迁移",
       "source": "lib/migration-official-bindings.ts"
     },
     "lib.migration-panel-rank": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 面板",
+      "description": "旧群榜面板配置的校验与暂存迁移",
       "source": "lib/migration-panel-rank.ts"
     },
     "lib.migration-profiles": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移",
+      "description": "旧用户档案数据的校验与暂存迁移",
       "source": "lib/migration-profiles.ts"
     },
     "lib.migration-public-role-references": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移",
+      "description": "旧公开 UID 角色引用数据的暂存迁移",
       "source": "lib/migration-public-role-references.ts"
     },
     "lib.migration-publication": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移",
+      "description": "负责将已验证的迁移暂存数据及兼容插件安全发布至目标 Lotus-Yunzai 工作区，并处理发布恢复与核对",
       "source": "lib/migration-publication.ts"
     },
     "lib.migration-redeem-state": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 兑换",
+      "description": "负责读取、校验并暂存旧版前瞻兑换账本与活动兑换状态数据",
       "source": "lib/migration-redeem-state.ts"
     },
     "lib.migration-shared-game-history": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 游戏",
+      "description": "负责校验与暂存旧版跃迁或调频历史记录文件，确保迁移过程的数据一致性与目录安全",
       "source": "lib/migration-shared-game-history.ts"
     },
     "lib.migration-shop-audit": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 米游币商城",
+      "description": "负责读取、校验并暂存旧版米游币商城及签到审计记录",
       "source": "lib/migration-shop-audit.ts"
     },
     "lib.migration-showcase": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 角色展柜",
+      "description": "迁移旧版角色展柜区服配置",
       "source": "lib/migration-showcase.ts"
     },
     "lib.migration-starrail-independent-warp": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 星铁 · 模拟跃迁",
+      "description": "迁移旧版独立星铁模拟跃迁设置并写入暂存目录",
       "source": "lib/migration-starrail-independent-warp.ts"
     },
     "lib.migration-starrail-warp-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 星铁 · 模拟跃迁 · 设置",
+      "description": "迁移旧版星铁模拟跃迁设置及个人卡池配置",
       "source": "lib/migration-starrail-warp-settings.ts"
     },
     "lib.migration-state": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移",
+      "description": "校验并暂存旧安装副本中的配置与逐抽记录状态",
       "source": "lib/migration-state.ts"
     },
     "lib.migration-trss-wish": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 模拟祈愿",
+      "description": "迁移旧版 TRSS 原神限抽记录与会话快照",
       "source": "lib/migration-trss-wish.ts"
     },
     "lib.migration-zzz-challenge-reminder": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 绝区零",
+      "description": "迁移旧版绝区零挑战提醒配置并写入暂存目录",
       "source": "lib/migration-zzz-challenge-reminder.ts"
     },
     "lib.migration-zzz-recall": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 绝区零",
+      "description": "迁移旧版绝区零面板撤回配置并写入暂存目录",
       "source": "lib/migration-zzz-recall.ts"
     },
     "lib.migration-zzz-update-notice": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移 · 绝区零 · 更新 · 订阅与通知",
+      "description": "迁移旧版绝区零更新推送定时任务配置",
       "source": "lib/migration-zzz-update-notice.ts"
     },
     "lib.miyoushe-balance": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "查询当前档案米游币余额与错误处理",
       "source": "lib/miyoushe-balance.ts"
     },
     "lib.miyoushe-overview": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "获取米游社社区任务、余额与签到概览",
       "source": "lib/miyoushe-overview.ts"
     },
     "lib.miyoushe-shop-catalog": {
-      "description": "机器人核心、账号命令、启动初始化与日志：米游币商城",
+      "description": "读取米游币商城商品目录、详情及绑定角色",
       "source": "lib/miyoushe-shop-catalog.ts"
     },
     "lib.miyoushe-shop-plans": {
-      "description": "机器人核心、账号命令、启动初始化与日志：米游币商城",
+      "description": "米游币商城商品预约兑换计划、持续追踪规则管理与状态核验",
       "source": "lib/miyoushe-shop-plans.ts"
     },
     "lib.miyoushe-web": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "米游社网页功能页入口命令、一次性票据与网页会话鉴权、手动签到与档案设置接口",
       "source": "lib/miyoushe-web.ts"
     },
     "lib.online-notice": {
-      "description": "机器人核心、账号命令、启动初始化与日志：订阅与通知",
+      "description": "机器人上线通知与帮助指令菜单",
       "source": "lib/online-notice.ts"
     },
     "lib.own-role-legacy-artwork": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "本人角色旧版立绘与横幅资源路径读取",
       "source": "lib/own-role-legacy-artwork.ts"
     },
     "lib.own-role-selection": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "本人游戏角色与档案的查询、切换及卡片展示",
       "source": "lib/own-role-selection.ts"
     },
     "lib.owner-account-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：主人权限 · 账号 · 命令",
+      "description": "机器人主人对账号资料、状态及好友的管理命令",
       "source": "lib/owner-account-command.ts"
     },
     "lib.owner-contact-list": {
-      "description": "机器人核心、账号命令、启动初始化与日志：主人权限",
+      "description": "机器人主人查看与分页转发群列表和好友列表",
       "source": "lib/owner-contact-list.ts"
     },
     "lib.owner-message-relay": {
-      "description": "机器人核心、账号命令、启动初始化与日志：主人权限 · 转发",
+      "description": "机器人主人代发与转发消息到指定群聊或好友",
       "source": "lib/owner-message-relay.ts"
     },
     "lib.owner-qzone-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：主人权限 · 命令",
+      "description": "主人权限下的 QQ 空间说说列表、发布与删除命令处理模块",
       "source": "lib/owner-qzone-command.ts"
     },
     "lib.panel": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板",
+      "description": "管理面板静态构建产物服务及 JSON 请求体大小与格式校验",
       "source": "lib/panel.ts"
     },
     "lib.panel-atlas-gallery": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 图鉴 · 图库",
+      "description": "面板图鉴图库目录扫描与图片预览接口模块",
       "source": "lib/panel-atlas-gallery.ts"
     },
     "lib.panel-bilibili-schema": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 哔哩哔哩",
+      "description": "面板哔哩哔哩视频下载与发送的分辨率、分 P 策略及数值限制配置模型",
       "source": "lib/panel-bilibili-schema.ts"
     },
     "lib.panel-checkin-schedule": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 签到 · 排期",
+      "description": "面板自动签到排期设置的请求处理与时间窗口参数校验",
       "source": "lib/panel-checkin-schedule.ts"
     },
     "lib.panel-daily-note-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 每日便笺 · 设置",
+      "description": "面板每日便笺体力提醒的表单字段定义、调度模式与配置校验保存",
       "source": "lib/panel-daily-note-settings.ts"
     },
     "lib.panel-douyin-schema": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 抖音",
+      "description": "面板抖音作品下载与发送的画质、多项策略及数值限制配置模型",
       "source": "lib/panel-douyin-schema.ts"
     },
     "lib.panel-gacha-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 抽卡记录 · 设置",
+      "description": "面板抽卡记录图表分页、欧皇度评级与概率模型覆盖设置定义",
       "source": "lib/panel-gacha-settings.ts"
     },
     "lib.panel-game-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 游戏 · 设置",
+      "description": "控制面板中原神与星铁的展柜、原图、旧档恢复及伤害计算设置接口与字段定义。",
       "source": "lib/panel-game-settings.ts"
     },
     "lib.panel-genshin-wish-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 原神 · 模拟祈愿 · 设置",
+      "description": "控制面板中原神模拟祈愿的开关、概率、卡池名单、每日配额及撤回设置接口与字段定义。",
       "source": "lib/panel-genshin-wish-settings.ts"
     },
     "lib.panel-group-management": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 群管理",
+      "description": "面板群管、入群验证、投票处罚及自动群名片设置接口",
       "source": "lib/panel-group-management.ts"
     },
     "lib.panel-group-routing": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 群管理",
+      "description": "面板群消息派发规则、冷却时间与关键词权限配置接口",
       "source": "lib/panel-group-routing.ts"
     },
     "lib.panel-guides-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 攻略 · 设置",
+      "description": "面板攻略合集、默认攻略来源及日历推送任务配置接口",
       "source": "lib/panel-guides-settings.ts"
     },
     "lib.panel-guoba": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板",
+      "description": "锅巴插件配置表单编译、校验保存与按钮操作执行接口",
       "source": "lib/panel-guoba.ts"
     },
     "lib.panel-guoba-actions": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板",
+      "description": "锅巴插件表单操作按钮参数校验与按钮组构建",
       "source": "lib/panel-guoba-actions.ts"
     },
     "lib.panel-guoba-http": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板",
+      "description": "锅巴插件扩展 HTTP 路由匹配、请求校验与接口分发处理",
       "source": "lib/panel-guoba-http.ts"
     },
     "lib.panel-guoba-pages": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板",
+      "description": "锅巴插件扩展页面上下文与插件日志前缀封装",
       "source": "lib/panel-guoba-pages.ts"
     },
     "lib.panel-ingress-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 设置",
+      "description": "消息接入与好友/群邀请自动处理规则的面板设置项",
       "source": "lib/panel-ingress-settings.ts"
     },
     "lib.panel-media-environment-schema": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 媒体",
+      "description": "媒体工具链与 TuneWeave 服务环境参数的面板配置结构",
       "source": "lib/panel-media-environment-schema.ts"
     },
     "lib.panel-music-schema": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 音乐",
+      "description": "点歌面板的音乐平台、音质选项及搜索下载数值限制定义",
       "source": "lib/panel-music-schema.ts"
     },
     "lib.panel-notice-delivery-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 订阅与通知 · 设置",
+      "description": "米游社公告投递的全局黑白名单、机器人账号推送参数及群级订阅覆盖读写",
       "source": "lib/panel-notice-delivery-settings.ts"
     },
     "lib.panel-notice-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 订阅与通知 · 设置",
+      "description": "米游社各游戏公告、资讯与活动到期提醒的调度窗口、目标群组及过滤规则配置",
       "source": "lib/panel-notice-settings.ts"
     },
     "lib.panel-owner-session": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 主人权限 · 会话",
+      "description": "机器人主人通过私聊指令获取管理面板一次性登录链接与会话凭据",
       "source": "lib/panel-owner-session.ts"
     },
     "lib.panel-partner": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 网易云合伙人",
+      "description": "管理网易云音乐合伙人功能配置默认值及修订逻辑。",
       "source": "lib/panel-partner.ts"
     },
     "lib.panel-partner-schema": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 网易云合伙人",
+      "description": "网易云合伙人面板配置项的数值约束、默认调度及乐评生成模式定义",
       "source": "lib/panel-partner-schema.ts"
     },
     "lib.panel-process-schedule-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 排期 · 设置",
+      "description": "管理宿主自动更新、更新通知、定时重启及消息派发启停的面板设置。",
       "source": "lib/panel-process-schedule-settings.ts"
     },
     "lib.panel-rebuild": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板",
+      "description": "处理私聊触发的原神与星铁面板批量重建命令及状态报告生成。",
       "source": "lib/panel-rebuild.ts"
     },
     "lib.panel-remote-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 设置",
+      "description": "管理远程运维功能的 TOTP 配对、启停、命令超时、可用 Shell 及权限面板设置。",
       "source": "lib/panel-remote-settings.ts"
     },
     "lib.panel-runtime-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 运行环境 · 设置",
+      "description": "面板运行环境设置表单，包含图片渲染、日志、插件超时及文件分享等配置项",
       "source": "lib/panel-runtime-settings.ts"
     },
     "lib.panel-signature": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板",
+      "description": "原神与星铁角色面板导出前的游戏内个人签名核验流程",
       "source": "lib/panel-signature.ts"
     },
     "lib.panel-starrail-independent-warp": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 星铁 · 模拟跃迁",
+      "description": "星铁模拟跃迁面板中旧十连独立规则设置的读取与保存接口",
       "source": "lib/panel-starrail-independent-warp.ts"
     },
     "lib.panel-starrail-warp-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 星铁 · 模拟跃迁 · 设置",
+      "description": "星铁模拟跃迁面板中基础参数、抽卡概率及手工卡池名单的读取与保存接口",
       "source": "lib/panel-starrail-warp-settings.ts"
     },
     "lib.panel-status-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 运行状态 · 设置",
+      "description": "运行状态面板配置项定义与校验模块，涵盖图表展示、主题样式、后台监控、进程负载及网络探测设置",
       "source": "lib/panel-status-settings.ts"
     },
     "lib.panel-transfer-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 命令",
+      "description": "跨机器人面板数据导入与导出命令处理",
       "source": "lib/panel-transfer-command.ts"
     },
     "lib.panel-web-mount": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板",
+      "description": "管理后台端口挂载面板插件定义与路由配置",
       "source": "lib/panel-web-mount.ts"
     },
     "lib.panel-zzz-settings": {
-      "description": "机器人核心、账号命令、启动初始化与日志：面板 · 绝区零 · 设置",
+      "description": "绝区零群排行、面板刷新及挑战提醒后台设置的读取、校验与保存接口",
       "source": "lib/panel-zzz-settings.ts"
     },
     "lib.passport-login": {
-      "description": "机器人核心、账号命令、启动初始化与日志：通行证 · 登录",
+      "description": "米游社通行证扫码登录流程处理",
       "source": "lib/passport-login.ts"
     },
     "lib.permission-command-edits": {
-      "description": "机器人核心、账号命令、启动初始化与日志：命令",
+      "description": "业务权限配置的聊天指令修改与审计记录",
       "source": "lib/permission-command-edits.ts"
     },
     "lib.permission-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：命令",
+      "description": "业务权限查看与修改的聊天指令处理",
       "source": "lib/permission-commands.ts"
     },
     "lib.permissions": {
-      "description": "机器人核心、账号命令、启动初始化与日志：权限",
+      "description": "主人权限配置解析与热重载管理",
       "source": "lib/permissions.ts"
     },
     "lib.plugins.contexts": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "插件对话上下文与会话超时管理",
       "source": "lib/plugins/contexts.ts"
     },
     "lib.plugins.exit-hooks": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "旧版插件退出钩子与事件监听管理",
       "source": "lib/plugins/exit-hooks.ts"
     },
     "lib.plugins.file-watch": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "旧版插件目录文件监听与热重载",
       "source": "lib/plugins/file-watch.ts"
     },
     "lib.plugins.handler": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "插件处理器注册与旧版接口兼容",
       "source": "lib/plugins/handler.ts"
     },
     "lib.plugins.legacy": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "旧版 V3 插件与原生事件的规则校验及注册管理",
       "source": "lib/plugins/legacy.ts"
     },
     "lib.plugins.legacy-backup-stage": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "旧版插件迁移前的归档暂存",
       "source": "lib/plugins/legacy-backup-stage.ts"
     },
     "lib.plugins.legacy-dependency-resolution": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "旧版插件外部依赖解析与检查",
       "source": "lib/plugins/legacy-dependency-resolution.ts"
     },
     "lib.plugins.legacy-http": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "旧版插件 HTTP POST 路由兼容层",
       "source": "lib/plugins/legacy-http.ts"
     },
     "lib.plugins.legacy-retained-stage": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "旧版兼容插件迁移暂存与预检",
       "source": "lib/plugins/legacy-retained-stage.ts"
     },
     "lib.plugins.loader": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "插件发现、加载、热更新、卸载与导出接口校验",
       "source": "lib/plugins/loader.ts"
     },
     "lib.plugins.local-plugin-copy": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "本地插件安全复制、文件类型权限校验与符号链接恢复",
       "source": "lib/plugins/local-plugin-copy.ts"
     },
     "lib.plugins.metadata": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "定义已退役脚本、旧 TRSS 宿主脚本及内置插件目录映射的插件元数据模块",
       "source": "lib/plugins/metadata.ts"
     },
     "lib.plugins.migration-plan": {
-      "description": "机器人核心、账号命令、启动初始化与日志：迁移",
+      "description": "校验迁移源与目标目录、核对 Git 内置插件并生成旧插件迁移计划的预检模块",
       "source": "lib/plugins/migration-plan.ts"
     },
     "lib.plugins.policy": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "定义旧插件归并替代规则与受限游戏插件匹配策略，并生成拒绝原因的模块",
       "source": "lib/plugins/policy.ts"
     },
     "lib.plugins.tasks": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "插件定时任务注册、校验与调度执行",
       "source": "lib/plugins/tasks.ts"
     },
     "lib.private-access": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "私聊访问限制策略配置与提示",
       "source": "lib/private-access.ts"
     },
     "lib.process-receipts": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "进程状态回执校验与持久化存储",
       "source": "lib/process-receipts.ts"
     },
     "lib.process-restart": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "进程内重启环境检测与执行",
       "source": "lib/process-restart.ts"
     },
     "lib.process-restart-schedule": {
-      "description": "机器人核心、账号命令、启动初始化与日志：排期",
+      "description": "基于配置与定时任务的进程重启排期",
       "source": "lib/process-restart-schedule.ts"
     },
     "lib.public-files": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "临时公开文件分享注册与容量管理",
       "source": "lib/public-files.ts"
     },
     "lib.public-role-references": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "管理原神、星穹铁道与绝区零的公开 UID 登记、切换、删除与列表查询",
       "source": "lib/public-role-references.ts"
     },
     "lib.qq-avatar": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "根据命令与消息上下文解析目标并获取 QQ 用户或群头像及链接",
       "source": "lib/qq-avatar.ts"
     },
     "lib.qq-face": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "解析 QQ 表情消息段并生成含编号与描述的预览或合并转发消息",
       "source": "lib/qq-face.ts"
     },
     "lib.quoted-image-tools": {
-      "description": "机器人核心、账号命令、启动初始化与日志：工具",
+      "description": "处理引用图片预览转发及过期图片重发与原消息撤回",
       "source": "lib/quoted-image-tools.ts"
     },
     "lib.quoted-recall": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "校验消息撤回与群文件删除权限并执行引用消息或群文件清理",
       "source": "lib/quoted-recall.ts"
     },
     "lib.rank-statistics": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "向排名服务查询角色伤害排名统计及指定 UID 的全服伤害位次",
       "source": "lib/rank-statistics.ts"
     },
     "lib.redeem-code-commands": {
-      "description": "机器人核心、账号命令、启动初始化与日志：兑换 · 命令",
+      "description": "通过命令校验会话身份并配置档案的前瞻兑换码自动兑换设置",
       "source": "lib/redeem-code-commands.ts"
     },
     "lib.redeem-code-manual": {
-      "description": "机器人核心、账号命令、启动初始化与日志：兑换",
+      "description": "国际服兑换码私聊手动提交命令解析与校验",
       "source": "lib/redeem-code-manual.ts"
     },
     "lib.redeem-code-runner": {
-      "description": "机器人核心、账号命令、启动初始化与日志：兑换",
+      "description": "前瞻兑换码自动兑换任务调度、兑换记录日志存取及请求错误处理",
       "source": "lib/redeem-code-runner.ts"
     },
     "lib.remote-control": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "私聊远程控制与文件传输命令处理",
       "source": "lib/remote-control.ts"
     },
     "lib.remote-otp": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "远程运维一次性口令（OTP）配对密钥存储、权限校验与旧版配对导入",
       "source": "lib/remote-otp.ts"
     },
     "lib.remote-shell": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "远程运维 Shell 命令执行、超时终止、输出脱敏与截断处理",
       "source": "lib/remote-shell.ts"
     },
     "lib.remote-status-card": {
-      "description": "机器人核心、账号命令、启动初始化与日志：运行状态 · 图片卡片",
+      "description": "远程身份验证与远程运维开关状态信息卡片渲染",
       "source": "lib/remote-status-card.ts"
     },
     "lib.remote-win32": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "Windows 远程运维进程与权限控制",
       "source": "lib/remote-win32.ts"
     },
     "lib.renderer.shotium": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "Shotium 静态 HTML 渲染后端",
       "source": "lib/renderer/shotium.ts"
     },
     "lib.request-other-policies": {
-      "description": "机器人核心、账号命令、启动初始化与日志：请求",
+      "description": "请求策略配置文件监听与重载",
       "source": "lib/request-other-policies.ts"
     },
     "lib.resource-progress": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "资源处理进度回调与单位定义",
       "source": "lib/resource-progress.ts"
     },
     "lib.runtime-log-archive": {
-      "description": "机器人核心、账号命令、启动初始化与日志：运行环境",
+      "description": "旧版运行日志归档管理",
       "source": "lib/runtime-log-archive.ts"
     },
     "lib.runtime-log-writer": {
-      "description": "机器人核心、账号命令、启动初始化与日志：运行环境",
+      "description": "本地运行日志写入与归档调度",
       "source": "lib/runtime-log-writer.ts"
     },
     "lib.runtime-logs": {
-      "description": "机器人核心、账号命令、启动初始化与日志：运行环境 · 日志",
+      "description": "运行日志读取与敏感信息脱敏",
       "source": "lib/runtime-logs.ts"
     },
     "lib.server": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "服务端配置解析与校验",
       "source": "lib/server.ts"
     },
     "lib.server-redirect": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "服务端重定向地址校验",
       "source": "lib/server-redirect.ts"
     },
     "lib.starrail-summary-handback": {
-      "description": "机器人核心、账号命令、启动初始化与日志：星铁",
+      "description": "星铁官方汇总数据校验与合并",
       "source": "lib/starrail-summary-handback.ts"
     },
     "lib.startup-render-preset": {
-      "description": "机器人核心、账号命令、启动初始化与日志：图片渲染",
+      "description": "启动时图片渲染档位配置保存",
       "source": "lib/startup-render-preset.ts"
     },
     "lib.terminal-reply": {
-      "description": "机器人核心、账号命令、启动初始化与日志：终端",
+      "description": "终端回复消息格式化与媒体标签",
       "source": "lib/terminal-reply.ts"
     },
     "lib.update-activation": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新",
+      "description": "更新候选版本的原子切换、持久状态路径校验与异常回滚模块",
       "source": "lib/update-activation.ts"
     },
     "lib.update-build": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新",
+      "description": "更新候选版本的构建缓存准备、子模块初始化、外部插件依赖安装与类型检查模块",
       "source": "lib/update-build.ts"
     },
     "lib.update-candidate-git": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新",
+      "description": "更新候选版本的本地 Git 状态检查与临时引用生命周期管理模块",
       "source": "lib/update-candidate-git.ts"
     },
     "lib.update-check-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新 · 命令",
+      "description": "检查上游 Git 更新状态的聊天命令处理与状态格式化输出模块",
       "source": "lib/update-check-command.ts"
     },
     "lib.update-checkout": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新",
+      "description": "从本地 Git 工作区检出指定候选提交并校验来源仓库 origin 配置的模块",
       "source": "lib/update-checkout.ts"
     },
     "lib.update-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新 · 命令",
+      "description": "宿主与插件更新命令解析、权限校验及进度反馈",
       "source": "lib/update-command.ts"
     },
     "lib.update-health": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新",
+      "description": "更新候选进程启动后的运行状态与健康检查",
       "source": "lib/update-health.ts"
     },
     "lib.update-https-paths": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新",
+      "description": "更新切换时 HTTPS 证书与私钥路径的安全接管校验",
       "source": "lib/update-https-paths.ts"
     },
     "lib.update-log-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新 · 命令",
+      "description": "更新日志查询命令解析与结果回复",
       "source": "lib/update-log-command.ts"
     },
     "lib.update-notice": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新 · 订阅与通知",
+      "description": "宿主可用更新的定时检查与主人通知推送",
       "source": "lib/update-notice.ts"
     },
     "lib.update-preflight": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新",
+      "description": "更新前的插件清单、仓库来源与目录预检",
       "source": "lib/update-preflight.ts"
     },
     "lib.update-runtime-paths": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新 · 运行环境",
+      "description": "更新切换时运行数据与资源路径的安全迁移校验",
       "source": "lib/update-runtime-paths.ts"
     },
     "lib.update-schedule": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新 · 排期",
+      "description": "受管更新的定时任务调度与配置校验",
       "source": "lib/update-schedule.ts"
     },
     "lib.update-staging": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新",
+      "description": "更新候选版本的暂存准备、目录校验与激活",
       "source": "lib/update-staging.ts"
     },
     "lib.update-tracking": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新",
+      "description": "在更新候选工作区中校验源仓库状态与上游地址安全性，并恢复分支及上游跟踪配置。",
       "source": "lib/update-tracking.ts"
     },
     "lib.update-web-mount": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新",
+      "description": "在更新切换版本前校验端口挂载的原版目录与 RPC socket 路径是否可安全隔离与交接。",
       "source": "lib/update-web-mount.ts"
     },
     "lib.valkey-config": {
-      "description": "机器人核心、账号命令、启动初始化与日志：内存数据库 · 配置",
+      "description": "读取并校验 redis.yaml 中的 Valkey/Redis 连接配置字段（如端口、数据库索引及认证凭据）。",
       "source": "lib/valkey-config.ts"
     },
     "lib.weather": {
-      "description": "机器人核心、账号命令、启动初始化与日志：天气",
+      "description": "请求并解析腾讯天气接口数据",
       "source": "lib/weather.ts"
     },
     "lib.weather-card": {
-      "description": "机器人核心、账号命令、启动初始化与日志：天气 · 图片卡片",
+      "description": "渲染天气信息图片卡片",
       "source": "lib/weather-card.ts"
     },
     "lib.weather-command": {
-      "description": "机器人核心、账号命令、启动初始化与日志：天气 · 命令",
+      "description": "处理天气查询命令与回复格式化",
       "source": "lib/weather-command.ts"
     },
     "scripts.bootstrap": {
-      "description": "机器人核心、账号命令、启动初始化与日志：初始化",
+      "description": "项目初始化脚本：检查 Git 子模块、安装依赖、恢复 Skia 原生库并校验内置资源",
       "source": "scripts/bootstrap.ts"
     },
     "scripts.export-preview-redeem-history": {
-      "description": "机器人核心、账号命令、启动初始化与日志：兑换",
+      "description": "前瞻兑换账本导出脚本：校验并合并新旧前瞻兑换记录",
       "source": "scripts/export-preview-redeem-history.ts"
     },
     "scripts.import-profiles": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "档案导入脚本：从旧档案目录迁移并校验用户档案数据",
       "source": "scripts/import-profiles.ts"
     },
     "scripts.import-world-boss-ranking": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "世界 BOSS 榜单导入脚本：校验授权清单并导入历史榜单摘要",
       "source": "scripts/import-world-boss-ranking.ts"
     },
     "scripts.launcher": {
-      "description": "机器人核心、账号命令、启动初始化与日志：启动管理",
+      "description": "进程启动与管理脚本：控制前台运行及 PM2 后台托管的启停、重启、状态与日志",
       "source": "scripts/launcher.ts"
     },
     "scripts.legacy-gacha-output": {
-      "description": "机器人核心、账号命令、启动初始化与日志：抽卡记录",
+      "description": "旧版抽卡记录导出文件写入与复用校验工具",
       "source": "scripts/legacy-gacha-output.ts"
     },
     "scripts.managed-entry": {
-      "description": "机器人核心、账号命令、启动初始化与日志：进程托管",
+      "description": "PM2 托管宿主进程入口与启动锁、就绪状态管理",
       "source": "scripts/managed-entry.ts"
     },
     "scripts.migrate": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "旧安装数据与配置迁移执行主脚本",
       "source": "scripts/migrate.ts"
     },
     "scripts.migrate-plan": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "旧安装迁移预检与迁移计划生成命令行工具",
       "source": "scripts/migrate-plan.ts"
     },
     "scripts.migrate-stage": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "旧安装迁移暂存准备命令行工具",
       "source": "scripts/migrate-stage.ts"
     },
     "scripts.prepare-legacy-activity-notices": {
-      "description": "机器人核心、账号命令、启动初始化与日志：资源准备",
+      "description": "旧版活动推送配置与开关快照转换导出工具",
       "source": "scripts/prepare-legacy-activity-notices.ts"
     },
     "scripts.prepare-legacy-calendar": {
-      "description": "机器人核心、账号命令、启动初始化与日志：资源准备 · 日历",
+      "description": "旧版定时日历状态交还准备脚本",
       "source": "scripts/prepare-legacy-calendar.ts"
     },
     "scripts.prepare-legacy-checkin-schedule": {
-      "description": "机器人核心、账号命令、启动初始化与日志：资源准备 · 签到 · 排期",
+      "description": "旧版签到计划交还准备脚本",
       "source": "scripts/prepare-legacy-checkin-schedule.ts"
     },
     "scripts.prepare-legacy-mute-tasks": {
-      "description": "机器人核心、账号命令、启动初始化与日志：资源准备",
+      "description": "旧版定时群禁言任务交还准备脚本",
       "source": "scripts/prepare-legacy-mute-tasks.ts"
     },
     "scripts.prepare-legacy-star-rail-gacha": {
-      "description": "机器人核心、账号命令、启动初始化与日志：资源准备 · 抽卡记录",
+      "description": "旧版星穹铁道抽卡记录交还准备脚本",
       "source": "scripts/prepare-legacy-star-rail-gacha.ts"
     },
     "scripts.prepare-legacy-star-rail-summary": {
-      "description": "机器人核心、账号命令、启动初始化与日志：资源准备",
+      "description": "旧版星穹铁道官方汇总数据交还准备脚本",
       "source": "scripts/prepare-legacy-star-rail-summary.ts"
     },
     "scripts.prepare-legacy-write-state": {
-      "description": "机器人核心、账号命令、启动初始化与日志：资源准备",
+      "description": "旧版写入状态（兑换码、币店、签到计划）交还准备脚本",
       "source": "scripts/prepare-legacy-write-state.ts"
     },
     "scripts.prepare-legacy-zzz-gacha": {
-      "description": "机器人核心、账号命令、启动初始化与日志：资源准备 · 绝区零 · 抽卡记录",
+      "description": "旧版绝区零抽卡记录交还准备脚本",
       "source": "scripts/prepare-legacy-zzz-gacha.ts"
     },
     "scripts.prepare-legacy-zzz-monthly": {
-      "description": "机器人核心、账号命令、启动初始化与日志：资源准备 · 绝区零 · 月历",
+      "description": "旧版绝区零月报数据交还准备脚本",
       "source": "scripts/prepare-legacy-zzz-monthly.ts"
     },
     "scripts.remote-otp": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "远程 OTP 验证器配对、重置与旧配置导入脚本",
       "source": "scripts/remote-otp.ts"
     },
     "scripts.run-legacy-checkin-transfer": {
-      "description": "机器人核心、账号命令、启动初始化与日志：签到",
+      "description": "受保护的旧版签到任务交还与副本校验脚本",
       "source": "scripts/run-legacy-checkin-transfer.ts"
     },
     "scripts.run-managed": {
-      "description": "机器人核心、账号命令、启动初始化与日志：进程托管",
+      "description": "托管宿主进程管理与生命周期控制脚本",
       "source": "scripts/run-managed.ts"
     },
     "scripts.skia-binary": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "Skia 原生库下载、SHA-256 校验与恢复脚本",
       "source": "scripts/skia-binary.ts"
     },
     "scripts.startup": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "启动初始化脚本：交互配置图鉴版本与渲染档位，准备各模块主题素材、图鉴数据、Valkey 与运行时依赖",
       "source": "scripts/startup.ts"
     },
     "scripts.update-builtin-resource-manifest": {
-      "description": "机器人核心、账号命令、启动初始化与日志：更新",
+      "description": "内置资源清单更新脚本：扫描内置与受跟踪公共资源文件并生成 manifest.json 清单",
       "source": "scripts/update-builtin-resource-manifest.ts"
     },
     "scripts.verify-builtin-resources": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "内置资源校验脚本：核对内置资源文件完整性与大小并报告校验结果",
       "source": "scripts/verify-builtin-resources.ts"
     },
     "web.miyoushe.app": {
-      "description": "机器人核心、账号命令、启动初始化与日志",
+      "description": "米游社网页控制台前端，负责签到配置与状态展示、官方商城商品浏览、兑换计划管理及商品追踪规则配置",
       "source": "web/miyoushe/app.ts"
     }
   },
@@ -1768,7 +1768,7 @@
     "lib.checkin-group-registration-commands.text_28384d7afd": "失败",
     "lib.checkin-group-registration-commands.text_2f33c7663e": "{label}：跳过 · {value2}",
     "lib.checkin-group-registration-commands.text_3dd62228d2": "档案编号须在 1 到 255 之间。",
-    "lib.checkin-group-registration-commands.text_47a8562fff": "未找到 profile",
+    "lib.checkin-group-registration-commands.text_47a8562fff": "未找到档案",
     "lib.checkin-group-registration-commands.text_4bc8ee4971": "当前会话无权为本群批量注册签到。普通用户可发送 #绑定通知群。",
     "lib.checkin-group-registration-commands.text_61c599670b": "请在目标群内执行 #注册本群签到。普通用户可在目标群发送 #绑定通知群。",
     "lib.checkin-group-registration-commands.text_64bbec1614": "群号：{groupId}",
@@ -1876,26 +1876,26 @@
     "lib.checkin-roster-commands.text_0a01eee1cd": "已登录",
     "lib.checkin-roster-commands.text_109c3c1f43": "原",
     "lib.checkin-roster-commands.text_2cc25d723c": "本群签到名单",
-    "lib.checkin-roster-commands.text_307304a91c": "你已注册的 profile 如下。",
+    "lib.checkin-roster-commands.text_307304a91c": "你已注册的档案如下。",
     "lib.checkin-roster-commands.text_386a27b6cf": "签到名单",
     "lib.checkin-roster-commands.text_3ab24605ae": "签到名单暂时无法读取。",
     "lib.checkin-roster-commands.text_56336e85ec": "无法读取本群成员列表，暂时不能生成群内签到名单。",
     "lib.checkin-roster-commands.text_59418dae23": "本群暂无已注册自动签到的成员。",
     "lib.checkin-roster-commands.text_63b85ff9f0": "我的签到名单",
     "lib.checkin-roster-commands.text_6624c8c184": "游戏关",
-    "lib.checkin-roster-commands.text_6e4612f14f": "当前没有已注册 profile。",
+    "lib.checkin-roster-commands.text_6e4612f14f": "当前没有已注册档案。",
     "lib.checkin-roster-commands.text_8f22dd545c": "社区开",
     "lib.checkin-roster-commands.text_8f615d2ef8": "铁",
     "lib.checkin-roster-commands.text_9d8692671d": "群成员",
     "lib.checkin-roster-commands.text_b59163c196": "请从 QQ 会话查看签到名单。",
     "lib.checkin-roster-commands.text_bf1ff3314a": "群 {group_id}",
     "lib.checkin-roster-commands.text_c1f6583730": "未登录",
-    "lib.checkin-roster-commands.text_c3f87a5b4b": "你还没有注册自动签到 profile。",
+    "lib.checkin-roster-commands.text_c3f87a5b4b": "你还没有注册自动签到档案。",
     "lib.checkin-roster-commands.text_c5d5a1475e": "绝",
     "lib.checkin-roster-commands.text_cf1424d47c": "本群内已注册自动签到的成员如下。",
     "lib.checkin-roster-commands.text_d2989be8c8": "社区关",
     "lib.checkin-roster-commands.text_e6262a56b8": "全局 Lotus-Yunzai 档案",
-    "lib.checkin-roster-commands.text_e8628bf27f": "当前已注册 profile 如下。",
+    "lib.checkin-roster-commands.text_e8628bf27f": "当前已注册档案如下。",
     "lib.checkin-roster-commands.text_f5130a3a8a": "另有 {value1} 个档案",
     "lib.checkin-roster-commands.text_fd659fbca0": "请直接发送 #签到名单列表。",
     "lib.checkin-schedule-handback.text_01fc8f5e86": "旧版签到回接后已安排剩余项目补跑。",
@@ -2093,16 +2093,16 @@
     "lib.device-commands.text_68b51087b3": "请先加机器人好友，再在好友私聊发送 #绑定设备{value1}。设备资料请只发在好友私聊。",
     "lib.device-commands.text_7186b0924f": "该档案没有已绑定的设备。",
     "lib.device-commands.text_7e161ca2dc": "暂时无法解绑该档案的设备，请确认已登录并稍后重试。",
-    "lib.device-commands.text_8085c78af1": "请发送 档案 {id} 的设备 JSON，或同一设备的 device_id 和 device_fp。APK 只有安卓参数时会自动补齐并申请设备指纹。发送「取消」可退出，两分钟内有效。",
+    "lib.device-commands.text_8085c78af1": "请发送档案 {id} 的设备 JSON，或同一设备的 device_id 和 device_fp。APK 只有安卓参数时会自动补齐并申请设备指纹。发送「取消」可退出，两分钟内有效。",
     "lib.device-commands.text_82309eac71": "已取消绑定设备。",
     "lib.device-commands.text_8b01dcf8ff": "档案 {profileId} 设备已绑定。",
     "lib.device-commands.text_a532eb4dc3": "已解绑该档案的设备。",
     "lib.device-commands.text_c5b7b89c39": "绑定后可用 #设备信息{suffix} 查看。",
     "lib.device-commands.text_cedbf8227c": "档案已变化，请重新发送解绑指令。",
     "lib.device-commands.text_d02867269e": "档案已变化，请重新发起设备绑定。",
-    "lib.device-commands.text_d996b42581": "当前私聊没有该档案的设备绑定等待。",
+    "lib.device-commands.text_d996b42581": "当前私聊没有进行中的该档案设备绑定。",
     "lib.device-commands.text_dce8c9281f": "可继续发送设备 JSON。需要工具时，可直接下载：\n{apkDownload}",
-    "lib.device-commands.text_e4cfc3641a": "设备绑定等待已超时，请重新发送 #绑定设备。",
+    "lib.device-commands.text_e4cfc3641a": "设备绑定已超时，请重新发送 #绑定设备。",
     "lib.device-commands.text_e99ac1feff": "请在本人私聊中解绑设备。",
     "lib.device-commands.text_fc98247ef3": "加机器人好友并登录该档案后，好友私聊发送 #绑定设备{suffix}。",
     "lib.device-commands.text_fd690683f9": "设备信息工具文件暂不可用。{apkFallback}",
@@ -2303,7 +2303,7 @@
     "lib.game-checkin-commands.text_299c3dbb1f": "请从 QQ 会话发送签到指令。",
     "lib.game-checkin-commands.text_2d591e285a": "包含活动登录凭据的 HoYoLAB Cookie",
     "lib.game-checkin-commands.text_2f183c3384": "当前档案已关闭部分或全部待补跑游戏。",
-    "lib.game-checkin-commands.text_3078faa95c": "还有旧游戏签到提交结果待核对，请在官方客户端查看。",
+    "lib.game-checkin-commands.text_3078faa95c": "还有此前提交的游戏签到结果待核对，请在官方客户端查看。",
     "lib.game-checkin-commands.text_32d6b652e0": "暂时无法读取{name}剩余免费时长。",
     "lib.game-checkin-commands.text_3a56a978d2": "有签到正在执行。",
     "lib.game-checkin-commands.text_3c02aa9cbe": " · 国际服待绑定",
@@ -2509,7 +2509,7 @@
     "lib.group-panel-rank-settings.text_3abde73295": "16 个角色且含安柏、凯亚、丽莎，或已绑定 CK",
     "lib.group-panel-rank-settings.text_4098659c2c": "{label}群榜默认开启",
     "lib.group-panel-rank-settings.text_45d2e3e684": "原神幽境危战群榜 Akasha 来源",
-    "lib.group-panel-rank-settings.text_4c7fd306f1": "只查询单独授权 Ark 的群成员。关掉后停止请求该站。",
+    "lib.group-panel-rank-settings.text_4c7fd306f1": "只查询单独授权 Ark 的群成员。关闭后停止请求该站。",
     "lib.group-panel-rank-settings.text_4e03672cf3": "只影响显示。默认 3 为千位分组，4 为万位分组，小数位数不变。",
     "lib.group-panel-rank-settings.text_575638439f": "原铁面板数字逗号分组",
     "lib.group-panel-rank-settings.text_5ccedf0c84": "关闭时只允许明确列出的群。启用和停用名单优先于默认值。",
@@ -2518,7 +2518,7 @@
     "lib.group-panel-rank-settings.text_a1865cea53": "原神圣遗物与星铁遗器列表条数",
     "lib.group-panel-rank-settings.text_a2927891f0": "星铁",
     "lib.group-panel-rank-settings.text_bbdf13a5f6": "{label}角色群榜条数",
-    "lib.group-panel-rank-settings.text_c4db7e8aa8": "只查询单独授权 Akasha 的群成员。关掉后停止请求该站。",
+    "lib.group-panel-rank-settings.text_c4db7e8aa8": "只查询单独授权 Akasha 的群成员。关闭后停止请求该站。",
     "lib.group-panel-rank-settings.text_cf039a9bf3": "{label}群榜启用群",
     "lib.group-panel-rank-settings.text_d154a13e8b": "共用上限，默认 28 件。实际条数取决于已收录角色中符合筛选规则的装备。",
     "lib.group-panel-rank-settings.text_d1597c51ed": "原神",
@@ -2795,7 +2795,7 @@
     "lib.master-config.text_8930ae6797": "主人配置须为普通 YAML 文件。",
     "lib.master-config.text_96e359181a": "写入全局黑名单将改变其他 YAML 字段或引用。",
     "lib.master-config.text_9c92156a62": "无法写入全局名单。",
-    "lib.master-config.text_a3440b0dc2": "配置保存会改变其它 YAML 字段或引用。",
+    "lib.master-config.text_a3440b0dc2": "配置保存会改变其他 YAML 字段或引用。",
     "lib.master-config.text_b1de7c1510": "写入主人配置将改变其他 YAML 字段或引用。",
     "lib.master-config.text_bf3bf51eb8": "主人配置的 YAML 无效。",
     "lib.master-config.text_cb26b281db": "other.yaml 的 {key} 包含无效账号或引用。",
@@ -3704,7 +3704,7 @@
     "lib.panel-starrail-warp-settings.text_83dc2a0959": "允许单次超过十连",
     "lib.panel-starrail-warp-settings.text_88a82045f8": "填 0 不撤回。",
     "lib.panel-starrail-warp-settings.text_8d5074055f": "光锥池四星基础概率（万分比）",
-    "lib.panel-starrail-warp-settings.text_8eabbe13fc": "填 0 时当日首次领取不发这一种票。",
+    "lib.panel-starrail-warp-settings.text_8eabbe13fc": "填 0 时当日首次领取不发放该票种。",
     "lib.panel-starrail-warp-settings.text_9af41270d6": "管理会话已失效。",
     "lib.panel-starrail-warp-settings.text_9b81579673": "模拟跃迁设置已更改。",
     "lib.panel-starrail-warp-settings.text_b075117bf7": "模拟跃迁设置格式有误。",
@@ -3938,8 +3938,8 @@
     "lib.plugins.legacy.text_a00c10e206": "[插件] 清理已撤销的入口失败：",
     "lib.plugins.legacy.text_d5ffbb709c": "此旧日历查询需要适配 Lotus-Yunzai 才能使用。",
     "lib.plugins.legacy.text_e765b7f4f3": "插件 {name} 的 Handler 键、方法或优先级无效。",
-    "lib.plugins.legacy.text_e8501a6d90": "原生事件名称、种类或优先级无效。",
-    "lib.plugins.legacy.text_ea97ec44a7": "插件 {name} 有无效的消息规则。",
+    "lib.plugins.legacy.text_e8501a6d90": "原生事件名称、类型或优先级无效。",
+    "lib.plugins.legacy.text_ea97ec44a7": "插件 {name} 的消息规则无效。",
     "lib.plugins.loader.text_00cebd230e": "fallbackFeatures 须为按指令返回功能名称的函数。",
     "lib.plugins.loader.text_124bf35165": "[Plugin] 加载插件 [{label}]",
     "lib.plugins.loader.text_15efc78809": "与 {duplicate} 重复。",
@@ -4163,7 +4163,7 @@
     "lib.redeem-code-manual.text_e7b4074acc": "请发送 #{value1}兑换码使用 <兑换码>，可在末尾加 档案2 指定档案。",
     "lib.redeem-code-runner.text_08b9ce38fb": "{name}前瞻查询未完成（{value2}）。",
     "lib.redeem-code-runner.text_1514ef8794": "HTTP 请求失败",
-    "lib.redeem-code-runner.text_1c180b0905": "请求资料无效",
+    "lib.redeem-code-runner.text_1c180b0905": "请求参数无效",
     "lib.redeem-code-runner.text_20218dea25": "{name} {version} 前瞻 · 档案 {profileId}（UID {uid}）\n{value5}",
     "lib.redeem-code-runner.text_26b86354ba": "兑换码无效",
     "lib.redeem-code-runner.text_4548f2ad35": "星穹铁道",
@@ -4394,7 +4394,7 @@
     "lib.update-staging.text_557a75add7": "准备外部插件",
     "lib.update-staging.text_5d842511e9": "无法检查插件未跟踪的状态文件。",
     "lib.update-staging.text_5f274f23d0": "候选插件未加载。",
-    "lib.update-staging.text_63c997d7d3": "插件检查期间已变更。",
+    "lib.update-staging.text_63c997d7d3": "插件在检查期间已变更。",
     "lib.update-staging.text_6b2bf209a5": "插件安装目录已被占用。",
     "lib.update-staging.text_6bd6e2b1e6": "检出宿主候选",
     "lib.update-staging.text_7ac8304217": "更新来源的分支或上游已变更。",
@@ -4409,7 +4409,7 @@
     "lib.update-staging.text_bdd0f4632d": "持久状态路径包含强制更新的 Git 工作区。",
     "lib.update-staging.text_be7fff4464": "候选插件未加载或由宿主提交管理。",
     "lib.update-staging.text_c33c479a25": "活动插件目录在检查期间已变更。",
-    "lib.update-staging.text_c5789a7e78": "宿主检查期间已变更。",
+    "lib.update-staging.text_c5789a7e78": "宿主在检查期间已变更。",
     "lib.update-staging.text_c80696b8bd": "候选目录已包含运行状态。",
     "lib.update-staging.text_d5f7d26234": "Git 工作区存在修改或不可读。",
     "lib.update-staging.text_d8301a28a9": "无法检查候选子模块提交。",
@@ -4572,7 +4572,7 @@
     "scripts.migrate.text_c6d906eede": "旧安装迁移已中止。",
     "scripts.prepare-legacy-activity-notices.text_4d866b1e5b": "旧推送配置副本须为有效 YAML 映射。",
     "scripts.prepare-legacy-activity-notices.text_530038e2aa": "活动推送开关副本不是有效的 JSON。",
-    "scripts.prepare-legacy-activity-notices.text_58fc358b09": "旧 YAML 中的引用或其它配置无法安全保留。",
+    "scripts.prepare-legacy-activity-notices.text_58fc358b09": "旧 YAML 中的引用或其他配置无法安全保留。",
     "scripts.prepare-legacy-activity-notices.text_7247a7951f": "已有导出文件内容不一致，请选另一个导出父目录。",
     "scripts.prepare-legacy-activity-notices.text_82c586164c": "交还副本须为大小受限的普通文件。",
     "scripts.prepare-legacy-activity-notices.text_87ba1f0ef6": "用法：bun scripts/prepare-legacy-activity-notices.ts [--export <独立导出父目录>] <旧 YAML 副本> <原神 HGETALL JSON> <星铁 HGETALL JSON>",
@@ -4819,7 +4819,7 @@
     "web.miyoushe.app.text_6e50693925": "云绝区零",
     "web.miyoushe.app.text_6e827a1b34": "已退出。",
     "web.miyoushe.app.text_6fa472631c": "已脱敏地址",
-    "web.miyoushe.app.text_7051d74063": "{value1}需先在聊天中绑定账户，才能执行钱包签到。",
+    "web.miyoushe.app.text_7051d74063": "{value1}需先在聊天中绑定账户，才能执行云游戏签到。",
     "web.miyoushe.app.text_7215d99903": "今日签到时间尚未安排。",
     "web.miyoushe.app.text_73199769b3": "开放时间",
     "web.miyoushe.app.text_752d40359f": "请先在米游社核对「",
@@ -4924,2056 +4924,2056 @@
   },
   "parameters": {
     "app.text_242958f459": {
-      "name": "name"
+      "name": "定时任务名称"
     },
     "app.text_40832b56e7": {
-      "name": "name"
+      "name": "启动检查任务的模块或任务名称"
     },
     "app.text_86b8dc08ba": {
-      "value1": "logLevels.join(\",\")"
+      "value1": "以逗号分隔的可选日志等级列表"
     },
     "app.text_7894441b12": {
-      "level": "level"
+      "level": "修改后的目标日志等级"
     },
     "app.text_2fada410f1": {
-      "level": "level"
+      "level": "目标日志等级"
     },
     "app.text_e804057834": {
-      "update_notice_cron": "settings.update_notice_cron"
+      "update_notice_cron": "已保存的检查更新 Cron 表达式"
     },
     "app.text_5d8c169497": {
-      "value1": "settings.update_notice ? \"开启\" : \"关闭\""
+      "value1": "更新推送的开启或关闭状态词"
     },
     "app.text_56aeb51c82": {
-      "value1": "describeUpdateProgress(result)"
+      "value1": "更新状态或进度的补充描述文本"
     },
     "app.text_3976a5d3e5": {
-      "reply": "reply"
+      "reply": "更新进度或结果提示文本"
     },
     "app.text_fab382b885": {
-      "repositories": "receipt.repositories",
-      "value2": "receipt.revision.slice(0, 12)"
+      "repositories": "更新的仓库数量",
+      "value2": "截取前12位的宿主提交哈希"
     },
     "app.text_f82fe678b6": {
-      "value1": "receipt.revision.slice(0, 12)"
+      "value1": "截取前12位的更新提交哈希"
     },
     "app.text_e54d8ac5d0": {
-      "name": "receipt.name"
+      "name": "安装失败并回滚的插件或组件名称"
     },
     "app.text_c2abfa19e0": {
-      "name": "receipt.name",
-      "value2": "receipt.revision.slice(0, 12)"
+      "name": "安装的插件或组件名称",
+      "value2": "安装版本对应的提交哈希前 12 位"
     },
     "app.text_a60615d78d": {
-      "elapsed": "elapsed"
+      "elapsed": "格式化后的耗时字符串"
     },
     "app.text_32751597f5": {
-      "elapsed": "elapsed"
+      "elapsed": "距离上次停止的耗时文本"
     },
     "app.text_d8d48df2f5": {
-      "operation": "operation",
-      "elapsed": "elapsed"
+      "operation": "执行的进程操作名称",
+      "elapsed": "本次进程已运行时长文本"
     },
     "app.text_3220ea2ab0": {
-      "user": "user"
+      "user": "入群的黑名单成员标识"
     },
     "app.text_5b8ee46e0e": {
-      "user": "user"
+      "user": "被移出群聊的黑名单用户标识或名称"
     },
     "app.text_b9f218c503": {
-      "seconds": "rule.seconds"
+      "seconds": "禁言时长（秒）"
     },
     "app.text_18f7a24f1b": {
-      "preview": "rule.preview",
-      "contact": "contact",
-      "value3": "receipts.join(\"、\")"
+      "preview": "触发的违禁词规则预览",
+      "contact": "触发成员的显示名称与账号",
+      "value3": "已执行的处置操作回执列表"
     },
     "app.text_e412d32680": {
-      "group_id": "event.group_id"
+      "group_id": "已退出的群聊编号"
     },
     "app.text_0d2fb8e9cb": {
-      "group": "group"
+      "group": "目标群名称或群号"
     },
     "app.text_439ac3477b": {
-      "group_id": "event.group_id"
+      "group_id": "待核对邀请审批结果的 QQ 群号"
     },
     "app.text_8aa32457ba": {
-      "label": "label",
-      "value2": "key.endsWith(\"Group\") ? \"群号\" : \"QQ 号或单个 @成员\""
+      "label": "执行的操作名称",
+      "value2": "目标类型说明（群号或 QQ 号）"
     },
     "app.text_32c6e06ebd": {
-      "target": "target",
-      "label": "label"
+      "target": "目标群号或 QQ 号",
+      "label": "访问名单操作名称"
     },
     "app.text_77e925c9c6": {
-      "target": "target"
+      "target": "被操作的账号或群号标识"
     },
     "app.text_87ede9c81a": {
-      "target": "target",
-      "label": "label"
+      "target": "当前群号",
+      "label": "执行的操作名称"
     },
     "app.text_b16eeb203a": {
-      "target": "target",
-      "label": "label"
+      "target": "目标群号或用户标识",
+      "label": "执行的操作名称"
     },
     "app.text_2d93834b61": {
-      "label": "label"
+      "label": "访问名单操作名称"
     },
     "app.text_06fb255ccb": {
-      "uid": "uid"
+      "uid": "目标原神角色 UID"
     },
     "app.text_ebd5810aa0": {
-      "uid": "uid"
+      "uid": "请求导出面板的游戏账号 UID"
     },
     "app.text_b7bfc0a2e9": {
-      "kind": "contactList.kind"
+      "kind": "联系人列表类型名称"
     },
     "app.text_f94894b92f": {
-      "confirmed": "confirmed"
+      "confirmed": "已确认撤回的消息数量"
     },
     "app.text_b7394a8074": {
-      "confirmed": "confirmed"
+      "confirmed": "成功撤回的消息条数"
     },
     "app.text_2cf0e8938c": {
-      "value1": "runtimeVersion.version || runtimeVersion.revision ? \" \" + (runtimeVersion.version ?? runtimeVersion.revision?.slice(0, 7)) : \"\""
+      "value1": "可选的版本号或提交哈希前缀（含前导空格）"
     },
     "app.text_42f948913b": {
-      "generated": "prepared.generated"
+      "generated": "已补齐自动设备参数的档案数量"
     },
     "app.text_20e1cfd731": {
-      "failed": "prepared.failed"
+      "failed": "设备检查失败的档案数量"
     },
     "app.text_f5b87c817a": {
-      "profileId": "profileId",
-      "link": "event.link"
+      "profileId": "触发人工验证的签到档案 ID",
+      "link": "人工验证页面链接"
     },
     "app.text_92fc95a61f": {
-      "profileId": "profileId"
+      "profileId": "签到档案编号"
     },
     "app.text_3a8adb64ce": {
-      "profileId": "profileId"
+      "profileId": "米游社档案 ID"
     },
     "app.text_19ed2fc608": {
-      "profileId": "profileId"
+      "profileId": "米游社档案 ID"
     },
     "app.text_9027c66a53": {
-      "provider": "provider",
-      "round": "round",
-      "attempt": "attempt",
-      "reason": "reason"
+      "provider": "验证码识别服务提供方",
+      "round": "当前验证轮次",
+      "attempt": "本轮尝试次数",
+      "reason": "识别状态或失败原因"
     },
     "app.text_c664cebfcc": {
-      "diagnostic": "diagnostic"
+      "diagnostic": "前瞻兑换扫描产生的诊断信息"
     },
     "app.text_e1194f9fe5": {
-      "path": "shopSettings.path"
+      "path": "避让冲突后实际启用的挂载路径"
     },
     "app.text_2f18947d6a": {
-      "id": "id"
+      "id": "社区分区 ID"
     },
     "app.text_a1dbf4b05a": {
-      "value1": "targets.games.map(game => gameNames[game]).join(\"、\")"
+      "value1": "游戏名称列表"
     },
     "app.text_1667f9f379": {
-      "value1": "forumNames(targets.forums)"
+      "value1": "待重试的社区版块名称列表"
     },
     "app.text_4f57fb36e4": {
-      "value1": "attempt.games?.length ? \"签到\" : \"社区签到\"",
-      "number": "attempt.number",
-      "profileId": "entry.profileId"
+      "value1": "补跑对应的签到类型名称",
+      "number": "当前补跑的次数序号",
+      "profileId": "执行补跑的账号档案编号"
     },
     "app.text_e4932b63de": {
-      "value1": "retryNames(attempt)"
+      "value1": "本轮补跑的游戏或社区版块名称列表"
     },
     "app.text_e66d1a7402": {
-      "time": "time",
-      "value2": "retryNames(entry.communityRetry)"
+      "time": "预计执行补跑的时间（HH:MM）",
+      "value2": "待补跑的游戏或社区版块名称列表"
     },
     "app.text_9c150ffdff": {
-      "repaired": "repaired",
-      "failed": "failed"
+      "repaired": "续期成功的档案数量",
+      "failed": "续期失败的档案数量"
     },
     "app.text_773cdeec59": {
-      "origin": "origin"
+      "origin": "WebSocket 服务监听的基础源地址"
     },
     "app.text_711c38353a": {
-      "origin": "origin"
+      "origin": "HTTP 服务监听的基础源地址"
     },
     "app.text_82bd220a04": {
-      "origin": "origin"
+      "origin": "HTTPS 服务监听的源地址"
     },
     "app.text_2b0a45980d": {
-      "groupId": "binding.groupId"
+      "groupId": "目标群号"
     },
     "app.text_dbb19f5af0": {
-      "stage": "stage"
+      "stage": "退群黑名单处理的执行阶段标识"
     },
     "app.text_a292b98594": {
-      "type": "type"
+      "type": "日历推送任务类型"
     },
     "app.text_4d875465d3": {
-      "downloaded": "downloaded",
-      "reused": "reused",
-      "removed": "removed"
+      "downloaded": "新增或变更的图片数量",
+      "reused": "直接复用的现有图片数量",
+      "removed": "同步后移除的图片数量"
     },
     "app.text_d0374637fe": {
-      "reply": "reply"
+      "reply": "开关机状态变更后的结果描述文本"
     },
     "lib.account-commands.text_aeabd1a18d": {
-      "value1": "roleLabels[game]"
+      "value1": "游戏名称"
     },
     "lib.account-commands.text_9dd53d894a": {
-      "value1": "roleLabels[game]",
-      "value2": "matches.map(({ id }) => id).join(\"、\")"
+      "value1": "游戏名称",
+      "value2": "匹配的档案编号列表"
     },
     "lib.account-commands.text_3e0f1b7442": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.account-commands.text_9477637c5d": {
-      "refreshed": "refreshed",
-      "length": "ids.length"
+      "refreshed": "成功刷新的档案数量",
+      "length": "待刷新的档案总数"
     },
     "lib.account-commands.text_971af2fbe9": {
-      "profileId": "profileId"
+      "profileId": "档案编号"
     },
     "lib.account-commands.text_074a95a269": {
-      "profileId": "profileId"
+      "profileId": "档案编号"
     },
     "lib.account-commands.text_77102dc310": {
-      "id": "id",
-      "message": "message"
+      "id": "档案编号",
+      "message": "该档案的刷新结果说明"
     },
     "lib.account-commands.text_987ae72631": {
-      "id": "id",
-      "message": "message"
+      "id": "档案编号",
+      "message": "该档案的刷新结果说明"
     },
     "lib.account-commands.text_e623664c82": {
-      "id": "id",
-      "length": "roles.gs.length",
-      "value3": "roles.sr.length",
-      "value4": "roles.zzz.length"
+      "id": "档案编号",
+      "length": "原神角色数量",
+      "value3": "星铁角色数量",
+      "value4": "绝区零角色数量"
     },
     "lib.account-commands.text_7b5c090f79": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.account-commands.text_3db385c0e4": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.account-commands.text_e959863834": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.account-commands.text_5c992b438d": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.account-commands.text_27eec3434a": {
-      "value1": "profile.device.name || \"Lotus-Yunzai\""
+      "value1": "设备名称或默认名称“Lotus-Yunzai”"
     },
     "lib.account-commands.text_06f550ea02": {
-      "value1": "game ? switchState(profile.gameCheckin[game] === true) : \"无\"",
-      "value2": "switchState(profile.communityCheckin.includes(forum))"
+      "value1": "游戏签到开关状态或“无”",
+      "value2": "社区签到开关状态"
     },
     "lib.account-commands.text_89406be5fa": {
-      "id": "id",
-      "value2": "profile.name || \"default\""
+      "id": "档案编号",
+      "value2": "档案名称或默认名称"
     },
     "lib.account-commands.text_59c4758bd2": {
-      "mode": "mode",
-      "value2": "switchState(profile.notifications)"
+      "mode": "签到调度模式",
+      "value2": "通知开关状态"
     },
     "lib.account-commands.text_aa7d7e8267": {
-      "value1": "id === 1 ? \"\" : id"
+      "value1": "档案编号后缀，档案 1 时为空"
     },
     "lib.account-commands.text_3e19d96793": {
-      "command": "command"
+      "command": "命令名称"
     },
     "lib.account-commands.text_197366a759": {
-      "users": "users",
-      "total": "total"
+      "users": "QQ用户数量",
+      "total": "可读取档案总数"
     },
     "lib.account-commands.text_bb01438bbb": {
-      "domestic": "domestic",
-      "international": "international"
+      "domestic": "米游社去重账号数量",
+      "international": "HoYoLAB 去重账号数量"
     },
     "lib.account-commands.text_4546e9f71c": {
-      "legacyProfiles": "legacyProfiles",
-      "unreadable": "unreadable"
+      "legacyProfiles": "旧Cookie档案数量",
+      "unreadable": "无法读取的档案数量"
     },
     "lib.account-commands.text_0c0b590627": {
-      "value1": "profile.activeRoles.gs || \"-\"",
-      "value2": "profile.activeRoles.sr || \"-\"",
-      "value3": "profile.activeRoles.zzz || \"-\""
+      "value1": "原神当前选中角色或“-”",
+      "value2": "崩坏：星穹铁道当前选中角色或“-”",
+      "value3": "绝区零当前选中角色或“-”"
     },
     "lib.account-commands.text_265d0900d6": {
-      "id": "id",
-      "status": "status",
-      "selected": "selected"
+      "id": "档案编号",
+      "status": "档案登录状态",
+      "selected": "当前选中角色摘要"
     },
     "lib.account-commands.text_f5c8c4f5dc": {
-      "id": "id",
-      "status": "status"
+      "id": "档案编号",
+      "status": "档案登录状态"
     },
     "lib.account-commands.text_a236b4e001": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.account-commands.text_3c8b2f265d": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.account-cookie-status.text_89406be5fa": {
-      "id": "id",
-      "value2": "statusLabels[(current && current.context.revision === revision) ? status : \"unknown\"]"
+      "id": "登录档案编号",
+      "value2": "档案状态描述文本"
     },
     "lib.adapters.milky-config.text_7448aa8b64": {
-      "field": "field"
+      "field": "无效的配置字段路径或名称"
     },
     "lib.adapters.milky-session.text_aa0c2669b6": {
-      "original": "original"
+      "original": "被撤回的原消息文本内容"
     },
     "lib.adapters.onebot.text_84119783f4": {
-      "self_id": "self_id",
-      "group_id": "group_id",
-      "user_id": "user_id",
-      "value4": "sanitizeRuntimeLog(event.title, 256)"
+      "self_id": "当前机器人账号 ID",
+      "group_id": "群号",
+      "user_id": "群成员用户 ID",
+      "value4": "清理后的群头衔文本"
     },
     "lib.adapters.onebot.text_765c441714": {
-      "self_id": "self_id",
-      "operator_id": "operator_id",
-      "times": "times"
+      "self_id": "当前机器人账号 ID",
+      "operator_id": "点赞操作者用户 ID",
+      "times": "点赞次数"
     },
     "lib.adapters.onebot.text_aa0c2669b6": {
-      "original": "original"
+      "original": "被撤回的原始文本消息内容"
     },
     "lib.adapters.onebot.text_6245c54af3": {
-      "name": "attachment.name"
+      "name": "附件文件名称"
     },
     "lib.ark-custom-rank-command.text_c66784f7f7": {
-      "value1": "slot[1]"
+      "value1": "遗器部位编号"
     },
     "lib.ark-custom-rank-command.text_3398838ac9": {
-      "alias": "alias"
+      "alias": "筛选条件中的字段名"
     },
     "lib.ark-custom-rank-command.text_76d4dd539c": {
-      "prefix": "prefix",
-      "sample": "sample"
+      "prefix": "命令前缀符号",
+      "sample": "示例角色名称"
     },
     "lib.ark-custom-rank-command.text_4a663f1676": {
-      "prefix": "prefix",
-      "sample": "sample",
-      "value3": "game === \"sr\" ? \"遗器\" : \"圣遗物\""
+      "prefix": "命令前缀符号",
+      "sample": "示例角色名称",
+      "value3": "对应游戏的装备评分类型名称"
     },
     "lib.ark-custom-rank-command.text_66f4aa8788": {
-      "prefix": "prefix"
+      "prefix": "命令前缀符号"
     },
     "lib.ark-custom-rank-command.text_00a2be2684": {
-      "name": "character.name"
+      "name": "角色名称"
     },
     "lib.ark-custom-rank-command.text_4c967dae45": {
-      "name": "character.name",
-      "mode": "mode"
+      "name": "角色名称",
+      "mode": "排行指标名称"
     },
     "lib.ark-custom-rank-command.text_83dbb3680a": {
-      "filterText": "parsed.filterText"
+      "filterText": "已解析的筛选条件摘要文本"
     },
     "lib.ark-rank-credentials.text_542debb1f3": {
-      "arkRankTokenEnvironment": "arkRankTokenEnvironment"
+      "arkRankTokenEnvironment": "控制排行凭据的环境变量名称"
     },
     "lib.ark-rank-credentials.text_246ff93195": {
-      "value1": "permission === 1 ? \"高级\" : \"普通\""
+      "value1": "凭据权限等级（普通或高级）"
     },
     "lib.ark-rank-credentials.text_bb699e4443": {
-      "value1": "remaining(rank?.minute)",
-      "value2": "remaining(rank?.hour)",
-      "value3": "remaining(rank?.day)"
+      "value1": "每分钟剩余请求次数",
+      "value2": "每小时剩余请求次数",
+      "value3": "每日剩余请求次数"
     },
     "lib.ark-rank-credentials.text_8f2777730b": {
-      "multiplier": "multiplier"
+      "multiplier": "自定义排行普通请求配额倍率"
     },
     "lib.ark-rank-credentials.text_30956ed775": {
-      "value1": "remaining(custom?.normal)"
+      "value1": "自定义排行普通请求剩余次数"
     },
     "lib.ark-rank-credentials.text_fffadf461e": {
-      "value1": "remaining(custom?.advanced)"
+      "value1": "自定义排行高级请求剩余次数"
     },
     "lib.ark-rank-credentials.text_fce805e2ee": {
-      "environmentHint": "environmentHint"
+      "environmentHint": "环境变量控制提示文本"
     },
     "lib.ark-self-rank.text_954cad9970": {
-      "key": "key"
+      "key": "角色编号"
     },
     "lib.ark-self-rank.text_462efd86da": {
-      "name": "name",
-      "rank": "rank",
-      "value3": "score.toFixed(2)"
+      "name": "角色名称",
+      "rank": "全服伤害排名",
+      "value3": "保留两位小数的伤害评分"
     },
     "lib.ark-self-rank.text_264768d4c7": {
-      "uid": "uid",
-      "gameName": "gameName"
+      "uid": "游戏角色 UID",
+      "gameName": "游戏名称"
     },
     "lib.ark-self-rank.text_ac9fed8345": {
-      "missing": "missing"
+      "missing": "暂无排名的角色数量"
     },
     "lib.ark-self-rank.text_51a40cbd04": {
-      "unknown": "unknown",
-      "value2": "limited ? \"，部分请求受速率限制\" : \"\""
+      "unknown": "未确认结果的角色数量",
+      "value2": "触发速率限制时的补充说明文本"
     },
     "lib.ark-self-rank.text_8f6c9f81aa": {
-      "prefix": "prefix",
-      "MAX_PROFILE_ID": "MAX_PROFILE_ID"
+      "prefix": "命令前缀（# 或 *）",
+      "MAX_PROFILE_ID": "允许的最大档案编号"
     },
     "lib.ark-self-rank.text_668af29d71": {
-      "uid": "command.uid",
-      "profileId": "profileId"
+      "uid": "命令中指定的角色 UID",
+      "profileId": "档案编号"
     },
     "lib.ark-self-rank.text_25e20c199d": {
-      "prefix": "prefix",
-      "selection": "selection"
+      "prefix": "命令前缀（# 或 *）",
+      "selection": "已带前导空格的档案或 UID 选择参数"
     },
     "lib.ark-self-rank.text_259a41251d": {
-      "gameName": "gameName",
-      "confirmation": "confirmation"
+      "gameName": "游戏名称",
+      "confirmation": "用于确认查询的完整指令文本"
     },
     "lib.ark-self-rank.text_5a10697d75": {
-      "gameName": "gameName"
+      "gameName": "游戏名称"
     },
     "lib.ark-self-rank.text_56e00b1584": {
-      "gameName": "gameName"
+      "gameName": "游戏名称"
     },
     "lib.ark-self-rank.text_2a9757d6c3": {
-      "gameName": "gameName",
-      "prefix": "prefix"
+      "gameName": "游戏名称",
+      "prefix": "命令前缀（# 或 *）"
     },
     "lib.ark-self-rank.text_76720712c8": {
-      "profileId": "profileId"
+      "profileId": "档案编号"
     },
     "lib.ark-self-rank.text_e84d11746b": {
-      "gameName": "gameName"
+      "gameName": "游戏名称"
     },
     "lib.builtin-resource-validation.text_fd389597a5": {
-      "path": "entry.path"
+      "path": "缺失或大小不符的资源文件路径"
     },
     "lib.builtin-resource-validation.text_aba807d20e": {
-      "path": "entry.path"
+      "path": "校验失败的资源文件路径"
     },
     "lib.builtin-resource-validation.text_5c0002a423": {
-      "path": "entry.path"
+      "path": "当前校验的资源文件路径"
     },
     "lib.captcha.initialize.text_ac34d6ccad": {
-      "attempt": "progress.attempt",
-      "maxAttempts": "progress.maxAttempts"
+      "attempt": "当前尝试次数",
+      "maxAttempts": "最大尝试次数"
     },
     "lib.captcha.initialize.text_b0b2ab059f": {
-      "position": "position",
-      "total": "total",
-      "modelId": "modelId",
-      "action": "action",
-      "retry": "retry"
+      "position": "当前处理的模型序号",
+      "total": "待准备的模型总数",
+      "modelId": "验证码模型标识符",
+      "action": "当前阶段动作描述",
+      "retry": "重试次数提示后缀"
     },
     "lib.captcha.initialize.text_ab7c22b604": {
-      "message": "message",
-      "suffix": "suffix"
+      "message": "当前模型初始化进度消息",
+      "suffix": "可选的字节进度后缀"
     },
     "lib.character-gallery-source.text_5593372bbf": {
-      "status": "response.status"
+      "status": "HTTP 响应状态码"
     },
     "lib.chat-media-links.text_fd7cdc1f88": {
-      "url": "url"
+      "url": "文件下载链接"
     },
     "lib.chat-media-links.text_81c4fd171c": {
-      "maxImages": "maxImages"
+      "maxImages": "单次允许处理的最大图片数量"
     },
     "lib.chat-media-links.text_6ded0ee258": {
-      "length": "nodes.length"
+      "length": "待生成直链的图片数量"
     },
     "lib.chat-settings.text_524a1801aa": {
-      "value1": "enabledLabel(like)"
+      "value1": "陌生人点赞开关文本"
     },
     "lib.chat-settings.text_486e093912": {
-      "value1": "enabledLabel(status)"
+      "value1": "默认状态开关文本"
     },
     "lib.checkin-audit-commands.text_2da407c844": {
-      "length": "rows.length"
+      "length": "签到记录条数"
     },
     "lib.checkin-batch-refresh-commands.text_c5955319a3": {
-      "synced": "synced"
+      "synced": "已成功同步角色的档案数量"
     },
     "lib.checkin-batch-refresh-commands.text_e5303c6f5b": {
-      "refreshed": "refreshed",
-      "length": "targets.length",
-      "message": "message"
+      "refreshed": "成功刷新 Cookie 的档案数量",
+      "length": "目标档案总数",
+      "message": "角色同步汇总或空档案提示文本"
     },
     "lib.checkin-group-registration-commands.text_71f0e66ea2": {
-      "badge": "badge",
-      "message": "message"
+      "badge": "状态卡片徽标文本",
+      "message": "状态说明正文"
     },
     "lib.checkin-group-registration-commands.text_64bbec1614": {
-      "groupId": "groupId"
+      "groupId": "当前目标 QQ 群号"
     },
     "lib.checkin-group-registration-commands.text_2f33c7663e": {
-      "label": "label",
-      "value2": "skipLabels[status]"
+      "label": "群成员显示名与 QQ 号组合标签",
+      "value2": "跳过原因标签"
     },
     "lib.checkin-group-registration-commands.text_751910cb56": {
-      "size": "names.size"
+      "size": "群成员总人数"
     },
     "lib.checkin-group-registration-commands.text_95ad03dc7a": {
-      "updated": "counts.updated",
-      "existing": "counts.existing",
-      "skipped": "counts.skipped"
+      "updated": "本次新增注册的档案数",
+      "existing": "此前已注册的档案数",
+      "skipped": "被跳过的成员数"
     },
     "lib.checkin-group-registration-commands.text_de4da3b3a9": {
-      "schedule": "counts.schedule"
+      "schedule": "未能同步更新签到计划的档案数量"
     },
     "lib.checkin-plan-commands.text_74d664b76d": {
-      "detail": "detail"
+      "detail": "已保存的变更详情"
     },
     "lib.checkin-plan-commands.text_b9bac5ac4e": {
-      "value1": "late ? \"新注册补位\" : entry.mode"
+      "value1": "当前调度模式或补位标识"
     },
     "lib.checkin-plan-commands.text_a13cfc6e94": {
-      "value1": "saved.fixed_time ?? \"04:30\""
+      "value1": "固定签到时间"
     },
     "lib.checkin-plan-commands.text_4fa3db84b0": {
-      "value1": "saved.plan_generate_cron ?? \"0 0 0 * * ? *\""
+      "value1": "计划生成任务的 Cron 表达式"
     },
     "lib.checkin-plan-commands.text_92dd7446df": {
-      "value1": "saved.run_due_cron ?? \"0 * * * * *\""
+      "value1": "到期扫描任务的 Cron 表达式"
     },
     "lib.checkin-plan-commands.text_375a4fcb27": {
-      "profileId": "entry.profileId",
-      "time": "entry.time",
-      "value3": "entry.stage === legacyUnconfirmedStage ? \"旧版签到结果待核对\" : entry.mode"
+      "profileId": "档案编号",
+      "time": "计划签到时间",
+      "value3": "调度模式或状态说明"
     },
     "lib.checkin-plan-commands.text_f5130a3a8a": {
-      "value1": "plan.entries.length - 12"
+      "value1": "未展示的剩余档案数量"
     },
     "lib.checkin-plan-commands.text_245c3e0430": {
-      "time": "entry.time"
+      "time": "预计执行时间"
     },
     "lib.checkin-plan-commands.text_61fab5f807": {
-      "time": "entry.time"
+      "time": "预计执行时间"
     },
     "lib.checkin-plan-commands.text_ad055e9d82": {
-      "date": "date",
-      "profileId": "entry.profileId",
-      "message": "message"
+      "date": "计划日期",
+      "profileId": "档案编号",
+      "message": "签到计划提示内容"
     },
     "lib.checkin-plan-commands.text_0e8398152b": {
-      "time": "entry.time"
+      "time": "计划签到时间"
     },
     "lib.checkin-plan-commands.text_80811a4645": {
-      "date": "date"
+      "date": "计划日期"
     },
     "lib.checkin-plan-commands.text_07f0de5d5c": {
-      "date": "next.plan.date"
+      "date": "计划日期"
     },
     "lib.checkin-plan-commands.text_3900c70e87": {
-      "confirmed": "counts.confirmed",
-      "length": "next.plan.entries.length"
+      "confirmed": "已确认通知的数量",
+      "length": "计划条目总数"
     },
     "lib.checkin-plan-commands.text_149a8b1518": {
-      "deferred": "result.deferred"
+      "deferred": "延后处理的档案数量"
     },
     "lib.checkin-profile-commands.text_db7e54b3f0": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.checkin-profile-commands.text_62b08191fe": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.checkin-registration-commands.text_97df6735fe": {
-      "id": "id",
-      "scopes": "scopes"
+      "id": "档案编号",
+      "scopes": "签到范围描述"
     },
     "lib.checkin-registration-commands.text_0f3d1b5e02": {
-      "bound": "bound",
-      "length": "registered.length"
+      "bound": "已绑定的登录档案数量",
+      "length": "已注册自动签到的档案数量"
     },
     "lib.checkin-registration-commands.text_4e5abb06d6": {
-      "unreadable": "unreadable"
+      "unreadable": "无法读取的档案数量"
     },
     "lib.checkin-registration-commands.text_8b9d3060de": {
-      "disabled": "disabled"
+      "disabled": "已关闭自动签到的档案数量"
     },
     "lib.checkin-registration-commands.text_039ed664c0": {
-      "failed": "failed"
+      "failed": "关闭失败的档案数量"
     },
     "lib.checkin-registration-commands.text_76720712c8": {
-      "profileId": "profileId"
+      "profileId": "档案编号"
     },
     "lib.checkin-registration-commands.text_b396f6ac98": {
-      "profileId": "profileId"
+      "profileId": "档案编号"
     },
     "lib.checkin-roster-commands.text_f5130a3a8a": {
-      "value1": "own.length - limit"
+      "value1": "未展示的剩余档案数量"
     },
     "lib.checkin-roster-commands.text_bf1ff3314a": {
-      "group_id": "context.group_id"
+      "group_id": "QQ 群号"
     },
     "lib.checkin-schedule-runtime.text_3895cd24bb": {
-      "name": "name"
+      "name": "定时任务名称"
     },
     "lib.cloud-profile-commands.text_62b08191fe": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.cloud-profile-commands.text_5073be696b": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.cloud-profile-commands.text_4f62054abe": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.cloud-profile-commands.text_8be4d0e378": {
-      "cloudCoins": "wallet.cloudCoins"
+      "cloudCoins": "米云币数量"
     },
     "lib.cloud-profile-commands.text_7c33007d93": {
-      "freeTimeMinutes": "wallet.freeTimeMinutes"
+      "freeTimeMinutes": "云游戏账户免费时长（分钟）"
     },
     "lib.cloud-profile-commands.text_0ad0336aef": {
-      "totalTimeMinutes": "wallet.totalTimeMinutes"
+      "totalTimeMinutes": "云游戏账户总可用时长（分钟）"
     },
     "lib.cloud-profile-commands.text_1df5509062": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.cloud-profile-commands.text_d020f268cb": {
-      "label": "label"
+      "label": "游戏名称标签（如“原神”“绝区零”）"
     },
     "lib.cloud-profile-commands.text_b4fd89d4a0": {
-      "name": "name"
+      "name": "云游戏名称（如“云原神”“云绝区零”）"
     },
     "lib.cloud-profile-commands.text_c8a7010d74": {
-      "id": "id",
-      "name": "name"
+      "id": "档案编号",
+      "name": "云游戏名称（如“云原神”“云绝区零”）"
     },
     "lib.cloud-profile-commands.text_e479d0ec59": {
-      "name": "name"
+      "name": "云游戏名称（如“云原神”“云绝区零”）"
     },
     "lib.cloud-profile-commands.text_1819e082d3": {
-      "name": "name"
+      "name": "云游戏名称（如“云原神”“云绝区零”）"
     },
     "lib.cloud-profile-commands.text_714c85fc19": {
-      "name": "name"
+      "name": "云游戏名称（如“云原神”“云绝区零”）"
     },
     "lib.cloud-profile-commands.text_998c47c16c": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.command-prefix.text_66fed98e1f": {
-      "prefix": "prefix"
+      "prefix": "游戏或通用指令前缀（如 #、#星铁、#绝区零）"
     },
     "lib.commands.text_3dd00da3a0": {
-      "name": "name"
+      "name": "重复注册的模块名称"
     },
     "lib.commands.text_2aaadb1510": {
-      "name": "name"
+      "name": "注册模块的包名或标识"
     },
     "lib.commands.text_d791670931": {
-      "name": "name",
-      "command": "command"
+      "name": "所属模块名称",
+      "command": "缺少处理函数的指令名称"
     },
     "lib.commands.text_377aaf8388": {
-      "alias": "alias"
+      "alias": "指令别名"
     },
     "lib.commands.text_ca121755a4": {
-      "alias": "alias"
+      "alias": "缺少有效目标的指令别名"
     },
     "lib.commands.text_bda8500a1f": {
-      "name": "name"
+      "name": "校验失败的指令名称"
     },
     "lib.commands.text_1d107a8c0f": {
-      "name": "name"
+      "name": "重复注册的指令名称"
     },
     "lib.config.text_cafd49aeeb": {
-      "path": "path"
+      "path": "读取或解析失败的配置文件路径"
     },
     "lib.daily-note-reminders.text_f9789a0217": {
-      "value1": "gameNames[game]",
-      "value2": "resources[game]",
-      "current": "current",
-      "max": "max"
+      "value1": "游戏名称",
+      "value2": "体力资源名称",
+      "current": "当前体力值",
+      "max": "体力上限值"
     },
     "lib.daily-note-reminders.text_a9748d0afa": {
-      "value1": "gameNames[game]"
+      "value1": "游戏名称"
     },
     "lib.daily-note-reminders.text_a59d15b8c3": {
-      "label": "label",
-      "value2": "minimum[game]"
+      "label": "对应游戏的体力推送名称",
+      "value2": "该游戏允许设置的最小阈值"
     },
     "lib.daily-note-reminders.text_0f46f3072c": {
-      "label": "label",
-      "value": "value"
+      "label": "对应游戏的体力推送名称",
+      "value": "已保存的提醒阈值"
     },
     "lib.daily-note-reminders.text_46a3e63a35": {
-      "label": "label"
+      "label": "对应游戏的体力推送名称"
     },
     "lib.daily-note-reminders.text_5ce0ab30b3": {
-      "label": "label"
+      "label": "对应游戏的体力推送名称"
     },
     "lib.daily-note-reminders.text_657d6aa336": {
-      "label": "label",
-      "size": "selectable.size",
-      "value": "value"
+      "label": "对应游戏的体力推送名称",
+      "size": "本次开启推送的角色数量",
+      "value": "设定的提醒阈值"
     },
     "lib.daily-note.text_12b4b2d0b1": {
-      "value1": "String(Math.floor(seconds / 3600)).padStart(2, \"0\")",
-      "value2": "String(Math.floor(seconds % 3600 / 60)).padStart(2, \"0\")"
+      "value1": "剩余小时数（两位数字）",
+      "value2": "剩余分钟数（两位数字）"
     },
     "lib.daily-note.text_a00ae0db12": {
-      "hours": "hours"
+      "hours": "剩余小时数"
     },
     "lib.daily-note.text_5fff9845c1": {
-      "value1": "hours ? `${hours}小时` : \"\"",
-      "minutes": "minutes"
+      "value1": "小时数文本，不足一小时时为空字符串",
+      "minutes": "剩余分钟数"
     },
     "lib.daily-note.text_44cbcece5b": {
-      "value1": "duration(expeditions.remainingSeconds)"
+      "value1": "距派遣或委托完成的剩余时长"
     },
     "lib.daily-note.text_63c4ff4f1e": {
-      "days": "days"
+      "days": "剩余天数"
     },
     "lib.daily-note.text_37f5f900c0": {
-      "value1": "duration(stamina.recoverySeconds)"
+      "value1": "距体力回满的剩余时长"
     },
     "lib.daily-note.text_b4e38336fe": {
-      "value1": "pair(homeCoin)"
+      "value1": "洞天宝钱当前值与上限"
     },
     "lib.daily-note.text_86cb4427a0": {
-      "checkin": "item.checkin"
+      "checkin": "米游社签到状态标签"
     },
     "lib.daily-note.text_090231938a": {
-      "profileId": "profileId"
+      "profileId": "指定的登录档案编号"
     },
     "lib.daily-note.text_4fc83a9017": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.device-commands.text_dce8c9281f": {
-      "apkDownload": "apkDownload"
+      "apkDownload": "设备信息工具 APK 下载链接"
     },
     "lib.device-commands.text_fc98247ef3": {
-      "suffix": "suffix"
+      "suffix": "非默认档案时附加的档案编号后缀"
     },
     "lib.device-commands.text_c5b7b89c39": {
-      "suffix": "suffix"
+      "suffix": "非默认档案时附加的档案编号后缀"
     },
     "lib.device-commands.text_68b51087b3": {
-      "value1": "id === 1 ? \"\" : id"
+      "value1": "非默认档案时附加的档案编号后缀"
     },
     "lib.device-commands.text_5c992b438d": {
-      "id": "id"
+      "id": "需要登录的档案编号"
     },
     "lib.device-commands.text_8085c78af1": {
-      "id": "id"
+      "id": "目标档案编号"
     },
     "lib.device-commands.text_174838b9f6": {
-      "apkFallback": "apkFallback"
+      "apkFallback": "APK 备用获取方式说明文本"
     },
     "lib.device-commands.text_fd690683f9": {
-      "apkFallback": "apkFallback"
+      "apkFallback": "包含工具下载链接的备用提示文本"
     },
     "lib.device-commands.text_2c7bf9448a": {
-      "apkFallback": "apkFallback"
+      "apkFallback": "APK 备用获取方式说明文本"
     },
     "lib.device-commands.text_8b01dcf8ff": {
-      "profileId": "request.profileId"
+      "profileId": "已完成设备绑定的档案编号"
     },
     "lib.dispatch-power-schedule.text_19862731dc": {
-      "field": "field"
+      "field": "bot.yaml 中无效的定时配置字段名"
     },
     "lib.dispatch-power.text_4c1e4e628b": {
-      "elapsed": "elapsed"
+      "elapsed": "格式化的本次运行时长"
     },
     "lib.dispatch-power.text_e4f3b86506": {
-      "elapsed": "elapsed"
+      "elapsed": "格式化的距离上次关机时长"
     },
     "lib.file-lock.text_c9361e98dc": {
-      "subject": "subject"
+      "subject": "正在更新的加锁对象名称"
     },
     "lib.file-lock.text_3a9204dbc4": {
-      "subject": "subject"
+      "subject": "加锁对象的名称"
     },
     "lib.fixed-theme.text_93df5190ce": {
-      "value1": "asset[0]"
+      "value1": "当前准备的资源名称或相对路径"
     },
     "lib.fixed-theme.text_4e9d3e124e": {
-      "value1": "asset[0]"
+      "value1": "已准备就绪的主题资源相对路径"
     },
     "lib.fixed-theme.text_457b3717d2": {
-      "path": "path"
+      "path": "正在写入的主题资源相对路径"
     },
     "lib.gacha-batch.text_e09c1fe6be": {
-      "message": "message"
+      "message": "具体失败原因文本"
     },
     "lib.gacha-batch.text_c4df79e596": {
-      "value1": "profileId === 1 ? \"\" : profileId"
+      "value1": "多档案时的档案编号后缀（主档案为空）"
     },
     "lib.gacha-batch.text_e0128939ff": {
-      "command": "command"
+      "command": "引导用户发送的抽卡链接指令"
     },
     "lib.gacha-batch.text_e8807a6a3a": {
-      "uid": "result.uid"
+      "uid": "已更新角色的游戏 UID"
     },
     "lib.gacha-batch.text_69e7c0fb1d": {
-      "qq": "qq",
-      "badge": "badge",
-      "done": "counts.done",
-      "skipped": "counts.skipped",
-      "failed": "counts.failed"
+      "qq": "目标账号 QQ 号",
+      "badge": "批量更新整体状态标签",
+      "done": "更新成功的项目数",
+      "skipped": "被跳过的项目数",
+      "failed": "更新失败的项目数"
     },
     "lib.gacha-expectation-commands.text_169c45d041": {
-      "helpCommand": "helpCommand"
+      "helpCommand": "帮助命令名称"
     },
     "lib.gacha-expectation-commands.text_f42b720bff": {
-      "helpCommand": "helpCommand"
+      "helpCommand": "帮助命令文本"
     },
     "lib.gacha-expectation-commands.text_1e7905c696": {
-      "gameLabel": "gameLabel",
-      "value2": "poolLabels.get(kind)"
+      "gameLabel": "游戏名称",
+      "value2": "卡池类型名称"
     },
     "lib.gacha-expectation-commands.text_4f169df6c8": {
-      "maxGachaExpectationCopies": "maxGachaExpectationCopies"
+      "maxGachaExpectationCopies": "最大目标数量"
     },
     "lib.gacha-expectation-commands.text_3fd9b3882e": {
-      "value1": "hardPity - 1"
+      "value1": "最大垫抽数"
     },
     "lib.gacha-expectation-commands.text_7a4de9b8ff": {
-      "gameLabel": "input.gameLabel",
-      "name": "pool.name",
-      "copies": "input.copies",
-      "unit": "pool.unit"
+      "gameLabel": "游戏名称",
+      "name": "卡池名称",
+      "copies": "目标数量",
+      "unit": "数量单位"
     },
     "lib.gacha-expectation-commands.text_a5f29000bb": {
-      "pity": "input.pity",
-      "value2": "guaranteed ? \"大保底\" : \"小保底\""
+      "pity": "已垫抽数",
+      "value2": "保底状态"
     },
     "lib.gacha-expectation-commands.text_31c1ca9fb2": {
-      "value1": "input.radiance ?? 0"
+      "value1": "明光计数"
     },
     "lib.gacha-expectation-commands.text_e875488d1f": {
-      "value1": "input.fate ?? 0"
+      "value1": "当前定轨值"
     },
     "lib.gacha-expectation-commands.text_6320725393": {
-      "value1": "result.mean.toFixed(2)"
+      "value1": "平均期望抽数"
     },
     "lib.gacha-expectation-commands.text_d9898da546": {
-      "probability": "probability",
-      "pulls": "pulls"
+      "probability": "分位概率",
+      "pulls": "对应抽数"
     },
     "lib.gacha-expectation-commands.text_84d48ce3b9": {
-      "budget": "input.budget",
-      "value2": "(result.budgetChance * 100).toFixed(2)"
+      "budget": "预算抽数",
+      "value2": "达成率百分比"
     },
     "lib.gacha-expectation-commands.text_87bcaa8f9b": {
-      "value1": "Math.ceil(result.mean)",
-      "value2": "(Math.ceil(result.mean) * 160).toLocaleString(\"zh-CN\")",
-      "currency": "pool.currency"
+      "value1": "向上取整的平均抽数",
+      "value2": "折算后的货币数量",
+      "currency": "游戏货币名称"
     },
     "lib.gacha-expectation-commands.text_a51f52340a": {
-      "value1": "returnNames[pool]",
-      "value2": "fourStarMax ? \"已满命\" : \"未满命\""
+      "value1": "返还货币名称",
+      "value2": "UP四星满命状态"
     },
     "lib.gacha-expectation-commands.text_fa172bf96e": {
-      "value1": "result.mean.toFixed(2)"
+      "value1": "平均返还数量"
     },
     "lib.gacha-expectation-commands.text_fa096062df": {
-      "p25": "result.p25",
-      "p50": "result.p50",
-      "p75": "result.p75"
+      "p25": "25% 分位返还数量",
+      "p50": "50% 分位返还数量",
+      "p75": "75% 分位返还数量"
     },
     "lib.gacha-image-reply.text_11d4132897": {
-      "title": "title",
-      "value2": "index + 1",
-      "length": "batches.length"
+      "title": "消息标题",
+      "value2": "当前分段序号",
+      "length": "总分段数"
     },
     "lib.gacha-image-reply.text_0f1a420ea5": {
-      "value1": "index + 1"
+      "value1": "当前分段序号"
     },
     "lib.gacha-image-reply.text_5af9e46976": {
-      "value1": "index + 1"
+      "value1": "当前分段序号"
     },
     "lib.game-character-aliases.text_dcfecf941d": {
-      "value1": "gameLabels[game]",
-      "value2": "lines.join(\"\\n\").slice(0, 3_000)"
+      "value1": "游戏名称",
+      "value2": "自定义别名列表文本"
     },
     "lib.game-character-aliases.text_ecf6afe234": {
-      "value1": "gameLabels[game]"
+      "value1": "游戏名称"
     },
     "lib.game-character-aliases.text_48d34b542a": {
-      "value1": "requested[0]"
+      "value1": "请求的别名"
     },
     "lib.game-character-aliases.text_3124f2ce30": {
-      "role": "role",
-      "value2": "requested[0]"
+      "role": "角色标准名称",
+      "value2": "被删除的别名"
     },
     "lib.game-character-aliases.text_5951100f8d": {
-      "value1": "requested[0]"
+      "value1": "被删除的别名"
     },
     "lib.game-character-aliases.text_836ad34414": {
-      "value1": "added.join(\"、\")"
+      "value1": "新增的别名列表"
     },
     "lib.game-character-aliases.text_7cd35fc5f6": {
-      "role": "role",
-      "value2": "added[0]"
+      "role": "角色标准名称",
+      "value2": "新增的别名"
     },
     "lib.game-checkin-commands.text_b6f4a0ed1b": {
-      "value1": "state.receivedPoints - receivedBefore"
+      "value1": "本轮签到期间新增的米游币数量"
     },
     "lib.game-checkin-commands.text_a38c404360": {
-      "totalPoints": "state.totalPoints"
+      "totalPoints": "当前米游币总余额"
     },
     "lib.game-checkin-commands.text_98b7799b87": {
-      "receivedPoints": "state.receivedPoints",
-      "value2": "state.todayTotalPoints === undefined ? \"\" : `/${state.todayTotalPoints}`"
+      "receivedPoints": "今日已领取的米游币数量",
+      "value2": "今日上限后缀（如 /上限）或空字符串"
     },
     "lib.game-checkin-commands.text_68da06d2ec": {
-      "officialClient": "officialClient"
+      "officialClient": "官方客户端名称（如米游社或 HoYoLAB）"
     },
     "lib.game-checkin-commands.text_285cb231e6": {
-      "officialClient": "officialClient"
+      "officialClient": "官方客户端名称（如米游社或 HoYoLAB）"
     },
     "lib.game-checkin-commands.text_0e7f6f8bdf": {
-      "officialClient": "officialClient"
+      "officialClient": "官方客户端名称"
     },
     "lib.game-checkin-commands.text_d24d228628": {
-      "signed": "signed"
+      "signed": "已成功签到的角色数量"
     },
     "lib.game-checkin-commands.text_896112d097": {
-      "profileId": "profileId"
+      "profileId": "当前执行签到的档案编号"
     },
     "lib.game-checkin-commands.text_ab750459d3": {
-      "label": "label",
-      "game": "game",
-      "community": "community"
+      "label": "游戏或社区版区名称",
+      "game": "游戏签到状态",
+      "community": "社区任务或签到状态"
     },
     "lib.game-checkin-commands.text_6f04dd9a3c": {
-      "label": "label",
-      "link": "registration.link"
+      "label": "游戏或分区名称",
+      "link": "人工验证码验证链接"
     },
     "lib.game-checkin-commands.text_3fc0689653": {
-      "label": "label"
+      "label": "游戏或分区名称"
     },
     "lib.game-checkin-commands.text_76720712c8": {
-      "profileId": "profileId"
+      "profileId": "账号档案编号"
     },
     "lib.game-checkin-commands.text_4d294c8744": {
-      "link": "event.link"
+      "link": "人工验证码验证链接"
     },
     "lib.game-checkin-commands.text_3d916a2386": {
-      "label": "row.label",
-      "value2": "bbsIssue(error)"
+      "label": "社区分区名称",
+      "value2": "失败原因或状态说明"
     },
     "lib.game-checkin-commands.text_11b59bee27": {
-      "label": "row.label"
+      "label": "游戏或分区名称"
     },
     "lib.game-checkin-commands.text_048e977ee4": {
-      "label": "row.label"
+      "label": "签到项目名称"
     },
     "lib.game-checkin-commands.text_ca9afbbf97": {
-      "label": "row.label",
-      "credential": "credential"
+      "label": "游戏名称",
+      "credential": "所需的国际服凭据名称"
     },
     "lib.game-checkin-commands.text_7b55292bc1": {
-      "label": "row.label"
+      "label": "游戏名称"
     },
     "lib.game-checkin-commands.text_6366fc626c": {
-      "link": "event.link"
+      "link": "国际服人工验证码验证链接"
     },
     "lib.game-checkin-commands.text_4ea06d53f2": {
-      "label": "finished.label"
+      "label": "国际服签到结果状态"
     },
     "lib.game-checkin-commands.text_18df483061": {
-      "label": "row.label",
-      "reason": "finished.reason"
+      "label": "游戏名称",
+      "reason": "国际服签到结果或失败原因"
     },
     "lib.game-checkin-commands.text_f8fda39995": {
-      "label": "row.label",
-      "value2": "reason === \"部分角色签到失败\" ? \"无法读取账号角色目录\" : reason"
+      "label": "游戏名称",
+      "value2": "国际服签到失败原因"
     },
     "lib.game-checkin-commands.text_e39df381b0": {
-      "value": "value"
+      "value": "云游戏剩余时长（分钟）"
     },
     "lib.game-checkin-commands.text_9a361d5730": {
-      "name": "name"
+      "name": "云游戏服务名称"
     },
     "lib.game-checkin-commands.text_22ffd657be": {
-      "name": "name",
-      "value2": "minutes(state.freeTimeMinutes)",
-      "value3": "minutes(state.grantedMinutes)"
+      "name": "云游戏名称",
+      "value2": "剩余免费时长",
+      "value3": "本次获赠免费时长"
     },
     "lib.game-checkin-commands.text_90247ab1b7": {
-      "name": "name"
+      "name": "云游戏服务名称"
     },
     "lib.game-checkin-commands.text_32d6b652e0": {
-      "name": "name"
+      "name": "云游戏名称"
     },
     "lib.game-checkin-commands.text_df8610f26e": {
-      "profileId": "profileId"
+      "profileId": "当前执行签到的档案编号"
     },
     "lib.general-tools.text_44b3cc35d5": {
-      "title": "title"
+      "title": "查询功能的标题名称"
     },
     "lib.general-tools.text_a549b4cd63": {
-      "platform": "platform",
-      "value2": "title.replace(/<[^>]*>/gu, \"\").replace(/[\\r\\n]+/gu, \" \").trim().slice(0, 180)",
-      "href": "url.href"
+      "platform": "平台名称",
+      "value2": "清洗后的软件标题",
+      "href": "软件详情页链接"
     },
     "lib.genshin-wish-settings-model.text_aecfbda2e8": {
-      "key": "key",
-      "max": "max"
+      "key": "设置项键名",
+      "max": "最大允许值"
     },
     "lib.genshin-wish-settings-model.text_a51b2cd7eb": {
-      "max": "max"
+      "max": "最大允许值"
     },
     "lib.group-avatar-command.text_1c878ff74d": {
-      "subject": "subject"
+      "subject": "修改对象名称"
     },
     "lib.group-cleanup-commands.text_18cab136d0": {
-      "count": "count"
+      "count": "已移除数量"
     },
     "lib.group-cleanup-commands.text_d089566658": {
-      "qq": "qq"
+      "qq": "目标用户的 QQ 号"
     },
     "lib.group-cleanup-commands.text_8344f202e3": {
-      "value1": "groupId ?? \"未知\""
+      "value1": "群号或未知状态"
     },
     "lib.group-cleanup-commands.text_7a5bcd0c2d": {
-      "length": "ids.length"
+      "length": "档案数量"
     },
     "lib.group-cleanup-commands.text_c98da239de": {
-      "length": "planned.length"
+      "length": "计划移除的群通知回退条数"
     },
     "lib.group-cleanup-commands.text_d830134e0f": {
-      "removed": "removed"
+      "removed": "已成功移除的群通知回退条数"
     },
     "lib.group-cleanup-commands.text_9b4888c8af": {
-      "unreadable": "unreadable"
+      "unreadable": "无法读取的档案条目数量"
     },
     "lib.group-cleanup-commands.text_d1dd078a20": {
-      "value1": "planned.length - removed"
+      "value1": "计划移除但未确认完成的条目数"
     },
     "lib.group-dispatch.text_cafd49aeeb": {
-      "path": "path"
+      "path": "读取或解析失败的 YAML 配置文件路径"
     },
     "lib.group-dispatch.text_a1b120de56": {
-      "name": "name"
+      "name": "重载失败的配置文件名称（bot/group/other）"
     },
     "lib.group-member-export-command.text_17f18095f3": {
-      "group": "group"
+      "group": "导出的目标群号"
     },
     "lib.group-member-export-command.text_2fa4d4ffc0": {
-      "length": "members.length"
+      "length": "导出的群成员总人数"
     },
     "lib.group-panel-rank-settings.text_4098659c2c": {
-      "label": "label"
+      "label": "游戏简称（原神或星铁）"
     },
     "lib.group-panel-rank-settings.text_cf039a9bf3": {
-      "label": "label"
+      "label": "游戏简称（原神或星铁）"
     },
     "lib.group-panel-rank-settings.text_768caa5899": {
-      "label": "label"
+      "label": "游戏简称（原神或星铁）"
     },
     "lib.group-panel-rank-settings.text_bbdf13a5f6": {
-      "label": "label"
+      "label": "游戏简称（原神或星铁）"
     },
     "lib.group-panel-rank-settings.text_0a19a6b9fa": {
-      "hint": "field.hint",
-      "legacyPolicy": "legacyPolicy"
+      "hint": "该配置项的基础说明文本",
+      "legacyPolicy": "旧版群榜参榜策略名称"
     },
     "lib.host-access-list.text_3e02df2e70": {
-      "value1": "remove ? \"取消\" : \"\"",
-      "color": "color",
-      "value3": "group ? \"群\" : \"\""
+      "value1": "操作前缀（移除时为「取消」，否则为空）",
+      "color": "名单类型（「黑」或「白」）",
+      "value3": "目标类型（操作群聊时为「群」，否则为空）"
     },
     "lib.hoyolab-profile-commands.text_62b08191fe": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.hoyolab-profile-commands.text_33ac99d56c": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.hoyolab-profile-commands.text_0085b5fd55": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.initialization-progress.text_651573f06f": {
-      "seconds": "seconds"
+      "seconds": "已用秒数"
     },
     "lib.initialization-progress.text_b330f86837": {
-      "value1": "Math.floor(seconds / 60)",
-      "value2": "seconds % 60"
+      "value1": "已用分钟数",
+      "value2": "剩余秒数"
     },
     "lib.initialization-progress.text_66ce07c739": {
-      "value1": "clean(label)",
-      "value2": "clean(event.message)",
-      "value3": "counts ? ` · ${bar}${percent === undefined ? \"\" : `${percent}% `}${counts}` : \"\"",
-      "value4": "elapsed(now() - startedAt)"
+      "value1": "进度任务标签",
+      "value2": "当前阶段描述文本",
+      "value3": "进度条、百分比与完成量片段",
+      "value4": "已耗时文本"
     },
     "lib.initialization-progress.text_f4578bef8d": {
-      "value1": "clean(label)",
-      "value2": "clean(message)",
-      "value3": "elapsed(now() - startedAt)"
+      "value1": "进度任务标签",
+      "value2": "结束状态描述文本",
+      "value3": "总耗时文本"
     },
     "lib.initialization-progress.text_3991f69bdf": {
-      "message": "message"
+      "message": "初始化阶段或任务名称"
     },
     "lib.initialization-progress.text_4e421e7b62": {
-      "message": "message"
+      "message": "初始化阶段或任务名称"
     },
     "lib.initialization-progress.text_4ca0acdae3": {
-      "message": "message"
+      "message": "初始化阶段或任务名称"
     },
     "lib.keywords.text_2b993abb73": {
-      "pages": "pages"
+      "pages": "总页数"
     },
     "lib.keywords.text_874a492aaf": {
-      "page": "page",
-      "length": "rows.length"
+      "page": "当前页码",
+      "length": "词条总数"
     },
     "lib.keywords.text_9194f03c50": {
-      "argument": "argument",
-      "length": "rows.length"
+      "argument": "搜索关键词",
+      "length": "匹配的词条总数"
     },
     "lib.keywords.text_924cca5720": {
-      "pageCommand": "pageCommand",
-      "value2": "page + 1"
+      "pageCommand": "翻页命令名称",
+      "value2": "下一页页码"
     },
     "lib.keywords.text_2267d79251": {
-      "label": "label"
+      "label": "词条名称或带序号的标签"
     },
     "lib.keywords.text_379679bea4": {
-      "omitted": "draft.omitted"
+      "omitted": "失败或超限的媒体数量"
     },
     "lib.keywords.text_918f54e3ee": {
-      "omitted": "omitted"
+      "omitted": "遗漏媒体提示信息"
     },
     "lib.keywords.text_91033bfab8": {
-      "name": "draft.name",
-      "value2": "count > 1 ? `(${count})` : \"\"",
-      "value3": "omitted ? `。${omitted}` : \"\""
+      "name": "词条名称",
+      "value2": "同名词条数量后缀",
+      "value3": "遗漏媒体提示后缀"
     },
     "lib.keywords.text_9c321d3151": {
-      "action": "action"
+      "action": "操作类型（如添加、删除）"
     },
     "lib.legacy-anniversary.text_657dc1fe8c": {
-      "name": "name",
-      "hint": "hint"
+      "name": "游戏名称",
+      "hint": "补充提示信息"
     },
     "lib.legacy-anniversary.text_ee08621dc1": {
-      "name": "name"
+      "name": "游戏名称"
     },
     "lib.legacy-anniversary.text_c52ea0d3db": {
-      "profileId": "profileId",
-      "registeredAt": "registeredAt",
-      "queriedAt": "queriedAt"
+      "profileId": "档案标识",
+      "registeredAt": "注册时间",
+      "queriedAt": "缓存查询时间"
     },
     "lib.legacy-character-alias-command.text_3df75a0d0d": {
-      "role": "result.role",
-      "length": "result.aliases.length"
+      "role": "角色名称",
+      "length": "别名数量"
     },
     "lib.legacy-character-alias-command.text_7b91b3293c": {
-      "role": "result.role"
+      "role": "目标角色名称"
     },
     "lib.legacy-panel-recovery-flow.text_f92308a89a": {
-      "profileId": "profileId",
-      "value2": "names[game]",
-      "value3": "names[game]",
-      "uid": "uid",
-      "value5": "prefixes[game]",
-      "value6": "uid",
-      "value7": "profileId"
+      "profileId": "本机档案编号",
+      "value2": "游戏名称",
+      "value3": "游戏名称",
+      "uid": "游戏 UID",
+      "value5": "对应游戏的指令前缀",
+      "value6": "游戏 UID",
+      "value7": "本机档案编号"
     },
     "lib.legacy-panel-recovery-flow.text_6c5a602274": {
-      "value1": "prefixes[game]"
+      "value1": "对应游戏的指令前缀"
     },
     "lib.legacy-panel-recovery-flow.text_7c878dc9be": {
-      "added": "added",
-      "value2": "names[game]",
-      "value3": "prefixes[game]",
-      "value4": "profileId === 1 ? \"\" : profileId"
+      "added": "已恢复的角色数量",
+      "value2": "游戏名称",
+      "value3": "对应游戏的指令前缀",
+      "value4": "档案编号（默认档案 1 时为空）"
     },
     "lib.log-command.text_125add2646": {
-      "label": "label"
+      "label": "日志类型名称"
     },
     "lib.log-command.text_3018d63fab": {
-      "value1": "Math.min(lines.length, query.limit)",
-      "label": "label"
+      "value1": "显示的日志条数",
+      "label": "日志类型名称"
     },
     "lib.managed-supervisor.text_7fdd692944": {
-      "log": "log"
+      "log": "操作日志前缀（更新或插件安装）"
     },
     "lib.managed-supervisor.text_7c6f0646d4": {
-      "value1": "sanitizeRuntimeLog(result.target, 120)",
-      "status": "result.status"
+      "value1": "脱敏后的更新目标名称",
+      "status": "更新检查返回的状态标识"
     },
     "lib.managed-supervisor.text_9de9cc7cdb": {
-      "value1": "JSON.stringify(script)"
+      "value1": "校验不一致的 V3 脚本名称"
     },
     "lib.managed-supervisor.text_422ac281ce": {
-      "log": "log"
+      "log": "操作日志前缀（更新或插件安装）"
     },
     "lib.managed-supervisor.text_98047210be": {
-      "value1": "JSON.stringify(archived)"
+      "value1": "强制更新前归档的工作区路径"
     },
     "lib.managed-supervisor.text_9cf529b177": {
-      "log": "log"
+      "log": "操作日志前缀（更新或插件安装）"
     },
     "lib.managed-supervisor.text_af743bde5e": {
-      "log": "log"
+      "log": "操作日志前缀（更新或插件安装）"
     },
     "lib.managed-supervisor.text_4717004913": {
-      "log": "log"
+      "log": "操作日志前缀（更新或插件安装）"
     },
     "lib.managed-supervisor.text_2f3aa6f661": {
-      "oldExit": "oldExit"
+      "oldExit": "原工作进程退出状态码"
     },
     "lib.managed-supervisor.text_36e39a7845": {
-      "message": "error.message"
+      "message": "Web 挂载更新或托管端点不可用的错误详情"
     },
     "lib.managed-valkey.text_960468f862": {
-      "value1": "argv[0]?.split(\"/\").at(-1)"
+      "value1": "执行返回非零退出码的外部命令名"
     },
     "lib.managed-worker.text_6a65ab39da": {
-      "label": "label"
+      "label": "监听服务或协议名称（如公共 HTTP、OneBot、HTTPS 或 WSS）"
     },
     "lib.master-config.text_cb26b281db": {
-      "key": "key"
+      "key": "校验失败的配置列表字段名"
     },
     "lib.master-enrollment.text_0dfeed2a33": {
-      "user": "application.user",
-      "code": "code"
+      "user": "申请人的 QQ 账号",
+      "code": "签发的 16 位十六进制验证码"
     },
     "lib.master-enrollment.text_71686dbcb2": {
-      "id": "pending.id"
+      "id": "生成的 8 位十六进制申请编号"
     },
     "lib.message-statistics.text_e6609be577": {
-      "label": "label"
+      "label": "统计对象参数名称（如“机器人”“用户”“群”）"
     },
     "lib.message-statistics.text_8316a49002": {
-      "kind": "kind"
+      "kind": "查询的消息类型标识"
     },
     "lib.message-statistics.text_5393023bef": {
-      "date": "date",
-      "value2": "countText(receive)",
-      "value3": "countText(send)"
+      "date": "统计日期或“总计”标签",
+      "value2": "接收消息数量的格式化文本",
+      "value3": "发送消息数量的格式化文本"
     },
     "lib.migration-core-config.text_af3fdc05cc": {
-      "name": "name",
-      "key": "key"
+      "name": "配置文件名",
+      "key": "配置项键名"
     },
     "lib.migration-core-config.text_4b79ac1a52": {
-      "name": "name"
+      "name": "配置文件名"
     },
     "lib.migration-game-data.text_19b4ee6a70": {
-      "scope": "scope"
+      "scope": "数据范围路径"
     },
     "lib.migration-game-data.text_5cd82afd40": {
-      "path": "scope.path"
+      "path": "数据源相对路径"
     },
     "lib.migration-game-data.text_3dcd16cc67": {
-      "destination": "destination"
+      "destination": "目标数据路径"
     },
     "lib.migration-game-data.text_4a58767ed1": {
-      "destination": "destination"
+      "destination": "目标数据路径"
     },
     "lib.migration-game-data.text_a2e3972731": {
-      "destination": "destination"
+      "destination": "目标数据路径"
     },
     "lib.migration-group-config.text_48403ab0c0": {
-      "subject": "subject"
+      "subject": "无法安全迁移的配置项名称"
     },
     "lib.migration-network-config.text_1f93cea4a9": {
-      "path": "path"
+      "path": "配置节路径"
     },
     "lib.migration-network-config.text_c73de64a6c": {
-      "family": "family"
+      "family": "网络配置分类名"
     },
     "lib.migration-network-config.text_b5e81f69d3": {
-      "family": "family"
+      "family": "网络配置分类名"
     },
     "lib.migration-profiles.text_1482d351f8": {
-      "conflict": "migrated.conflict",
-      "invalid": "migrated.invalid"
+      "conflict": "冲突文件数量",
+      "invalid": "无效文件数量"
     },
     "lib.migration-publication.text_75af3c85b2": {
-      "path": "path"
+      "path": "冲突的插件路径"
     },
     "lib.migration-publication.text_dea49b7ed8": {
-      "path": "path"
+      "path": "已存在的目标路径"
     },
     "lib.migration-shared-game-history.text_3ef85f80f5": {
-      "family": "family"
+      "family": "游戏记录类型名称"
     },
     "lib.migration-shared-game-history.text_5cba2e0a77": {
-      "family": "family"
+      "family": "游戏记录类型名称"
     },
     "lib.migration-shared-game-history.text_a7e9a99df0": {
-      "family": "family"
+      "family": "游戏记录类型名称"
     },
     "lib.migration-trss-wish.text_1273cbb5c5": {
-      "unavailable": "report.unavailable"
+      "unavailable": "无法读取的已授权旧 TRSS 限抽会话数量"
     },
     "lib.miyoushe-balance.text_b4ba5fed47": {
-      "MAX_PROFILE_ID": "MAX_PROFILE_ID"
+      "MAX_PROFILE_ID": "允许的最大档案编号"
     },
     "lib.miyoushe-balance.text_d80bcffa63": {
-      "value1": "result.totalPoints ?? \"暂未返回\""
+      "value1": "当前米游币数量或未返回提示"
     },
     "lib.miyoushe-balance.text_a3f45a2a2d": {
-      "value1": "result.remainingPoints ?? \"暂未返回\""
+      "value1": "今日剩余可获取米游币数量或占位文本"
     },
     "lib.miyoushe-balance.text_3f6fdc79bb": {
-      "profileId": "profileId"
+      "profileId": "档案编号"
     },
     "lib.miyoushe-overview.text_5ec327b66e": {
-      "missionId": "missionId"
+      "missionId": "社区任务 ID"
     },
     "lib.miyoushe-shop-plans.text_670d287a55": {
-      "goodsName": "goodsName",
-      "profileId": "profileId",
-      "id": "id",
-      "message": "message"
+      "goodsName": "商品名称",
+      "profileId": "档案编号",
+      "id": "兑换计划 ID",
+      "message": "兑换结果状态消息"
     },
     "lib.miyoushe-web.text_c3ee4aed07": {
-      "profileId": "profileId",
-      "href": "link.href",
-      "ticketMinutes": "ticketMinutes",
-      "sessionHours": "sessionHours"
+      "profileId": "用户档案编号",
+      "href": "含一次性登录票据的功能页访问链接",
+      "ticketMinutes": "一次性链接的有效分钟数",
+      "sessionHours": "登录后的网页会话有效小时数"
     },
     "lib.miyoushe-web.text_d136766aba": {
-      "profileId": "profileId"
+      "profileId": "用户档案编号"
     },
     "lib.online-notice.text_94c850185d": {
-      "value1": "version ? ` v${version}` : \"\"",
-      "help": "help"
+      "value1": "带空格的版本号前缀（如 v1.0.0），无版本号时为空",
+      "help": "拼接后的帮助指令列表文本"
     },
     "lib.own-role-selection.text_b4ba5fed47": {
-      "MAX_PROFILE_ID": "MAX_PROFILE_ID"
+      "MAX_PROFILE_ID": "允许的最大档案编号"
     },
     "lib.own-role-selection.text_849b66fea4": {
-      "maxSlot": "maxSlot"
+      "maxSlot": "允许的最大角色序号"
     },
     "lib.own-role-selection.text_31a2142f9f": {
-      "profileId": "profileId"
+      "profileId": "档案编号"
     },
     "lib.own-role-selection.text_3f6fdc79bb": {
-      "profileId": "profileId"
+      "profileId": "档案编号"
     },
     "lib.own-role-selection.text_e7571f382e": {
-      "value1": "profileId === undefined ? \"本人\" : `档案 ${profileId}`",
-      "slot": "slot",
-      "label": "label",
-      "suffix": "suffix"
+      "value1": "角色归属范围（本人或指定档案）",
+      "slot": "角色序号",
+      "label": "游戏名称",
+      "suffix": "档案后缀"
     },
     "lib.own-role-selection.text_34fe465cfa": {
-      "id": "id",
-      "label": "label",
-      "value3": "[role.uid, roleInfo(game, role)].filter(Boolean).join(\" · \")"
+      "id": "档案编号",
+      "label": "游戏名称标签",
+      "value3": "角色 UID 与角色详情拼接文本"
     },
     "lib.own-role-selection.text_966da1c2b7": {
-      "label": "label",
-      "id": "id"
+      "label": "游戏名称标签",
+      "id": "档案编号"
     },
     "lib.own-role-selection.text_518808d6b3": {
-      "label": "label"
+      "label": "游戏名称标签"
     },
     "lib.own-role-selection.text_113f48d452": {
-      "gameDefault": "gameDefault"
+      "gameDefault": "当前游戏的默认档案编号"
     },
     "lib.own-role-selection.text_9f62273138": {
-      "value1": "activeIn.join(\"、\")"
+      "value1": "当前激活该角色的档案编号列表"
     },
     "lib.own-role-selection.text_b369256ccb": {
-      "source": "source"
+      "source": "角色所属档案编号"
     },
     "lib.own-role-selection.text_4476f8250e": {
-      "value1": "activeIn.join(\"、\")"
+      "value1": "当前激活该角色的档案编号列表"
     },
     "lib.own-role-selection.text_0932f36928": {
-      "value1": "index + 1"
+      "value1": "公开引用序号（从 1 开始）"
     },
     "lib.own-role-selection.text_dbc62a9fce": {
-      "value1": "index + 1",
-      "uid": "uid",
-      "value3": "active ? \"（公开当前）\" : \"\""
+      "value1": "公开参考序号",
+      "uid": "游戏角色UID",
+      "value3": "当前启用状态标记"
     },
     "lib.own-role-selection.text_b207f99843": {
-      "suffix": "suffix",
-      "value2": "suffix",
-      "value3": "suffix"
+      "suffix": "原神指令的档案后缀",
+      "value2": "星铁指令的档案后缀",
+      "value3": "绝区零指令的档案后缀"
     },
     "lib.own-role-selection.text_21d26e1170": {
-      "profileId": "profileId"
+      "profileId": "档案编号"
     },
     "lib.own-role-selection.text_01e4cf1b34": {
-      "profileId": "profileId"
+      "profileId": "档案编号"
     },
     "lib.own-role-selection.text_384d21e4ee": {
-      "profileId": "profileId",
-      "value2": "gameLabels[game]",
-      "value3": "prefixes[game]",
-      "value4": "profileId"
+      "profileId": "档案编号",
+      "value2": "游戏名称标签",
+      "value3": "游戏指令前缀符号",
+      "value4": "档案编号"
     },
     "lib.owner-account-command.text_d7b8ee3526": {
-      "value1": "Object.keys(ownerAccountStatus).join(\"、\")"
+      "value1": "支持的在线状态列表"
     },
     "lib.owner-account-command.text_699c0487e3": {
-      "label": "label"
+      "label": "操作名称"
     },
     "lib.owner-account-command.text_c4e2cbb46d": {
-      "label": "label"
+      "label": "操作名称"
     },
     "lib.owner-account-command.text_0888f34a60": {
-      "label": "label"
+      "label": "操作名称"
     },
     "lib.owner-account-command.text_262854e58d": {
-      "label": "label"
+      "label": "操作名称"
     },
     "lib.owner-contact-list.text_b7bfc0a2e9": {
-      "kind": "kind"
+      "kind": "联系人类型（群或好友）"
     },
     "lib.owner-contact-list.text_09fc6c8650": {
-      "title": "title"
+      "title": "列表标题"
     },
     "lib.owner-contact-list.text_b5e5af79ee": {
-      "title": "title"
+      "title": "列表标题"
     },
     "lib.owner-contact-list.text_414085dba6": {
-      "kind": "kind"
+      "kind": "联系人类型（群或好友）"
     },
     "lib.owner-contact-list.text_49a6a53663": {
-      "title": "title",
-      "pages": "pages",
-      "value3": "pages"
+      "title": "列表标题",
+      "pages": "总页数",
+      "value3": "最大页码"
     },
     "lib.owner-contact-list.text_bbda6f77b3": {
-      "title": "title",
-      "value2": "page + 1"
+      "title": "列表标题",
+      "value2": "下一页页码"
     },
     "lib.owner-contact-list.text_747c03e05d": {
-      "title": "title",
-      "length": "loaded.length",
-      "page": "page",
-      "pages": "pages",
-      "value5": "page < pages ? `\\n下一页 #${title} ${page + 1}` : \"\""
+      "title": "列表标题",
+      "length": "条目总数",
+      "page": "当前页码",
+      "pages": "总页数",
+      "value5": "下一页指令提示"
     },
     "lib.owner-contact-list.text_784ef1130f": {
-      "title": "title"
+      "title": "列表标题"
     },
     "lib.owner-contact-list.text_aefc6c6077": {
-      "title": "title"
+      "title": "列表标题"
     },
     "lib.owner-message-relay.text_609ad32991": {
-      "id": "id"
+      "id": "目标群号或好友QQ号"
     },
     "lib.owner-message-relay.text_c2915b086b": {
-      "id": "id",
-      "value2": "kind === \"friend\" ? \"私聊\" : \"群聊\""
+      "id": "目标好友或群号",
+      "value2": "会话类型（私聊或群聊）"
     },
     "lib.owner-message-relay.text_75e189b3d1": {
-      "id": "id"
+      "id": "目标群号或好友QQ号"
     },
     "lib.owner-message-relay.text_96f9c30b6f": {
-      "id": "id"
+      "id": "目标好友或群号"
     },
     "lib.owner-qzone-command.text_25a7bc1d1c": {
-      "index": "index",
-      "value2": "shorten(post.content)",
-      "value3": "post.private ? \"私密\" : \"公开\"",
-      "value4": "postDate(post.time)",
-      "comments": "post.comments"
+      "index": "说说在列表中的序号",
+      "value2": "说说正文摘要",
+      "value3": "说说可见性（私密或公开）",
+      "value4": "说说发布时间",
+      "comments": "说说评论数"
     },
     "lib.owner-qzone-command.text_511441181d": {
-      "description": "description",
-      "pages": "pages"
+      "description": "说说列表内容",
+      "pages": "当前页码与总页数"
     },
     "lib.owner-qzone-command.text_97c4d15449": {
-      "value1": "describe(selected, position)"
+      "value1": "已删除说说的摘要描述"
     },
     "lib.owner-qzone-command.text_5c73c71e7d": {
-      "value1": "shorten(content)"
+      "value1": "说说正文摘要"
     },
     "lib.owner-qzone-command.text_c0d6d01c1f": {
-      "value1": "postDate(receipt.value.time)"
+      "value1": "说说发布时间"
     },
     "lib.panel-game-settings.text_8f94d2cb93": {
-      "hint": "field.hint"
+      "hint": "该配置项原有的提示说明文本"
     },
     "lib.panel-guoba-pages.text_95070d5be9": {
-      "plugin": "plugin"
+      "plugin": "锅巴扩展插件名称"
     },
     "lib.panel-owner-session.text_aec013a08e": {
-      "href": "destination.href",
-      "ticketMinutes": "ticketMinutes",
-      "sessionHours": "sessionHours"
+      "href": "管理面板一次性登录链接地址",
+      "ticketMinutes": "一次性登录链接有效期（分钟）",
+      "sessionHours": "登录后的浏览器会话有效期（小时）"
     },
     "lib.panel-rebuild.text_0ab8bb63c3": {
-      "value1": "intervalMs / 1000"
+      "value1": "每次更新之间的间隔秒数"
     },
     "lib.panel-rebuild.text_fc1b3ca42e": {
-      "done": "status.done",
-      "skipped": "status.skipped",
-      "failed": "status.failed"
+      "done": "更新成功的档案数量",
+      "skipped": "跳过处理的档案数量",
+      "failed": "更新失败的档案数量"
     },
     "lib.panel-rebuild.text_04859d136e": {
-      "value1": "targets.length - reportRows"
+      "value1": "未逐条列出的剩余目标数量"
     },
     "lib.panel-signature.text_442f82413a": {
-      "gameName": "gameName"
+      "gameName": "游戏名称"
     },
     "lib.panel-signature.text_4011c959d7": {
-      "gameName": "gameName"
+      "gameName": "游戏名称"
     },
     "lib.panel-signature.text_a16bd1671c": {
-      "uid": "uid",
-      "gameName": "gameName",
-      "code": "code",
-      "value4": "gameName",
-      "value5": "uid",
-      "value6": "hosts[game]"
+      "uid": "游戏UID",
+      "gameName": "游戏名称",
+      "code": "签名验证口令",
+      "value4": "游戏名称",
+      "value5": "游戏UID",
+      "value6": "公开资料查询服务域名"
     },
     "lib.panel-signature.text_6a9e75196c": {
-      "gameName": "gameName"
+      "gameName": "游戏名称"
     },
     "lib.panel-signature.text_b853dfffce": {
-      "value1": "Math.ceil(waited / 1000)"
+      "value1": "剩余冷却秒数"
     },
     "lib.panel-signature.text_48517e574f": {
-      "uid": "previous.uid",
-      "gameName": "gameName",
-      "value3": "gameName",
-      "value4": "previous.uid"
+      "uid": "已验证的游戏UID",
+      "gameName": "游戏名称",
+      "value3": "游戏名称",
+      "value4": "已验证的游戏UID"
     },
     "lib.panel-signature.text_c551a81a1a": {
-      "ttl": "ttl"
+      "ttl": "重试冷却秒数"
     },
     "lib.panel-status-settings.text_91f695f20b": {
-      "colorHint": "colorHint"
+      "colorHint": "颜色格式提示"
     },
     "lib.panel-transfer-command.text_3ecabfec81": {
-      "name": "name"
+      "name": "游戏名称"
     },
     "lib.panel-transfer-command.text_5f1ca02ce2": {
-      "name": "name",
-      "value2": "parsed.action === \"export\" ? \"导出\" : \"导入\""
+      "name": "游戏名称",
+      "value2": "操作类型（导出或导入）"
     },
     "lib.panel-transfer-command.text_947ba67241": {
-      "command": "command",
-      "value2": "command"
+      "command": "指令前缀",
+      "value2": "指令前缀"
     },
     "lib.panel-transfer-command.text_9830be4d67": {
-      "command": "command"
+      "command": "对应游戏的指令前缀（# 或 *）"
     },
     "lib.panel-transfer-command.text_61d485c911": {
-      "name": "name"
+      "name": "游戏名称"
     },
     "lib.panel-transfer-command.text_3f97a9d5c1": {
-      "name": "name",
-      "command": "command"
+      "name": "游戏名称",
+      "command": "指令前缀"
     },
     "lib.panel-transfer-command.text_c0718f677b": {
-      "name": "name",
-      "command": "command",
-      "code": "code"
+      "name": "游戏名称（原神或星铁）",
+      "command": "对应游戏的指令前缀（# 或 *）",
+      "code": "生成的十分钟有效交接码"
     },
     "lib.panel-transfer-command.text_9bb08f319b": {
-      "added": "stored.added",
-      "name": "name"
+      "added": "新增导入的角色数量",
+      "name": "游戏名称（原神或星铁）"
     },
     "lib.panel-transfer-command.text_07bc656d47": {
-      "result": "result"
+      "result": "导入结果描述"
     },
     "lib.panel-transfer-command.text_76720712c8": {
-      "profileId": "parsed.profileId"
+      "profileId": "档案编号"
     },
     "lib.panel-transfer-command.text_0037be9a0c": {
-      "name": "name"
+      "name": "游戏名称"
     },
     "lib.passport-login.text_7fd1c4df47": {
-      "commandForProfile": "commandForProfile"
+      "commandForProfile": "对应档案的扫码登录指令"
     },
     "lib.passport-login.text_fca3f02765": {
-      "profileId": "profileId"
+      "profileId": "档案编号"
     },
     "lib.passport-login.text_27f414f451": {
-      "profileId": "profileId"
+      "profileId": "已完成登录绑定的档案编号"
     },
     "lib.passport-login.text_c5c0b398fb": {
-      "profileId": "profileId",
-      "value2": "profileId === 1 ? \"\" : profileId"
+      "profileId": "档案编号",
+      "value2": "档案编号后缀（档案 1 为空）"
     },
     "lib.passport-login.text_54d9a57677": {
-      "retcode": "error.retcode"
+      "retcode": "米哈游接口返回的业务错误码"
     },
     "lib.permission-command-edits.text_94fd7bd339": {
-      "value1": "edit.policy === \"deny\" ? \"白名单\" : \"黑名单\"",
-      "restartNote": "restartNote"
+      "value1": "权限模式（白名单/黑名单）",
+      "restartNote": "重启生效提示"
     },
     "lib.permission-command-edits.text_a13c99fa66": {
-      "scope": "edit.scope",
-      "policy": "edit.policy",
-      "notice": "notice"
+      "scope": "业务作用域名称",
+      "policy": "权限策略",
+      "notice": "重启生效提示（无需重启时为空）"
     },
     "lib.permission-command-edits.text_3b0593ccc1": {
-      "action": "action",
-      "value2": "edit.subject === \"groups\" ? \"群\" : \"用户\"",
-      "id": "edit.id",
-      "restartNote": "restartNote"
+      "action": "操作类型（允许/拒绝/移除）",
+      "value2": "操作对象类型（群/用户）",
+      "id": "群号或用户账号",
+      "restartNote": "重启生效提示"
     },
     "lib.permission-commands.text_1420097019": {
-      "length": "configured.length"
+      "length": "列表或作用域总数量"
     },
     "lib.permission-commands.text_17854f7ba3": {
-      "default_policy": "settings.default_policy"
+      "default_policy": "全局默认权限策略"
     },
     "lib.permission-commands.text_bb3c736145": {
-      "value1": "shownScopes || \"未配置\""
+      "value1": "已配置的作用域列表或未配置提示"
     },
     "lib.plugins.legacy-retained-stage.text_a80427b584": {
-      "path": "entry.path"
+      "path": "冲突的插件路径"
     },
     "lib.plugins.legacy.text_ea97ec44a7": {
-      "name": "app.name"
+      "name": "插件应用名称"
     },
     "lib.plugins.legacy.text_413b04098f": {
-      "name": "initializer.name"
+      "name": "插件名称"
     },
     "lib.plugins.legacy.text_e765b7f4f3": {
-      "name": "initializer.name"
+      "name": "插件初始化器名称"
     },
     "lib.plugins.legacy.text_0f62c601f8": {
-      "name": "app.name"
+      "name": "插件名称"
     },
     "lib.plugins.legacy.text_160a19c1f5": {
-      "label": "label"
+      "label": "插件标识"
     },
     "lib.plugins.legacy.text_2b6ba9283a": {
-      "name": "initializer.name"
+      "name": "插件名称"
     },
     "lib.plugins.loader.text_1e476e0971": {
-      "name": "name"
+      "name": "插件名称"
     },
     "lib.plugins.loader.text_3d08c64cfa": {
-      "label": "label",
-      "reason": "reason"
+      "label": "插件标识名称",
+      "reason": "拒绝加载的原因"
     },
     "lib.plugins.loader.text_a9937d3c44": {
-      "name": "name"
+      "name": "已重复的模块名称"
     },
     "lib.plugins.loader.text_15efc78809": {
-      "duplicate": "duplicate"
+      "duplicate": "重复插件的标识路径"
     },
     "lib.plugins.loader.text_e7b7567f3a": {
-      "label": "label",
-      "reason": "reason"
+      "label": "插件标识名称",
+      "reason": "跳过加载的原因"
     },
     "lib.plugins.loader.text_124bf35165": {
-      "label": "label"
+      "label": "插件标识或相对路径"
     },
     "lib.plugins.loader.text_5443aee69b": {
-      "label": "label"
+      "label": "插件标识名称"
     },
     "lib.plugins.loader.text_62da917fe2": {
-      "label": "label",
-      "message": "message"
+      "label": "插件标识名称",
+      "message": "异常错误信息"
     },
     "lib.plugins.loader.text_f5f7e2e640": {
-      "label": "label"
+      "label": "插件相对路径"
     },
     "lib.plugins.loader.text_60d3dded67": {
-      "label": "label",
-      "name": "retired.name",
-      "reason": "retired.reason"
+      "label": "插件相对路径",
+      "name": "已退役脚本名称",
+      "reason": "拒绝热更新原因"
     },
     "lib.plugins.loader.text_3c4eeecae3": {
-      "label": "label"
+      "label": "插件相对路径"
     },
     "lib.plugins.loader.text_ea0ee6ce1c": {
-      "label": "label"
+      "label": "插件相对路径"
     },
     "lib.plugins.loader.text_e34d3516a2": {
-      "label": "label"
+      "label": "插件相对路径"
     },
     "lib.plugins.loader.text_578997b20e": {
-      "label": "label",
-      "message": "message"
+      "label": "插件相对路径",
+      "message": "热更新失败的具体原因"
     },
     "lib.plugins.loader.text_21ad9062c9": {
-      "length": "records.filter(record => record.status === \"loaded\").length"
+      "length": "成功加载的插件数量"
     },
     "lib.plugins.metadata.text_7973faa773": {
-      "name": "name",
-      "builtInDirectory": "builtInDirectory"
+      "name": "插件名称",
+      "builtInDirectory": "内置插件目录名"
     },
     "lib.plugins.migration-plan.text_f29e120ee0": {
-      "duplicate": "duplicate"
+      "duplicate": "已存在相同插件身份的插件路径"
     },
     "lib.plugins.policy.text_86babfebc9": {
-      "replacement": "rule.replacement"
+      "replacement": "替代的内置模块或功能说明"
     },
     "lib.plugins.policy.text_e6719ed747": {
-      "value1": "matched.map(({ title }) => title).join(\"、\")"
+      "value1": "匹配到的游戏名称列表"
     },
     "lib.plugins.tasks.text_768c57158c": {
-      "name": "app.name"
+      "name": "插件名称"
     },
     "lib.plugins.tasks.text_a71a7daf61": {
-      "name": "name"
+      "name": "任务名称"
     },
     "lib.plugins.tasks.text_8f877cdeab": {
-      "name": "name",
-      "cron": "cron"
+      "name": "任务名称",
+      "cron": "cron 表达式"
     },
     "lib.plugins.tasks.text_123691cd16": {
-      "name": "name"
+      "name": "任务名称"
     },
     "lib.plugins.tasks.text_da3faae960": {
-      "name": "name"
+      "name": "任务名称"
     },
     "lib.plugins.tasks.text_dc40fec0a8": {
-      "name": "name",
-      "cron": "cron"
+      "name": "任务名称",
+      "cron": "cron 表达式"
     },
     "lib.public-role-references.text_a1bf286e85": {
-      "prefix": "prefix",
-      "value2": "prefix"
+      "prefix": "命令前缀",
+      "value2": "命令前缀"
     },
     "lib.public-role-references.text_b758fa50aa": {
-      "prefix": "prefix",
-      "value2": "prefix"
+      "prefix": "命令前缀",
+      "value2": "命令前缀"
     },
     "lib.public-role-references.text_998a1527f9": {
-      "prefix": "prefix",
-      "value2": "prefix",
-      "value3": "prefix",
-      "value4": "prefix"
+      "prefix": "命令前缀",
+      "value2": "命令前缀",
+      "value3": "命令前缀",
+      "value4": "命令前缀"
     },
     "lib.public-role-references.text_229622d3e9": {
-      "label": "label",
-      "prefix": "prefix"
+      "label": "游戏名称",
+      "prefix": "命令前缀"
     },
     "lib.public-role-references.text_c253f4dc3d": {
-      "label": "label",
-      "uid": "uid",
-      "value3": "providers[game]",
-      "count": "count"
+      "label": "游戏名称",
+      "uid": "游戏 UID",
+      "value3": "数据源名称",
+      "count": "可见角色数量"
     },
     "lib.public-role-references.text_48a04a997f": {
-      "label": "label"
+      "label": "游戏名称"
     },
     "lib.public-role-references.text_693ed1dd49": {
-      "label": "label",
-      "prefix": "prefix"
+      "label": "游戏名称",
+      "prefix": "命令前缀"
     },
     "lib.public-role-references.text_7402c44582": {
-      "label": "label",
-      "uid": "uid"
+      "label": "游戏名称",
+      "uid": "游戏 UID"
     },
     "lib.public-role-references.text_e0f8fc8d3f": {
-      "label": "label",
-      "uid": "uid",
-      "prefix": "prefix"
+      "label": "游戏名称标签",
+      "uid": "当前设定的公开 UID",
+      "prefix": "对应游戏的命令前缀"
     },
     "lib.public-role-references.text_3db61e2041": {
-      "label": "label"
+      "label": "游戏名称"
     },
     "lib.qq-face.text_d10c3188ae": {
-      "id": "id",
-      "description": "description"
+      "id": "QQ 表情编号",
+      "description": "表情描述文本或默认占位文案"
     },
     "lib.quoted-image-tools.text_81c4fd171c": {
-      "maxImages": "maxImages"
+      "maxImages": "单次允许处理的最大图片数量"
     },
     "lib.quoted-image-tools.text_19bcdf3800": {
-      "value1": "index + 1",
-      "size": "size",
-      "url": "url"
+      "value1": "当前图片序号（从 1 开始）",
+      "size": "图片数据字节大小",
+      "url": "图片资源链接"
     },
     "lib.rank-statistics.text_d61fe85c56": {
-      "prefix": "prefix"
+      "prefix": "对应游戏的命令前缀"
     },
     "lib.rank-statistics.text_244a149bbc": {
-      "uid": "match.query.uid",
-      "name": "character.name",
-      "rank": "result.rank",
-      "value4": "result.score.toFixed(2)"
+      "uid": "查询的目标玩家 UID",
+      "name": "匹配到的角色名称",
+      "rank": "全服伤害排名位次",
+      "value4": "保留两位小数的伤害评分"
     },
     "lib.redeem-code-commands.text_e237bce40f": {
-      "value1": "gameId === \"sr\" ? \"星铁\" : \"\""
+      "value1": "游戏名称前缀（星铁或空字符串）"
     },
     "lib.redeem-code-commands.text_a9a43c79eb": {
-      "gameName": "result.gameName"
+      "gameName": "游戏名称"
     },
     "lib.redeem-code-commands.text_62b08191fe": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.redeem-code-commands.text_27f809d59d": {
-      "id": "id"
+      "id": "用户档案编号"
     },
     "lib.redeem-code-commands.text_eb1aeb8f05": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.redeem-code-commands.text_f82376cf45": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.redeem-code-manual.text_e7b4074acc": {
-      "value1": "game === \"sr\" ? \"星铁\" : \"\""
+      "value1": "游戏名称前缀（星铁或空字符串）"
     },
     "lib.redeem-code-manual.text_71141d994a": {
-      "id": "id"
+      "id": "档案编号"
     },
     "lib.redeem-code-manual.text_77081ead52": {
-      "id": "id",
-      "label": "label"
+      "id": "档案编号",
+      "label": "游戏名称"
     },
     "lib.redeem-code-manual.text_8b852ebfd3": {
-      "label": "label",
-      "id": "id",
-      "value3": "redeemResultText[result]"
+      "label": "游戏名称",
+      "id": "档案编号",
+      "value3": "兑换结果文本"
     },
     "lib.redeem-code-runner.text_8497899325": {
-      "retcode": "retcode"
+      "retcode": "接口返回状态码"
     },
     "lib.redeem-code-runner.text_8b917e12c0": {
-      "code": "code"
+      "code": "兑换码"
     },
     "lib.redeem-code-runner.text_20218dea25": {
-      "name": "redeemGames[game].name",
-      "version": "current.version",
-      "profileId": "profile.profileId",
-      "uid": "role.uid",
-      "value5": "lines.join(\"\\n\")"
+      "name": "游戏名称",
+      "version": "游戏版本号",
+      "profileId": "档案编号",
+      "uid": "游戏角色 UID",
+      "value5": "逐行兑换结果列表"
     },
     "lib.redeem-code-runner.text_08b9ce38fb": {
-      "name": "redeemGames[game].name",
-      "value2": "requestFailure(error)"
+      "name": "游戏名称",
+      "value2": "请求失败原因"
     },
     "lib.redeem-code-runner.text_adc4a5b606": {
-      "name": "redeemGames[game].name",
-      "version": "current.version",
-      "value3": "requestFailure(error)"
+      "name": "游戏名称",
+      "version": "游戏版本号",
+      "value3": "请求失败原因"
     },
     "lib.remote-control.text_6a77b2f525": {
-      "guide": "guide"
+      "guide": "本机终端配对及重置操作指引文本"
     },
     "lib.remote-shell.text_0b6aae72a3": {
-      "value1": "result.code ?? \"未知\""
+      "value1": "子进程退出码，为空时回退为“未知”"
     },
     "lib.request-other-policies.text_7932e1341c": {
-      "path": "path"
+      "path": "重载失败的配置文件路径"
     },
     "lib.runtime-logs.text_bf39bb1ed3": {
-      "before": "before",
-      "prefix": "prefix",
-      "length": "body.length"
+      "before": "图片 Base64 前缀之前的文本",
+      "prefix": "图片 Base64 协议前缀",
+      "length": "被省略的 Base64 内容字符数"
     },
     "lib.server.text_dc3165726e": {
-      "source": "source"
+      "source": "配置项或环境变量名称"
     },
     "lib.server.text_e485b0b865": {
-      "sourceName": "sourceName"
+      "sourceName": "配置项或环境变量名称"
     },
     "lib.server.text_d64598da26": {
-      "source": "source"
+      "source": "配置项或环境变量名称"
     },
     "lib.update-check-command.text_d7c9551906": {
-      "behind": "behind"
+      "behind": "本地落后上游的新增提交数量"
     },
     "lib.update-check-command.text_9f8126024a": {
-      "value1": "sanitizeRuntimeLog(branch)"
+      "value1": "经日志净化处理的当前本地分支名称"
     },
     "lib.update-check-command.text_1ce2e005ab": {
-      "value1": "sanitizeRuntimeLog(upstream)"
+      "value1": "经日志净化处理的上游分支名称"
     },
     "lib.update-check-command.text_34461841ce": {
-      "ahead": "ahead",
-      "behind": "behind"
+      "ahead": "本地领先上游的提交数量",
+      "behind": "本地落后上游的提交数量"
     },
     "lib.update-check-command.text_18dbe46483": {
-      "current": "current"
+      "current": "当前本地 Git 提交标识"
     },
     "lib.update-check-command.text_2424961d11": {
-      "candidate": "candidate"
+      "candidate": "上游候选更新提交标识"
     },
     "lib.update-checkout.text_38bd9912a4": {
-      "value1": "args[0]"
+      "value1": "执行失败的 Git 子命令名称"
     },
     "lib.update-command.text_79a21d49b4": {
-      "value1": "legacy[1] ?? \"\""
+      "value1": "可选的“强制”修饰词"
     },
     "lib.update-command.text_09fe40ea71": {
-      "example": "example",
-      "value2": "example"
+      "example": "示例更新命令前缀（#更新 或 #强制更新）",
+      "value2": "示例更新命令前缀（#更新 或 #强制更新）"
     },
     "lib.update-log-command.text_774b663722": {
-      "name": "log.name",
-      "length": "log.lines.length"
+      "name": "目标名称（宿主或插件名）",
+      "length": "日志条目数量"
     },
     "lib.update-staging.text_f353606704": {
-      "phase": "phase"
+      "phase": "当前所处的更新候选构建阶段名称"
     },
     "lib.valkey-config.text_889ba748d6": {
-      "key": "key"
+      "key": "配置项字段名（port 或 db）"
     },
     "lib.valkey-config.text_01b067eb79": {
-      "key": "key"
+      "key": "配置项字段名（username 或 password）"
     },
     "lib.weather-card.text_b157ef7c8a": {
-      "area": "report.area"
+      "area": "地区名称"
     },
     "lib.weather-card.text_9f18e63152": {
-      "updated": "report.updated"
+      "updated": "数据更新时间"
     },
     "lib.weather-command.text_1cb45ebbc8": {
-      "area": "report.area",
-      "updated": "report.updated"
+      "area": "地区名称",
+      "updated": "数据更新时间"
     },
     "lib.weather.text_7019e175df": {
-      "dayWeather": "dayWeather",
-      "nightWeather": "nightWeather"
+      "dayWeather": "白天天气状况",
+      "nightWeather": "夜间天气状况"
     },
     "lib.weather.text_d246e84a4b": {
-      "value1": "clean(observation?.wind_power)"
+      "value1": "风力等级"
     },
     "lib.weather.text_e4fb2ecde8": {
-      "humidity": "humidity"
+      "humidity": "相对湿度百分比数值"
     },
     "lib.weather.text_ff6b793180": {
-      "pressure": "pressure"
+      "pressure": "气压数值（百帕）"
     },
     "lib.weather.text_eadde60d89": {
-      "precipitation": "precipitation"
+      "precipitation": "降水量数值（毫米）"
     },
     "lib.weather.text_27f6e45e1a": {
-      "quality": "quality"
+      "quality": "空气质量指数（AQI）数值"
     },
     "lib.weather.text_fb96b0c4f5": {
-      "value1": "clean(rise?.sunrise)"
+      "value1": "日出时间"
     },
     "lib.weather.text_95cdac9718": {
-      "value1": "clean(rise?.sunset)"
+      "value1": "日落时间"
     },
     "lib.weather.text_a494688c08": {
-      "value1": "clean(object(forecast.limit)?.tail_number)"
+      "value1": "限行尾号"
     },
     "lib.weather.text_9a3b0f8f60": {
-      "title": "title",
-      "level": "level"
+      "title": "预警类型名称",
+      "level": "预警级别名称"
     },
     "lib.weather.text_ee66ad2969": {
-      "value1": "matches.slice(0, 8).map(formatWeatherArea).join(\"\\n\")"
+      "value1": "匹配的地区列表（每行一个）"
     },
     "scripts.bootstrap.text_166356e16f": {
-      "requiredVersion": "requiredVersion",
-      "version": "Bun.version"
+      "requiredVersion": "要求的 Bun 版本号",
+      "version": "当前运行的 Bun 版本号"
     },
     "scripts.bootstrap.text_3991f69bdf": {
-      "message": "message"
+      "message": "当前执行的步骤名称"
     },
     "scripts.bootstrap.text_51fd5ff84a": {
-      "message": "message",
-      "code": "code"
+      "message": "当前执行的步骤名称",
+      "code": "进程退出码"
     },
     "scripts.bootstrap.text_4ca0acdae3": {
-      "message": "message"
+      "message": "当前执行的步骤名称"
     },
     "scripts.bootstrap.text_7bdd98b1eb": {
-      "attempt": "attempt"
+      "attempt": "当前重试次数"
     },
     "scripts.bootstrap.text_0caa104338": {
-      "count": "count",
-      "value2": "count"
+      "count": "已核对的子模块数量",
+      "value2": "子模块总数量"
     },
     "scripts.prepare-legacy-activity-notices.text_96e49a7140": {
-      "bot": "bot"
+      "bot": "机器人账号 ID"
     },
     "scripts.skia-binary.text_7538305ef8": {
-      "attempt": "attempt"
+      "attempt": "当前重试次数"
     },
     "scripts.skia-binary.text_f347e875b6": {
-      "status": "response.status"
+      "status": "HTTP 响应状态码"
     },
     "scripts.startup.text_6fcf238dd1": {
-      "length": "copied.length"
+      "length": "已复制准备的图鉴素材文件数量"
     },
     "scripts.startup.text_6cdbc75fa3": {
-      "value1": "missing.join(\"、\")"
+      "value1": "缺失的图鉴内置素材名称列表"
     },
     "scripts.startup.text_0fc81dc230": {
-      "length": "missing.length"
+      "length": "缺失的图鉴主题素材数量"
     },
     "scripts.startup.text_01e1e5e258": {
-      "templates": "starrail.templates",
-      "portraits": "starrail.portraits"
+      "templates": "已恢复的挑战模板文件数量",
+      "portraits": "已恢复的本地原头像数量"
     },
     "scripts.startup.text_14e08f95ef": {
-      "value1": "starrail.missing.join(\"、\")"
+      "value1": "缺失的星铁挑战素材列表"
     },
     "scripts.startup.text_b99661feab": {
-      "length": "starrail.missing.length"
+      "length": "缺失的星铁挑战模板文件数量"
     },
     "scripts.startup.text_4f0aebd2e2": {
-      "installed": "relife.installed"
+      "installed": "已恢复的原转生主题文件数量"
     },
     "scripts.startup.text_fe3863c183": {
-      "value1": "relife.missing.join(\"、\")"
+      "value1": "缺失的星铁转生素材名称列表"
     },
     "scripts.startup.text_6ec22d49c0": {
-      "value1": "channel === \"live\" ? \"正式版\" : \"最新版\""
+      "value1": "图鉴版本类型（正式版或最新版）"
     },
     "scripts.startup.text_0e26e4684f": {
-      "value1": "channel === \"live\" ? \"正式版\" : \"最新版\""
+      "value1": "图鉴版本渠道名称"
     },
     "scripts.startup.text_8f0de28055": {
-      "message": "cause.message"
+      "message": "图鉴初始化异常的错误消息"
     },
     "scripts.startup.text_3126ef8174": {
-      "version": "result.version"
+      "version": "已保存的图鉴候选版本号"
     },
     "scripts.startup.text_0ce96f2ce5": {
-      "value1": "result.issues[0]"
+      "value1": "图鉴校验问题描述"
     },
     "scripts.update-builtin-resource-manifest.text_ea5c4d0a1d": {
-      "value1": "relative(root, file)"
+      "value1": "触发校验失败的资源文件相对路径"
     },
     "scripts.update-builtin-resource-manifest.text_1daec50c75": {
-      "length": "files.length",
-      "value2": "files.reduce((n, file) => n + file.bytes, 0)"
+      "length": "写入清单的资源文件总数",
+      "value2": "已记录资源文件的总字节数"
     },
     "scripts.verify-builtin-resources.text_edd149b0a3": {
-      "checked": "result.checked",
-      "value2": "(result.bytes / 1024 ** 2).toFixed(1)"
+      "checked": "已核对的内置文件数量",
+      "value2": "已核对文件的总大小（MiB）"
     },
     "web.miyoushe.app.text_519e8af82e": {
-      "loginHelp": "loginHelp"
+      "loginHelp": "登录指引或重新登录的说明文本"
     },
     "web.miyoushe.app.text_7051d74063": {
-      "value1": "unbound.join(\"、\")"
+      "value1": "未绑定的云游戏名称列表（以顿号分隔）"
     },
     "web.miyoushe.app.text_cede4a4c76": {
-      "time": "schedule.time",
-      "status": "status"
+      "time": "今日计划执行签到的时间",
+      "status": "当前签到任务的执行状态文本"
     },
     "web.miyoushe.app.text_58d218f90f": {
-      "happenedTimes": "item.happenedTimes"
+      "happenedTimes": "米游币任务已完成次数"
     },
     "web.miyoushe.app.text_3f6fdc79bb": {
-      "profileId": "profileId"
+      "profileId": "当前档案 ID"
     },
     "web.miyoushe.app.text_f70036fba2": {
-      "value1": "expiry.format(expiresAt)"
+      "value1": "格式化后的登录会话过期时间"
     },
     "web.miyoushe.app.text_c507f0e357": {
-      "value1": "point(remaining)"
+      "value1": "格式化后的今日剩余可领取米游币数量"
     },
     "web.miyoushe.app.text_3844ddd945": {
-      "value1": "point(rule.spent)",
-      "value2": "point(rule.held)"
+      "value1": "已使用的米游币额度",
+      "value2": "待结算的米游币额度"
     },
     "web.miyoushe.app.text_7a118b0f7c": {
-      "destination": "destination",
-      "value2": "point(rule.spent)",
-      "limit": "limit",
-      "value4": "point(rule.held)"
+      "destination": "收货地址或游戏角色 UID 与区服",
+      "value2": "已消耗的米游币数量",
+      "limit": "消费上限或无上限说明",
+      "value4": "待结算（预占）的米游币数量"
     },
     "web.miyoushe.app.text_c82733b9ff": {
-      "value1": "shopTime(rule.nextOpenAt)"
+      "value1": "格式化后的商品下次开放兑换时间"
     },
     "web.miyoushe.app.text_93e7d454a6": {
-      "group": "group",
-      "selection": "selection",
-      "limit": "limit"
+      "group": "游戏或分区名称",
+      "selection": "追踪的商品或档位",
+      "limit": "累计米游币预算上限"
     },
     "lib.migration-media-config.invalid_cli_setting": {
       "field": "无效的 CLI 配置字段名，不包含配置值"

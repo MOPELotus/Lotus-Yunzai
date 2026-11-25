@@ -28,7 +28,7 @@ test.each(renderers)("%s 特殊池卡在渲染前要求真实的原主题目录�
   const themeDirectory = join(root, "character-theme");
   const opts = { mode: "gpu", genshinResourceDirectory, themeDirectory } as const;
   try {
-    await expect(render(opts)).rejects.toThrow(`${game}特殊池记录的原 Genshin 资源目录不可用。`);
+    await expect(render(opts)).rejects.toThrow(`${game}特殊池记录的原版 Genshin 资源目录不可用。`);
 
     const fonts = join(genshinResourceDirectory, "font");
     await mkdir(fonts, { recursive: true });

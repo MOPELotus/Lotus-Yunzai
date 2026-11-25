@@ -5,11 +5,11 @@
   "description": "存储",
   "sections": {
     "index": {
-      "description": "存储",
+      "description": "Valkey/Redis 连接会话管理、只读探测与命名空间键值存储封装",
       "source": "packages/storage/index.ts"
     },
     "role-json-archive": {
-      "description": "存储",
+      "description": "按 QQ 与 UID 隔离的角色 JSON 存档文件原子读写与并发校验",
       "source": "packages/storage/role-json-archive.ts"
     }
   },
@@ -40,34 +40,34 @@
   },
   "parameters": {
     "role-json-archive.text_56fd35ae8d": {
-      "subject": "subject"
+      "subject": "当前校验的角色存档对象名称"
     },
     "role-json-archive.text_432e4d576e": {
-      "subject": "subject"
+      "subject": "当前读取的角色存档对象名称"
     },
     "role-json-archive.text_7d4b274ac1": {
-      "subject": "subject"
+      "subject": "当前读写校验的角色存档对象名称"
     },
     "role-json-archive.text_8e5f924492": {
-      "subject": "subject"
+      "subject": "当前读取的角色存档对象名称"
     },
     "role-json-archive.text_9762775415": {
-      "subject": "subject"
+      "subject": "当前解析的角色存档对象名称"
     },
     "role-json-archive.text_22772dbab6": {
-      "subject": "subject"
+      "subject": "当前保存的角色存档对象名称"
     },
     "role-json-archive.text_1d920f74f1": {
-      "subject": "subject"
+      "subject": "当前操作的角色存档对象名称"
     },
     "role-json-archive.text_b8c99f0a49": {
-      "subject": "subject"
+      "subject": "当前初始化的角色存档对象名称"
     },
     "role-json-archive.text_e33b804f96": {
-      "subject": "subject"
+      "subject": "当前定位目录的角色存档对象名称"
     },
     "role-json-archive.text_401ef51e73": {
-      "subject": "subject"
+      "subject": "当前更新的角色存档对象名称"
     }
   }
 }

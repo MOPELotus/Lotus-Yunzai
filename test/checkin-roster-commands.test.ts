@@ -59,14 +59,14 @@ test("主人读全局注册数并保留前 14 个档案，渲染成功返回图�
   const result = await invoke({ ...group, isMaster: true });
   expect(result).toEqual(segment.image(png));
   expect(trace).toEqual(["global", ...rows.slice(0, 14).map(row => `details ${row.qq}:1`)]);
-  expect(cards[0]).toMatchObject({ title: "签到名单", lead: "全局 Lotus-Yunzai 档案 · 16\n当前已注册 profile 如下。" });
+  expect(cards[0]).toMatchObject({ title: "签到名单", lead: "全局 Lotus-Yunzai 档案 · 16\n当前已注册档案如下。" });
   expect(cards[0]?.lines).toHaveLength(14);
 });
 
 test("普通私聊只读取本人设置，渲染失败用同一范围的文字输出", async () => {
   const { invoke, trace } = fixture();
   expect(await invoke(own)).toBe([
-    "我的签到名单", "QQ 51 · 2", "你已注册的 profile 如下。",
+    "我的签到名单", "QQ 51 · 2", "你已注册的档案如下。",
     "P1 · 档 51/1", "已登录 · 社区开 · 原 · inherit",
     "P2 · 档 51/2", "已登录 · 社区开 · 原 · inherit",
   ].join("\n"));

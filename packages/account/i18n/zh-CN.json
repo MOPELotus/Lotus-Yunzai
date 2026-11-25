@@ -5,19 +5,19 @@
   "description": "账号档案",
   "sections": {
     "device-binding": {
-      "description": "账号档案：设备信息",
+      "description": "设备绑定参数及安卓设备信息 JSON 的解析与校验。",
       "source": "packages/account/device-binding.ts"
     },
     "group-rank-refresh": {
-      "description": "账号档案：群管理",
+      "description": "群榜刷新任务的并发控制。",
       "source": "packages/account/group-rank-refresh.ts"
     },
     "index": {
-      "description": "账号档案",
+      "description": "账号档案读写、登录凭据校验、角色选择、自动签到及设备绑定管理。",
       "source": "packages/account/index.ts"
     },
     "region-display": {
-      "description": "账号档案",
+      "description": "游戏区服标识与中文显示名称映射。",
       "source": "packages/account/region-display.ts"
     }
   },

@@ -5,443 +5,443 @@
   "description": "兼容 HTML 模板、CSS 伪元素及米游社网页的静态文字。原模板与素材保持原样；渲染和网页交付时按来源替换纯展示文本，不改变命令、路径与模板表达式。sections.source 定位原模板，text/attribute/css 分别表示正文、辅助标签和伪元素文字。",
   "sections": {
     "plugins.genshin.panel.original.profile.detail": {
-      "description": "plugins/genshin/panel/original/profile-detail.html",
+      "description": "原神角色原版面板详情页，展示圣遗物评分与伤害计算结果",
       "source": "plugins/genshin/panel/original/profile-detail.html"
     },
     "plugins.meme.resources.admin.index": {
-      "description": "plugins/meme/resources/admin/index.html",
+      "description": "表情包插件管理面板与配置项状态展示页面",
       "source": "plugins/meme/resources/admin/index.html"
     },
     "plugins.meme.resources.code.index": {
-      "description": "plugins/meme/resources/code/index.html",
+      "description": "表情包插件更新推送与代码提交信息展示页面",
       "source": "plugins/meme/resources/code/index.html"
     },
     "plugins.meme.resources.list.index": {
-      "description": "plugins/meme/resources/list/index.html",
+      "description": "表情包插件表情列表与分类统计展示页面",
       "source": "plugins/meme/resources/list/index.html"
     },
     "plugins.meme.resources.stat.index": {
-      "description": "plugins/meme/resources/stat/index.html",
+      "description": "表情包插件的表情调用次数统计页面模板",
       "source": "plugins/meme/resources/stat/index.html"
     },
     "plugins.starrail.monthly.theme.charge.charge": {
-      "description": "plugins/starrail/monthly-theme/charge/charge.html",
+      "description": "星穹铁道月报模块的资源获取记录页面模板，展示获取时间、数量、变化原因及分页信息",
       "source": "plugins/starrail/monthly-theme/charge/charge.html"
     },
     "plugins.starrail.monthly.theme.month.month": {
-      "description": "plugins/starrail/monthly-theme/month/month.html",
+      "description": "星穹铁道月报模块的开拓日历页面模板，用于统计和展示本月星琼与星轨票收入",
       "source": "plugins/starrail/monthly-theme/month/month.html"
     },
     "plugins.starrail.monthly.theme.online.online": {
-      "description": "plugins/starrail/monthly-theme/online/online.html",
+      "description": "星穹铁道月报模块的在线时长统计与每日热力图可视化页面模板",
       "source": "plugins/starrail/monthly-theme/online/online.html"
     },
     "plugins.starrail.panel.theme.character.artis.list": {
-      "description": "plugins/starrail/panel-theme/character/artis-list.html",
+      "description": "星穹铁道角色面板模块的遗器列表及分数展示页面模板",
       "source": "plugins/starrail/panel-theme/character/artis-list.html"
     },
     "plugins.starrail.panel.theme.character.artis.mark": {
-      "description": "plugins/starrail/panel-theme/character/artis-mark.html",
+      "description": "星穹铁道角色遗器评分计算说明页模板，展示各位置权重、对齐比例及评分规则",
       "source": "plugins/starrail/panel-theme/character/artis-mark.html"
     },
     "plugins.starrail.panel.theme.character.profile.detail": {
-      "description": "plugins/starrail/panel-theme/character/profile-detail.html",
+      "description": "星穹铁道角色面板详情页模板，展示角色基础属性、遗器评分与伤害计算信息",
       "source": "plugins/starrail/panel-theme/character/profile-detail.html"
     },
     "plugins.starrail.panel.theme.character.profile.list": {
-      "description": "plugins/starrail/panel-theme/character/profile-list.html",
+      "description": "星铁角色面板列表与更新状态展示模板",
       "source": "plugins/starrail/panel-theme/character/profile-list.html"
     },
     "plugins.starrail.panel.theme.character.profile.stat": {
-      "description": "plugins/starrail/panel-theme/character/profile-stat.html",
+      "description": "星铁角色面板练度统计与更新指引模板",
       "source": "plugins/starrail/panel-theme/character/profile-stat.html"
     },
     "plugins.starrail.panel.theme.character.team.damage": {
-      "description": "plugins/starrail/panel-theme/character/team-damage.html",
+      "description": "星铁队伍伤害模拟结果与行动过程展示模板",
       "source": "plugins/starrail/panel-theme/character/team-damage.html"
     },
     "resources.builtin.games.flower.html.gacha.gacha": {
-      "description": "resources/builtin/games/flower/html/gacha/gacha.html",
+      "description": "内置花朵小游戏抽卡定轨与结果展示模板",
       "source": "resources/builtin/games/flower/html/gacha/gacha.html"
     },
     "resources.builtin.games.flower.html.relife.relife": {
-      "description": "resources/builtin/games/flower/html/relife/relife.html",
+      "description": "内置花朵小游戏角色转生结果展示模板",
       "source": "resources/builtin/games/flower/html/relife/relife.html"
     },
     "resources.builtin.games.flower.html.single.single": {
-      "description": "resources/builtin/games/flower/html/single/single.html",
+      "description": "flower 模块单抽定轨与命定值信息展示模板",
       "source": "resources/builtin/games/flower/html/single/single.html"
     },
     "resources.builtin.games.genshin.StarRail.html.mysNews.list.mysNews.list": {
-      "description": "resources/builtin/games/genshin/StarRail/html/mysNews-list/mysNews-list.html",
+      "description": "崩坏：星穹铁道米游社资讯列表及查看指令提示模板",
       "source": "resources/builtin/games/genshin/StarRail/html/mysNews-list/mysNews-list.html"
     },
     "resources.builtin.games.genshin.StarRail.html.mysNews.mysNews": {
-      "description": "resources/builtin/games/genshin/StarRail/html/mysNews/mysNews.html",
+      "description": "崩坏：星穹铁道米游社资讯文章详情展示模板",
       "source": "resources/builtin/games/genshin/StarRail/html/mysNews/mysNews.html"
     },
     "resources.builtin.games.genshin.ZZZero.html.buddy.buddy": {
-      "description": "resources/builtin/games/genshin/ZZZero/html/buddy/buddy.html",
+      "description": "绝区零已拥有邦布列表展示模板",
       "source": "resources/builtin/games/genshin/ZZZero/html/buddy/buddy.html"
     },
     "resources.builtin.games.genshin.ZZZero.html.dailyNote.note": {
-      "description": "resources/builtin/games/genshin/ZZZero/html/dailyNote/note.html",
+      "description": "绝区零实时便笺（电量恢复、活跃度与日常状态）展示页面模板",
       "source": "resources/builtin/games/genshin/ZZZero/html/dailyNote/note.html"
     },
     "resources.builtin.games.genshin.html.abyss.abyss.floor": {
-      "description": "resources/builtin/games/genshin/html/abyss/abyss-floor.html",
+      "description": "原神深境螺旋单层各间挑战详情展示模板",
       "source": "resources/builtin/games/genshin/html/abyss/abyss-floor.html"
     },
     "resources.builtin.games.genshin.html.abyss.abyss": {
-      "description": "resources/builtin/games/genshin/html/abyss/abyss.html",
+      "description": "原神深境螺旋战绩总览与战斗数据统计展示模板",
       "source": "resources/builtin/games/genshin/html/abyss/abyss.html"
     },
     "resources.builtin.games.genshin.html.abyss.combat": {
-      "description": "resources/builtin/games/genshin/html/abyss/combat.html",
+      "description": "原神幻想真境剧诗战绩与挑战记录展示模板",
       "source": "resources/builtin/games/genshin/html/abyss/combat.html"
     },
     "resources.builtin.games.genshin.html.admin.userAdmin": {
-      "description": "resources/builtin/games/genshin/html/admin/userAdmin.html",
+      "description": "用户Cookie管理与查询统计页面",
       "source": "resources/builtin/games/genshin/html/admin/userAdmin.html"
     },
     "resources.builtin.games.genshin.html.avatar.weapon": {
-      "description": "resources/builtin/games/genshin/html/avatar/weapon.html",
+      "description": "角色已装备武器列表展示页面",
       "source": "resources/builtin/games/genshin/html/avatar/weapon.html"
     },
     "resources.builtin.games.genshin.html.blueprint.blueprint": {
-      "description": "resources/builtin/games/genshin/html/blueprint/blueprint.html",
+      "description": "尘歌壶模数养成计算页面",
       "source": "resources/builtin/games/genshin/html/blueprint/blueprint.html"
     },
     "resources.builtin.games.genshin.html.calculator.calculator.gs": {
-      "description": "resources/builtin/games/genshin/html/calculator/calculator-gs.html",
+      "description": "原神角色养成计算页面",
       "source": "resources/builtin/games/genshin/html/calculator/calculator-gs.html"
     },
     "resources.builtin.games.genshin.html.calculator.calculator.sr": {
-      "description": "resources/builtin/games/genshin/html/calculator/calculator-sr.html",
+      "description": "崩坏：星穹铁道角色养成计算页面",
       "source": "resources/builtin/games/genshin/html/calculator/calculator-sr.html"
     },
     "resources.builtin.games.genshin.html.deck.deck": {
-      "description": "resources/builtin/games/genshin/html/deck/deck.html",
+      "description": "七圣召唤卡组详情页面",
       "source": "resources/builtin/games/genshin/html/deck/deck.html"
     },
     "resources.builtin.games.genshin.html.deckCard.deckCard": {
-      "description": "resources/builtin/games/genshin/html/deckCard/deckCard.html",
+      "description": "七圣召唤行动牌使用次数详情页面",
       "source": "resources/builtin/games/genshin/html/deckCard/deckCard.html"
     },
     "resources.builtin.games.genshin.html.deckList.deckList": {
-      "description": "resources/builtin/games/genshin/html/deckList/deckList.html",
+      "description": "七圣召唤卡组列表展示页面",
       "source": "resources/builtin/games/genshin/html/deckList/deckList.html"
     },
     "resources.builtin.games.genshin.html.gacha.gacha.all.log": {
-      "description": "resources/builtin/games/genshin/html/gacha/gacha-all-log.html",
+      "description": "全卡池抽卡记录总览与五星历史页面",
       "source": "resources/builtin/games/genshin/html/gacha/gacha-all-log.html"
     },
     "resources.builtin.games.genshin.html.gacha.gacha.log": {
-      "description": "resources/builtin/games/genshin/html/gacha/gacha-log.html",
+      "description": "单卡池抽卡记录与五星历史展示页面",
       "source": "resources/builtin/games/genshin/html/gacha/gacha-log.html"
     },
     "resources.builtin.games.genshin.html.gacha.gacha.trial": {
-      "description": "resources/builtin/games/genshin/html/gacha/gacha-trial.html",
+      "description": "武器定轨与命定值试算/展示页面",
       "source": "resources/builtin/games/genshin/html/gacha/gacha-trial.html"
     },
     "resources.builtin.games.genshin.html.gacha.log.count": {
-      "description": "resources/builtin/games/genshin/html/gacha/log-count.html",
+      "description": "抽卡记录统计页面",
       "source": "resources/builtin/games/genshin/html/gacha/log-count.html"
     },
     "resources.builtin.games.genshin.html.ledger.ledger.count.gs": {
-      "description": "resources/builtin/games/genshin/html/ledger/ledger-count-gs.html",
+      "description": "原神原石与摩拉月度统计页面",
       "source": "resources/builtin/games/genshin/html/ledger/ledger-count-gs.html"
     },
     "resources.builtin.games.genshin.html.ledger.ledger.count.sr": {
-      "description": "resources/builtin/games/genshin/html/ledger/ledger-count-sr.html",
+      "description": "崩坏：星穹铁道星琼与专/通票月度统计页面",
       "source": "resources/builtin/games/genshin/html/ledger/ledger-count-sr.html"
     },
     "resources.builtin.games.genshin.html.ledger.ledger.gs": {
-      "description": "resources/builtin/games/genshin/html/ledger/ledger-gs.html",
+      "description": "原神原石与摩拉月度收支统计（旅行者札记）HTML展示模板",
       "source": "resources/builtin/games/genshin/html/ledger/ledger-gs.html"
     },
     "resources.builtin.games.genshin.html.ledger.ledger.sr": {
-      "description": "resources/builtin/games/genshin/html/ledger/ledger-sr.html",
+      "description": "崩坏：星穹铁道开拓月历（星琼与专通票月度收支统计）HTML展示模板",
       "source": "resources/builtin/games/genshin/html/ledger/ledger-sr.html"
     },
     "resources.builtin.games.genshin.html.mysNews.list.mysNews.list": {
-      "description": "resources/builtin/games/genshin/html/mysNews-list/mysNews-list.html",
+      "description": "米游社资讯与活动公告列表页HTML展示模板",
       "source": "resources/builtin/games/genshin/html/mysNews-list/mysNews-list.html"
     },
     "resources.builtin.games.genshin.html.mysNews.mysNews": {
-      "description": "resources/builtin/games/genshin/html/mysNews/mysNews.html",
+      "description": "米游社公告与资讯文章详情页HTML展示模板",
       "source": "resources/builtin/games/genshin/html/mysNews/mysNews.html"
     },
     "resources.builtin.games.genshin.html.payLog.payLog": {
-      "description": "resources/builtin/games/genshin/html/payLog/payLog.html",
+      "description": "游戏充值记录总览、按月及明细统计HTML展示模板",
       "source": "resources/builtin/games/genshin/html/payLog/payLog.html"
     },
     "resources.builtin.games.genshin.html.player.daily.note.gs": {
-      "description": "resources/builtin/games/genshin/html/player/daily-note-gs.html",
+      "description": "原神实时便笺（树脂、洞天宝钱、每日委托、探索派遣、周本及参量质变仪状态）HTML展示模板",
       "source": "resources/builtin/games/genshin/html/player/daily-note-gs.html"
     },
     "resources.builtin.games.genshin.html.player.daily.note.sr": {
-      "description": "resources/builtin/games/genshin/html/player/daily-note-sr.html",
+      "description": "崩坏：星穹铁道实时便笺（开拓者昵称、等级及日常状态）HTML展示模板",
       "source": "resources/builtin/games/genshin/html/player/daily-note-sr.html"
     },
     "resources.builtin.games.genshin.html.player.role.card": {
-      "description": "resources/builtin/games/genshin/html/player/role-card.html",
+      "description": "玩家角色数据总览卡片模板",
       "source": "resources/builtin/games/genshin/html/player/role-card.html"
     },
     "resources.builtin.games.genshin.html.player.role.explore": {
-      "description": "resources/builtin/games/genshin/html/player/role-explore.html",
+      "description": "玩家地图探险与七圣召唤数据总览模板",
       "source": "resources/builtin/games/genshin/html/player/role-explore.html"
     },
     "resources.builtin.games.genshin.html.user.uid.list": {
-      "description": "resources/builtin/games/genshin/html/user/uid-list.html",
+      "description": "用户UID与CK绑定、切换及管理列表模板",
       "source": "resources/builtin/games/genshin/html/user/uid-list.html"
     },
     "resources.builtin.games.miao.character.artis.list": {
-      "description": "resources/builtin/games/miao/character/artis-list.html",
+      "description": "角色圣遗物列表与评分展示模板",
       "source": "resources/builtin/games/miao/character/artis-list.html"
     },
     "resources.builtin.games.miao.character.artis.mark": {
-      "description": "resources/builtin/games/miao/character/artis-mark.html",
+      "description": "圣遗物评分及规则说明展示模板",
       "source": "resources/builtin/games/miao/character/artis-mark.html"
     },
     "resources.builtin.games.miao.character.avatar.list": {
-      "description": "resources/builtin/games/miao/character/avatar-list.html",
+      "description": "角色列表与数据更新状态展示模板",
       "source": "resources/builtin/games/miao/character/avatar-list.html"
     },
     "resources.builtin.games.miao.character.character.card": {
-      "description": "resources/builtin/games/miao/character/character-card.html",
+      "description": "角色信息卡片展示模板",
       "source": "resources/builtin/games/miao/character/character-card.html"
     },
     "resources.builtin.games.miao.character.profile.detail": {
-      "description": "resources/builtin/games/miao/character/profile-detail.html",
+      "description": "角色面板详情页HTML模板，展示基础属性、圣遗物评分、伤害计算、排名统计、词条收益分析及Buff列表",
       "source": "resources/builtin/games/miao/character/profile-detail.html"
     },
     "resources.builtin.games.miao.character.profile.list": {
-      "description": "resources/builtin/games/miao/character/profile-list.html",
+      "description": "角色面板列表及更新状态页面模板",
       "source": "resources/builtin/games/miao/character/profile-list.html"
     },
     "resources.builtin.games.miao.character.profile.stat": {
-      "description": "resources/builtin/games/miao/character/profile-stat.html",
+      "description": "角色面板练度统计页面模板",
       "source": "resources/builtin/games/miao/character/profile-stat.html"
     },
     "resources.builtin.games.miao.character.rank.profile.list": {
-      "description": "resources/builtin/games/miao/character/rank-profile-list.html",
+      "description": "群内角色面板排名列表及说明页面模板",
       "source": "resources/builtin/games/miao/character/rank-profile-list.html"
     },
     "resources.builtin.games.miao.common.tpl.avatar.card": {
-      "description": "resources/builtin/games/miao/common/tpl/avatar-card.html",
+      "description": "通用角色信息卡片模板",
       "source": "resources/builtin/games/miao/common/tpl/avatar-card.html"
     },
     "resources.builtin.games.miao.gacha.gacha.detail": {
-      "description": "resources/builtin/games/miao/gacha/gacha-detail.html",
+      "description": "抽卡记录详情页面模板",
       "source": "resources/builtin/games/miao/gacha/gacha-detail.html"
     },
     "resources.builtin.games.miao.gacha.gacha.stat": {
-      "description": "resources/builtin/games/miao/gacha/gacha-stat.html",
+      "description": "按卡池分类的抽卡统计结果展示页面模板",
       "source": "resources/builtin/games/miao/gacha/gacha-stat.html"
     },
     "resources.builtin.games.miao.stat.abyss.pct": {
-      "description": "resources/builtin/games/miao/stat/abyss-pct.html",
+      "description": "深渊角色出场率及持有率统计展示模板",
       "source": "resources/builtin/games/miao/stat/abyss-pct.html"
     },
     "resources.builtin.games.miao.stat.abyss.summary": {
-      "description": "resources/builtin/games/miao/stat/abyss-summary.html",
+      "description": "当期深渊挑战概览、数据上传及排行说明模板",
       "source": "resources/builtin/games/miao/stat/abyss-summary.html"
     },
     "resources.builtin.games.miao.stat.abyss.team": {
-      "description": "resources/builtin/games/miao/stat/abyss-team.html",
+      "description": "深渊各层上下半推荐配队及出场记录统计模板",
       "source": "resources/builtin/games/miao/stat/abyss-team.html"
     },
     "resources.builtin.games.miao.stat.character": {
-      "description": "resources/builtin/games/miao/stat/character.html",
+      "description": "全角色综合持有率统计页面模板",
       "source": "resources/builtin/games/miao/stat/character.html"
     },
     "resources.builtin.games.miao.stat.hard.summary": {
-      "description": "resources/builtin/games/miao/stat/hard-summary.html",
+      "description": "高难挑战战绩汇总页面模板",
       "source": "resources/builtin/games/miao/stat/hard-summary.html"
     },
     "resources.builtin.games.miao.stat.role.card.exchange": {
-      "description": "resources/builtin/games/miao/stat/role-card-exchange.html",
+      "description": "群内月谕圣牌可交换对象匹配页面模板",
       "source": "resources/builtin/games/miao/stat/role-card-exchange.html"
     },
     "resources.builtin.games.miao.stat.role.card": {
-      "description": "resources/builtin/games/miao/stat/role-card.html",
+      "description": "月谕圣牌收集展示页面模板",
       "source": "resources/builtin/games/miao/stat/role-card.html"
     },
     "resources.builtin.games.miao.stat.role.summary": {
-      "description": "resources/builtin/games/miao/stat/role-summary.html",
+      "description": "幻想真境剧诗战绩汇总页面模板，用于展示最佳记录、星章、祝福及关卡挑战详情",
       "source": "resources/builtin/games/miao/stat/role-summary.html"
     },
     "resources.builtin.games.miao.wiki.calendar": {
-      "description": "resources/builtin/games/miao/wiki/calendar.html",
+      "description": "游戏活动日历页面模板，用于展示当前时间及近期活动列表",
       "source": "resources/builtin/games/miao/wiki/calendar.html"
     },
     "resources.builtin.games.miao.wiki.character.grow": {
-      "description": "resources/builtin/games/miao/wiki/character-grow.html",
+      "description": "角色养成计算器页面模板，用于展示养成目标、所需材料及摩拉统计",
       "source": "resources/builtin/games/miao/wiki/character-grow.html"
     },
     "resources.builtin.games.miao.wiki.character.material": {
-      "description": "resources/builtin/games/miao/wiki/character-material.html",
+      "description": "角色突破与天赋材料及基础属性页面",
       "source": "resources/builtin/games/miao/wiki/character-material.html"
     },
     "resources.builtin.games.miao.wiki.character.talent": {
-      "description": "resources/builtin/games/miao/wiki/character-talent.html",
+      "description": "角色天赋与奇缘星魂详情页面",
       "source": "resources/builtin/games/miao/wiki/character-talent.html"
     },
     "resources.builtin.games.miao.wiki.character.wiki": {
-      "description": "resources/builtin/games/miao/wiki/character-wiki.html",
+      "description": "角色百科详情页面（基础信息、属性、命座/星魂及统计数据）",
       "source": "resources/builtin/games/miao/wiki/character-wiki.html"
     },
     "resources.builtin.games.miao.wiki.today.material": {
-      "description": "resources/builtin/games/miao/wiki/today-material.html",
+      "description": "角色今日可刷天赋与武器突破材料查询页面",
       "source": "resources/builtin/games/miao/wiki/today-material.html"
     },
     "resources.builtin.games.starrail.grid.gridFight": {
-      "description": "resources/builtin/games/starrail-grid/gridFight.html",
+      "description": "崩坏：星穹铁道货币战争战绩概览页面模板",
       "source": "resources/builtin/games/starrail-grid/gridFight.html"
     },
     "resources.builtin.games.starrail.grid.gridFightArchive": {
-      "description": "resources/builtin/games/starrail-grid/gridFightArchive.html",
+      "description": "崩坏：星穹铁道货币战争战绩回顾详情页面模板",
       "source": "resources/builtin/games/starrail-grid/gridFightArchive.html"
     },
     "resources.builtin.games.zzz.inventory.zzz.md.md": {
-      "description": "resources/builtin/games/zzz-inventory/zzz_md/md.html",
+      "description": "绝区零账号与背包信息卡片页面模板",
       "source": "resources/builtin/games/zzz-inventory/zzz_md/md.html"
     },
     "resources.builtin.games.zzz.abyss.index": {
-      "description": "resources/builtin/games/zzz/abyss/index.html",
+      "description": "绝区零式舆防卫战战绩与排名查询页面模板",
       "source": "resources/builtin/games/zzz/abyss/index.html"
     },
     "resources.builtin.games.zzz.card.index": {
-      "description": "resources/builtin/games/zzz/card/index.html",
+      "description": "绝区零玩家名片与账号概览页面模板",
       "source": "resources/builtin/games/zzz/card/index.html"
     },
     "resources.builtin.games.zzz.cinema.index": {
-      "description": "resources/builtin/games/zzz/cinema/index.html",
+      "description": "绝区零意象影画展示页面模板",
       "source": "resources/builtin/games/zzz/cinema/index.html"
     },
     "resources.builtin.games.zzz.climbingTower.index": {
-      "description": "resources/builtin/games/zzz/climbingTower/index.html",
+      "description": "绝区零拟真鏖战试炼（爬塔）战绩展示页面",
       "source": "resources/builtin/games/zzz/climbingTower/index.html"
     },
     "resources.builtin.games.zzz.deadly.index": {
-      "description": "resources/builtin/games/zzz/deadly/index.html",
+      "description": "绝区零危局强袭战战绩展示页面",
       "source": "resources/builtin/games/zzz/deadly/index.html"
     },
     "resources.builtin.games.zzz.explorationDetail.index": {
-      "description": "resources/builtin/games/zzz/explorationDetail/index.html",
+      "description": "绝区零区域探索详情展示页面",
       "source": "resources/builtin/games/zzz/explorationDetail/index.html"
     },
     "resources.builtin.games.zzz.gachalog.index": {
-      "description": "resources/builtin/games/zzz/gachalog/index.html",
+      "description": "绝区零抽卡记录统计展示页面",
       "source": "resources/builtin/games/zzz/gachalog/index.html"
     },
     "resources.builtin.games.zzz.help.commit": {
-      "description": "resources/builtin/games/zzz/help/commit.css",
+      "description": "绝区零帮助页面提交信息样式表",
       "source": "resources/builtin/games/zzz/help/commit.css"
     },
     "resources.builtin.games.zzz.help.version": {
-      "description": "resources/builtin/games/zzz/help/version.css",
+      "description": "绝区零帮助页面版本信息样式表",
       "source": "resources/builtin/games/zzz/help/version.css"
     },
     "resources.builtin.games.zzz.hollowZero.hollowZero.index": {
-      "description": "resources/builtin/games/zzz/hollowZero/hollowZero/index.html",
+      "description": "绝区零零号空洞战绩与收集数据展示页面",
       "source": "resources/builtin/games/zzz/hollowZero/hollowZero/index.html"
     },
     "resources.builtin.games.zzz.hollowZero.hollowZeroS2.index": {
-      "description": "resources/builtin/games/zzz/hollowZero/hollowZeroS2/index.html",
+      "description": "绝区零零号空洞（迷失之地）战绩与收集进度展示页面",
       "source": "resources/builtin/games/zzz/hollowZero/hollowZeroS2/index.html"
     },
     "resources.builtin.games.zzz.holoBoss.index": {
-      "description": "resources/builtin/games/zzz/holoBoss/index.html",
+      "description": "绝区零拟境湮灭战挑战详情与群排名展示页面",
       "source": "resources/builtin/games/zzz/holoBoss/index.html"
     },
     "resources.builtin.games.zzz.monthly.collect": {
-      "description": "resources/builtin/games/zzz/monthly/collect.html",
+      "description": "绝区零每月菲林收入汇总与明细统计页面",
       "source": "resources/builtin/games/zzz/monthly/collect.html"
     },
     "resources.builtin.games.zzz.monthly.index": {
-      "description": "resources/builtin/games/zzz/monthly/index.html",
+      "description": "绝区零单月菲林收入一览与构成分析页面",
       "source": "resources/builtin/games/zzz/monthly/index.html"
     },
     "resources.builtin.games.zzz.note.index": {
-      "description": "resources/builtin/games/zzz/note/index.html",
+      "description": "绝区零实时便笺页面，展示电量、活跃度及日常经营状态",
       "source": "resources/builtin/games/zzz/note/index.html"
     },
     "resources.builtin.games.zzz.panel.card": {
-      "description": "resources/builtin/games/zzz/panel/card.html",
+      "description": "绝区零角色面板卡片模板，展示角色属性、词条评分、增益及技能期望伤害等",
       "source": "resources/builtin/games/zzz/panel/card.html"
     },
     "resources.builtin.games.zzz.panel.damage": {
-      "description": "resources/builtin/games/zzz/panel/damage.html",
+      "description": "绝区零角色伤害计算详情模板，展示角色属性、计算目标及各技能期望伤害明细等",
       "source": "resources/builtin/games/zzz/panel/damage.html"
     },
     "resources.builtin.games.zzz.panel.list": {
-      "description": "resources/builtin/games/zzz/panel/list.html",
+      "description": "绝区零角色面板列表页面",
       "source": "resources/builtin/games/zzz/panel/list.html"
     },
     "resources.builtin.games.zzz.panel.refresh": {
-      "description": "resources/builtin/games/zzz/panel/refresh.html",
+      "description": "绝区零角色面板刷新结果页面",
       "source": "resources/builtin/games/zzz/panel/refresh.html"
     },
     "resources.builtin.games.zzz.proficiency.index": {
-      "description": "resources/builtin/games/zzz/proficiency/index.html",
+      "description": "绝区零角色练度统计页面",
       "source": "resources/builtin/games/zzz/proficiency/index.html"
     },
     "resources.builtin.games.zzz.rank.abyss.index": {
-      "description": "resources/builtin/games/zzz/rank/abyss/index.html",
+      "description": "式舆防卫战群内排行榜页面",
       "source": "resources/builtin/games/zzz/rank/abyss/index.html"
     },
     "resources.builtin.games.zzz.rank.climbingTower.s1.index": {
-      "description": "resources/builtin/games/zzz/rank/climbingTower/s1/index.html",
+      "description": "拟真鏖战试炼（爬塔 S1）群内排行榜页面",
       "source": "resources/builtin/games/zzz/rank/climbingTower/s1/index.html"
     },
     "resources.builtin.games.zzz.rank.climbingTower.s2.index": {
-      "description": "resources/builtin/games/zzz/rank/climbingTower/s2/index.html",
+      "description": "鏖战试炼：末路（爬塔 S2）群内排行榜页面",
       "source": "resources/builtin/games/zzz/rank/climbingTower/s2/index.html"
     },
     "resources.builtin.games.zzz.rank.climbingTower.s3.index": {
-      "description": "resources/builtin/games/zzz/rank/climbingTower/s3/index.html",
+      "description": "鏖战试炼：荣耀（爬塔 S3）群内排行榜页面",
       "source": "resources/builtin/games/zzz/rank/climbingTower/s3/index.html"
     },
     "resources.builtin.games.zzz.rank.climbingTower.s4.index": {
-      "description": "resources/builtin/games/zzz/rank/climbingTower/s4/index.html",
+      "description": "鏖战试炼：狂澜（爬塔 S4）群内排行榜页面",
       "source": "resources/builtin/games/zzz/rank/climbingTower/s4/index.html"
     },
     "resources.builtin.games.zzz.rank.deadly.index": {
-      "description": "resources/builtin/games/zzz/rank/deadly/index.html",
+      "description": "危局强袭战群内排行榜页面",
       "source": "resources/builtin/games/zzz/rank/deadly/index.html"
     },
     "resources.builtin.games.zzz.rank.deadlyHard.index": {
-      "description": "resources/builtin/games/zzz/rank/deadlyHard/index.html",
+      "description": "危局强袭战绝境群内排行榜页面",
       "source": "resources/builtin/games/zzz/rank/deadlyHard/index.html"
     },
     "resources.builtin.games.zzz.rank.holoBoss.index": {
-      "description": "resources/builtin/games/zzz/rank/holoBoss/index.html",
+      "description": "拟境湮灭战群内排行榜页面",
       "source": "resources/builtin/games/zzz/rank/holoBoss/index.html"
     },
     "resources.builtin.games.zzz.rank.voidFrontBattle.index": {
-      "description": "resources/builtin/games/zzz/rank/voidFrontBattle/index.html",
+      "description": "临界推演群内排行榜页面",
       "source": "resources/builtin/games/zzz/rank/voidFrontBattle/index.html"
     },
     "resources.builtin.games.zzz.skills.index": {
-      "description": "resources/builtin/games/zzz/skills/index.html",
+      "description": "角色技能与详细属性展示页面",
       "source": "resources/builtin/games/zzz/skills/index.html"
     },
     "resources.builtin.games.zzz.voidFrontBattle.index": {
-      "description": "resources/builtin/games/zzz/voidFrontBattle/index.html",
+      "description": "绝区零临界推演玩法战绩与群内排名状态展示页面模板",
       "source": "resources/builtin/games/zzz/voidFrontBattle/index.html"
     },
     "resources.builtin.games.zzz.zenkov.detail": {
-      "description": "resources/builtin/games/zzz/zenkov/detail.html",
+      "description": "绝区零迷宫诡域战绩详情页面模板，展示地图统计、探索记录与调查收获",
       "source": "resources/builtin/games/zzz/zenkov/detail.html"
     },
     "resources.builtin.games.zzz.zenkov.index": {
-      "description": "resources/builtin/games/zzz/zenkov/index.html",
+      "description": "绝区零迷宫诡域玩法总览页面模板，展示赛季等级、委托进度、地图战绩与珍品勋章收藏",
       "source": "resources/builtin/games/zzz/zenkov/index.html"
     },
     "web.miyoushe.index": {
-      "description": "web/miyoushe/index.html",
+      "description": "米游社商品兑换列表、详情查看及自动追踪规则配置页面",
       "source": "web/miyoushe/index.html"
     }
   },
@@ -534,7 +534,7 @@
     "plugins.starrail.panel.theme.character.artis.mark.text_eaf273b53888": "总分对齐",
     "plugins.starrail.panel.theme.character.artis.mark.text_67c5fc8303af": "最优主词缀",
     "plugins.starrail.panel.theme.character.artis.mark.text_1806fe9d5c20": "最终得分",
-    "plugins.starrail.panel.theme.character.artis.mark.text_81459fc006cc": "评分规则:",
+    "plugins.starrail.panel.theme.character.artis.mark.text_81459fc006cc": "评分规则：",
     "plugins.starrail.panel.theme.character.artis.mark.text_f6ea996f1fdc": "属性",
     "plugins.starrail.panel.theme.character.artis.mark.text_329498730168": "评分权重",
     "plugins.starrail.panel.theme.character.artis.mark.text_c45bfcc80516": "词条成长",
@@ -574,7 +574,7 @@
     "plugins.starrail.panel.theme.character.artis.mark.text_9414700f7255": "MAX(&gt;56分) / ACE(&gt;49分) / SSS(&gt;42分) / SS(&gt;35分) / S(&gt;28分) / A / B / C / D",
     "plugins.starrail.panel.theme.character.artis.mark.text_fb48b7a4d155": "遗器评分补充说明",
     "plugins.starrail.panel.theme.character.artis.mark.text_1aaced4d2d31": "遗器评分的目标是对角色遗器词条进行一个快速的评估，一般来说评分更高的遗器可能会更匹配角色",
-    "plugins.starrail.panel.theme.character.artis.mark.text_9499fadfd1cd": "但实际情况下遗器各词条的提升并非线性，且需考虑各的词条平衡，故评分仅供参考，请勿过分追求高评分",
+    "plugins.starrail.panel.theme.character.artis.mark.text_9499fadfd1cd": "但实际情况下遗器各词条的提升并非线性，且需考虑各词条平衡，故评分仅供参考，请勿过分追求高评分",
     "plugins.starrail.panel.theme.character.artis.mark.text_01133fe29de8": "各角色有各自的词条权重，反映对不同属性的需求。",
     "plugins.starrail.panel.theme.character.artis.mark.text_3fe8f0c31f7e": "分数适合在同一角色内对比装备。",
     "plugins.starrail.panel.theme.character.profile.detail.text_9c176f4a1a00": "魂",
@@ -845,7 +845,7 @@
     "resources.builtin.games.genshin.html.player.daily.note.gs.text_c623ce8838e6": "尚未获得",
     "resources.builtin.games.genshin.html.player.daily.note.gs.text_d5c09d75611c": "可使用",
     "resources.builtin.games.genshin.html.player.daily.note.gs.text_14682999aed8": "冷却中",
-    "resources.builtin.games.genshin.html.player.daily.note.sr.text_b1a9c91800bb": "昵称:",
+    "resources.builtin.games.genshin.html.player.daily.note.sr.text_b1a9c91800bb": "昵称：",
     "resources.builtin.games.genshin.html.player.daily.note.sr.text_f2c06628d7d3": "级",
     "resources.builtin.games.genshin.html.player.daily.note.sr.text_bd2c502139f7": "开拓力：",
     "resources.builtin.games.genshin.html.player.daily.note.sr.text_b9c7f341db77": "剩余:",
@@ -923,7 +923,7 @@
     "resources.builtin.games.miao.character.artis.mark.text_3beef06b4791": "MAX(&gt;56分) / ACE(&gt;49分) / SSS(&gt;42分) / SS(&gt;35分) / S(&gt;28分) / A / B / C / D",
     "resources.builtin.games.miao.character.artis.mark.text_daf4d27d466a": "圣遗物评分补充说明",
     "resources.builtin.games.miao.character.artis.mark.text_a80d2d65cfac": "圣遗物评分的目标是对角色圣遗物词条进行一个快速的评估，一般来说评分更高的圣遗物可能会更匹配角色",
-    "resources.builtin.games.miao.character.artis.mark.text_f44ed6797413": "但实际情况下圣遗物各词条的提升并非线性，且需考虑各的词条平衡，故评分仅供参考，请勿过分追求高评分",
+    "resources.builtin.games.miao.character.artis.mark.text_f44ed6797413": "但实际情况下圣遗物各词条的提升并非线性，且需考虑各项词条平衡，故评分仅供参考，请勿过分追求高评分",
     "resources.builtin.games.miao.character.artis.mark.text_03401fa4fce2": "如需更精准的词条评估请使用",
     "resources.builtin.games.miao.character.artis.mark.text_5b5fd580927e": "伤害",
     "resources.builtin.games.miao.character.artis.mark.text_d12a476cec7a": "命令进行伤害及词条侧重分析",
@@ -988,7 +988,7 @@
     "resources.builtin.games.miao.character.profile.detail.text_072ca8c85f40": "的变化，下方的详情数字为",
     "resources.builtin.games.miao.character.profile.detail.text_91ae0cecf235": "关于",
     "resources.builtin.games.miao.character.profile.detail.text_cc44a3d60b81": "：是将暴击率计算在内的伤害期望，能反映综合的输出能力，不等于实际伤害数字。",
-    "resources.builtin.games.miao.character.profile.detail.text_7bac5758b81e": "可用于评估当前面板下圣遗物副词条的侧重方向。实际游戏情况更加复杂，结果供参考~",
+    "resources.builtin.games.miao.character.profile.detail.text_7bac5758b81e": "可用于评估当前面板下圣遗物副词条的侧重方向。实际游戏情况更加复杂，结果供参考。",
     "resources.builtin.games.miao.character.profile.detail.text_2689baef6b58": "如需更换计算的伤害类型，可使用命令",
     "resources.builtin.games.miao.character.profile.detail.text_250f9d949821": "伤害+序号",
     "resources.builtin.games.miao.character.profile.detail.text_b778324e02af": "来切换，序号参见伤害计算板块",

@@ -13,75 +13,75 @@
       "source": "panel/src/api.ts"
     },
     "App": {
-      "description": "管理面板导航、登录、概览与会话状态",
+      "description": "管理面板主框架，负责会话有效期展示、登出、数据刷新及插件状态概览",
       "source": "panel/src/App.vue"
     },
     "ArkRankCredentialSettings": {
-      "description": "排行榜凭据设置",
+      "description": "自定义排行榜高级凭据（Token）的读取、保存、清除与环境变量来源状态展示",
       "source": "panel/src/ArkRankCredentialSettings.vue"
     },
     "AtlasChannelSettings": {
-      "description": "图鉴版本来源设置",
+      "description": "图鉴版本来源的读取、切换与保存设置",
       "source": "panel/src/AtlasChannelSettings.vue"
     },
     "AtlasGalleryBrowser": {
-      "description": "角色图库浏览与分页",
+      "description": "按游戏、目录与关键词筛选浏览角色图库图片，并支持分页与缩略图预览",
       "source": "panel/src/AtlasGalleryBrowser.vue"
     },
     "AtlasGalleryInventory": {
-      "description": "角色图库清单",
+      "description": "图鉴图库统计清单及浏览入口",
       "source": "panel/src/AtlasGalleryInventory.vue"
     },
     "AtlasUpdateSettings": {
-      "description": "图鉴资料更新范围与计划",
+      "description": "图鉴资料更新范围、定时计划与相关查询设置",
       "source": "panel/src/AtlasUpdateSettings.vue"
     },
     "BilibiliSettings": {
-      "description": "哔哩哔哩媒体设置",
+      "description": "B 站视频搜索结果数及视频下载开关、清晰度、多 P 策略与体积并发限制配置表单",
       "source": "panel/src/BilibiliSettings.vue"
     },
     "BusinessSettings": {
-      "description": "原生业务配置表单",
+      "description": "按分类呈现的多类型原生业务配置表单，支持前端输入校验、保存、撤销及星铁跃迁默认项重置",
       "source": "panel/src/BusinessSettings.vue"
     },
     "CheckinScheduleSettings": {
-      "description": "自动签到排期设置",
+      "description": "管理自动签到的调度开关、默认模式、随机窗口、补注册规则及 Cron 表达式设置。",
       "source": "panel/src/CheckinScheduleSettings.vue"
     },
     "DouyinSettings": {
-      "description": "抖音媒体设置",
+      "description": "管理抖音链接解析与媒体下载的超时、清晰度、多项作品策略及体积时长上限等设置。",
       "source": "panel/src/DouyinSettings.vue"
     },
     "ExtensionPages": {
-      "description": "扩展网页入口",
+      "description": "展示并打开宿主提供的扩展页面清单，并列出未加载或存在配置问题的扩展。",
       "source": "panel/src/ExtensionPages.vue"
     },
     "GlobalPermissionsSettings": {
-      "description": "全局功能权限设置",
+      "description": "管理面板的全局业务权限设置模块，用于配置默认继承策略及允许/拒绝的 QQ 号与群号名单。",
       "source": "panel/src/GlobalPermissionsSettings.vue"
     },
     "GroupCleanupSettings": {
-      "description": "群清理设置",
+      "description": "控制面板中的群清理设置模块，用于配置群清理命令的权限策略、预览及通知回退移除选项，并处理配置的保存、并发冲突与重新载入。",
       "source": "panel/src/GroupCleanupSettings.vue"
     },
     "GroupNoticeSettings": {
-      "description": "群通知设置",
+      "description": "控制面板中的群通知设置模块，用于按全局、群、机器人或机器人在群中的范围读取、编辑并保存各类消息与事件通知开关、主人通知对象及撤回消息缓存时长配置。",
       "source": "panel/src/GroupNoticeSettings.vue"
     },
     "GroupRoutingSettings": {
-      "description": "群消息分流与接收设置",
+      "description": "按默认、群或机器人范围配置功能开关、别名、词条回复规则及撤回延时的覆盖设置",
       "source": "panel/src/GroupRoutingSettings.vue"
     },
     "GroupWarpSettings": {
-      "description": "群模拟跃迁设置",
+      "description": "配置模拟跃迁功能的按群每日专票/通票上限及结果图撤回延时覆盖设置",
       "source": "panel/src/GroupWarpSettings.vue"
     },
     "GuobaSpecialField": {
-      "description": "插件特殊配置控件与时间说明",
+      "description": "渲染锅巴扩展配置控件，包括日期时间、树形/级联选择、Cron 表达式预设与解析及群/好友选择器",
       "source": "panel/src/GuobaSpecialField.vue"
     },
     "GuobaSubform": {
-      "description": "插件配置子表单编辑",
+      "description": "插件配置子表单列表展示与项编辑",
       "source": "panel/src/GuobaSubform.vue"
     },
     "I18nSettings": {
@@ -89,177 +89,177 @@
       "source": "panel/src/I18nSettings.vue"
     },
     "LikeSettings": {
-      "description": "群点赞设置",
+      "description": "群聊与私聊点赞功能开关及回复提示配置",
       "source": "panel/src/LikeSettings.vue"
     },
     "MediaEnvironmentSettings": {
-      "description": "媒体运行环境检查与维护",
+      "description": "媒体运行环境检查与维护延迟设置",
       "source": "panel/src/MediaEnvironmentSettings.vue"
     },
     "MusicSettings": {
-      "description": "音乐与点歌设置",
+      "description": "点歌功能开关、默认平台、音质及分页数量设置",
       "source": "panel/src/MusicSettings.vue"
     },
     "PartnerSettings": {
-      "description": "网易云合伙人评分和乐评设置",
+      "description": "网易云合伙人自动任务、登录间隔与乐评模型/接口配置页面",
       "source": "panel/src/PartnerSettings.vue"
     },
     "PluginSettings": {
-      "description": "插件配置编辑表单",
+      "description": "插件配置表单选择、检索、编辑与保存页面",
       "source": "panel/src/PluginSettings.vue"
     },
     "WebLoginSettings": {
-      "description": "网页登录设置",
+      "description": "网页登录设置视图，用于配置米游社用户网页开关、公网地址与挂载路径、用户与管理面板的登录链接/会话有效期及页脚 ICP 备案号。",
       "source": "panel/src/WebLoginSettings.vue"
     },
     "i18n": {
-      "description": "语言接口请求与错误提示",
+      "description": "语言快照结构校验、语言切换应用与后端接口请求的错误提示",
       "source": "panel/src/i18n.ts"
     }
   },
   "parameters": {
     "PluginSettings.c447e931ac": {
-      "value1": "运行时插值，来源：pendingAction.label"
+      "value1": "待执行插件操作的按钮文本"
     },
     "PluginSettings.c5b5ad2c0e": {
-      "value1": "运行时插值，来源：schema.label"
+      "value1": "待清除密码的配置项显示名称"
     },
     "PluginSettings.52b841bf13": {
-      "value1": "运行时插值，来源：schema.label"
+      "value1": "配置项标签（schema.label）"
     },
     "GuobaSpecialField.6b5c6bce74": {
-      "value1": "运行时插值，来源：clock"
+      "value1": "触发时间（HH:mm 或 HH:mm:ss 格式）"
     },
     "GuobaSpecialField.b387cc8641": {
-      "value1": "运行时插值，来源：panelText('GuobaSpecialField.weekday_' + Number(weekday) % 7)",
-      "value2": "运行时插值，来源：clock"
+      "value1": "星期名称",
+      "value2": "触发时间（HH:mm 或 HH:mm:ss 格式）"
     },
     "GuobaSpecialField.c17389350f": {
-      "value1": "运行时插值，来源：Number(day)",
-      "value2": "运行时插值，来源：clock"
+      "value1": "每月日期（1-31）",
+      "value2": "触发时间（HH:mm 或 HH:mm:ss 格式）"
     },
     "GuobaSpecialField.ce8ff7eb00": {
-      "value1": "运行时插值，来源：schema.label"
+      "value1": "颜色字段显示名称（来自 schema.label）"
     },
     "GuobaSpecialField.2afa105648": {
-      "value1": "运行时插值，来源：item"
+      "value1": "待移除的条目值"
     },
     "GuobaSpecialField.1c175b72bc": {
-      "value1": "运行时插值，来源：contactTitle"
+      "value1": "联系人类型标题（来自 contactTitle）"
     },
     "GuobaSpecialField.3a3d43d03f": {
-      "value1": "运行时插值，来源：contactTitle"
+      "value1": "联系人类型名称（群或好友）"
     },
     "GuobaSpecialField.652c829484": {
-      "value1": "运行时插值，来源：contactTitle"
+      "value1": "联系人类型名称（群或好友）"
     },
     "BilibiliSettings.f5294f7943": {
-      "value1": "运行时插值，来源：legacyResolution"
+      "value1": "不在预设清晰度列表中的当前已配置清晰度数值"
     },
     "AtlasUpdateSettings.a45b5e096c": {
-      "value1": "运行时插值，来源：label ?? panelText('AtlasUpdateSettings.scope_fallback')"
+      "value1": "图鉴范围字段名称或兜底名称"
     },
     "AtlasUpdateSettings.c762e88370": {
-      "value1": "运行时插值，来源：scopeDraft[field]?.length"
+      "value1": "当前已选中的资料类别数量"
     },
     "AtlasGalleryBrowser.0cfe6da359": {
-      "value1": "运行时插值，来源：result.version"
+      "value1": "当前图库快照版本号"
     },
     "AtlasGalleryBrowser.032c36db02": {
-      "value1": "运行时插值，来源：result.page",
-      "value2": "运行时插值，来源：result.pages"
+      "value1": "当前页码",
+      "value2": "总页数"
     },
     "AtlasGalleryBrowser.f4ba7d3ed1": {
-      "value1": "运行时插值，来源：selected.path"
+      "value1": "当前选中图片的路径"
     },
     "PartnerSettings.70f4913bc5": {
-      "value1": "运行时插值，来源：saved.review.apiOrigin"
+      "value1": "当前已配置的乐评接口来源（origin）"
     },
     "I18nSettings.85ad0e0477": {
-      "value1": "运行时插值，来源：matches.length"
+      "value1": "当前筛选条件匹配的文案条目总数"
     },
     "GroupRoutingSettings.b053cdf42f": {
-      "value1": "运行时插值，来源：first"
+      "value1": "群号"
     },
     "GroupRoutingSettings.620523332e": {
-      "value1": "运行时插值，来源：first"
+      "value1": "机器人 QQ 号或标识"
     },
     "GroupRoutingSettings.ffeb6e6e89": {
-      "value1": "运行时插值，来源：first",
-      "value2": "运行时插值，来源：second"
+      "value1": "机器人 ID",
+      "value2": "群号"
     },
     "GroupRoutingSettings.2f6770592f": {
-      "value1": "运行时插值，来源：field.type === 'list' ? panelText('GroupRoutingSettings.aedd6814ff') : ''"
+      "value1": "可选类型后缀，列表字段时为列表标签文本，否则为空"
     },
     "AtlasGalleryInventory.2971d30865": {
-      "value1": "运行时插值，来源：inventory.version"
+      "value1": "图库快照版本号"
     },
     "GroupNoticeSettings.b053cdf42f": {
-      "value1": "运行时插值，来源：scope"
+      "value1": "群号"
     },
     "GroupNoticeSettings.363ff81e78": {
-      "value1": "运行时插值，来源：bot",
-      "value2": "运行时插值，来源：group"
+      "value1": "机器人QQ号",
+      "value2": "群号"
     },
     "GroupNoticeSettings.00a9f18c37": {
-      "value1": "运行时插值，来源：bot"
+      "value1": "机器人QQ号"
     },
     "AccountPermissionsSettings.bd4bbeb4ad": {
-      "value1": "运行时插值，来源：title"
+      "value1": "当前权限设置分组标题"
     },
     "AccountPermissionsSettings.da32a9846a": {
-      "value1": "运行时插值，来源：title"
+      "value1": "当前权限设置分组标题"
     },
     "BusinessSettings.c683f40b34": {
-      "value1": "运行时插值，来源：field.label"
+      "value1": "触发数值范围或格式校验失败的配置字段显示名称"
     },
     "BusinessSettings.ebdb7a1e24": {
-      "value1": "运行时插值，来源：field.label"
+      "value1": "未匹配有效选项的下选框配置字段显示名称"
     },
     "BusinessSettings.20d5090a21": {
-      "value1": "运行时插值，来源：field.label"
+      "value1": "触发 JSON 解析错误的配置字段显示名称"
     },
     "BusinessSettings.305b0dd340": {
-      "value1": "运行时插值，来源：field.label"
+      "value1": "触发数值校验失败的列表配置字段显示名称"
     },
     "GuobaSubform.6899fe6b15": {
-      "value1": "运行时插值，来源：item.label"
+      "value1": "未填写的必填字段名称（来自 item.label）"
     },
     "GuobaSubform.1127fc5484": {
-      "value1": "运行时插值，来源：index + 1"
+      "value1": "子表单条目序号（从 1 开始）"
     },
     "GuobaSubform.5f0360ec24": {
-      "value1": "运行时插值，来源：index + 1"
+      "value1": "子表单条目序号（从 1 开始）"
     },
     "GuobaSubform.d0be9cf047": {
-      "value1": "运行时插值，来源：item.label"
+      "value1": "标签选择字段名称（来自 item.label）"
     },
     "GuobaSubform.1ec67b4460": {
-      "value1": "运行时插值，来源：option.label"
+      "value1": "预设标签显示文本（来自 option.label）"
     },
     "GlobalPermissionsSettings.bfafce0000": {
-      "value1": "运行时插值，来源：saved.locked[field]?.join(\"、\")"
+      "value1": "以顿号分隔的旧配置固定号码列表"
     },
     "GlobalPermissionsSettings.da71fd4170": {
-      "value1": "运行时插值，来源：saved.retained[field]"
+      "value1": "原配置中保留的项目数量"
     },
     "AtlasChannelSettings.0644f33305": {
-      "value1": "运行时插值，来源：savedLabel"
+      "value1": "已保存的版本来源选项标签或未选择提示"
     },
     "LikeSettings.b41c191c0b": {
-      "value1": "运行时插值，来源：field.label"
+      "value1": "对应提示消息配置项的显示标签"
     },
     "App.8e9c8e4d3e": {
-      "value1": "运行时插值，来源：seconds"
+      "value1": "不足一分钟时用于兜底显示的秒数"
     },
     "App.f70036fba2": {
-      "value1": "运行时插值，来源：shanghaiTime.format(snapshot.session.expiresAt)"
+      "value1": "格式化后的当前会话到期时间"
     },
     "App.f3792e5475": {
-      "value1": "运行时插值，来源：error"
+      "value1": "刷新面板数据时产生的错误提示信息"
     },
     "App.f987642f0d": {
-      "value1": "运行时插值，来源：updatedAt"
+      "value1": "插件列表数据的最近更新时间"
     }
   },
   "messages": {
@@ -555,12 +555,12 @@
     "AtlasUpdateSettings.fdc6c58c58": "异相仲裁",
     "AtlasUpdateSettings.fe26dd5e1e": "自动同步三游角色图库",
     "AtlasUpdateSettings.ff2ceb23b3": "需在本机编辑",
-    "BilibiliSettings.02c8239df4": "宿主返回了无法识别的B 站视频设置。",
-    "BilibiliSettings.15ff51c445": "放弃未保存的B 站视频设置？",
+    "BilibiliSettings.02c8239df4": "宿主返回了无法识别的 B 站视频设置。",
+    "BilibiliSettings.15ff51c445": "放弃未保存的 B 站视频设置？",
     "BilibiliSettings.19818d1a03": "暂时无法连接宿主，请重试。",
     "BilibiliSettings.24ba1a3ceb": "已保存，下次搜索或下载时生效。",
-    "BilibiliSettings.2d9cbfdf8a": "宿主未能读取B 站视频设置。",
-    "BilibiliSettings.421e8f5aee": "请检查B 站视频设置。下载并发须为 1 到 16，预估体积上限可填 0，其余数值须为正整数。",
+    "BilibiliSettings.2d9cbfdf8a": "宿主未能读取 B 站视频设置。",
+    "BilibiliSettings.421e8f5aee": "请检查 B 站视频设置。下载并发须为 1 到 16，预估体积上限可填 0，其余数值须为正整数。",
     "BilibiliSettings.44ce7ae909": "搜索",
     "BilibiliSettings.4673a23061": "下载",
     "BilibiliSettings.49843b388f": "B 站视频设置",
@@ -572,7 +572,7 @@
     "BilibiliSettings.bbc6698bf1": "设置已在其他会话更新，请重新读取后再保存。",
     "BilibiliSettings.cdb3d1bf2d": "视频超过消息体积上限时会作为文件发送。预估和下载体积上限填 0 表示不限。",
     "BilibiliSettings.df7392cc96": "重新读取",
-    "BilibiliSettings.ffb4035703": "宿主未能保存B 站视频设置。",
+    "BilibiliSettings.ffb4035703": "宿主未能保存 B 站视频设置。",
     "BusinessSettings.166bec875b": "请检查设置项的值。",
     "BusinessSettings.1bd91a7d0c": "已保存",
     "BusinessSettings.20d5090a21": "{value1}的 JSON 格式有误。",

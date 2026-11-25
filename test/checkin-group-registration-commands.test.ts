@@ -124,7 +124,7 @@ test("只改本群指定档案，部分失败不会阻断其他档案或暴露�
   expect(result).toContain("注册/已有/跳过：2/1/4");
   expect(result).toContain("已存在 P2");
   expect(result).toContain("缺少 cookie/stoken");
-  expect(result).toContain("未找到 profile");
+  expect(result).toContain("未找到档案");
   expect(result).toContain("档案已变化，请重试");
   expect(result).toContain("暂时无法保存档案");
   expect(result).toContain("群成员 (56)");
@@ -146,7 +146,7 @@ test("默认档案保持图卡回执，注册与已有样例分开限制", async
   }));
   expect(result).toContain("注册/已有/跳过：12/0/8");
   expect(result.match(/已注册 P1/gu)).toHaveLength(10);
-  expect(result.match(/跳过 · 未找到 profile/gu)).toHaveLength(6);
+  expect(result.match(/跳过 · 未找到档案/gu)).toHaveLength(6);
 });
 
 test("停机时保留已保存的档案，停止补位和后续成员处理", async () => {

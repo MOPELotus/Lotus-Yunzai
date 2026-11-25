@@ -81,7 +81,7 @@ test("拒绝旧共享队列无法表示的范围、无效快照与会改变其�
     expect((await f.invoke()).error).toContain("无效的账号、群号或状态");
     await writeFile(f.gs, '{"99:7701":"off"}');
     await writeFile(f.yaml, 'gsActivityPush: &shared { "99": [7701, 7702] }\ngsannounceGroup: *shared\n');
-    expect((await f.invoke("--export", f.output)).error).toContain("引用或其它配置无法安全保留");
+    expect((await f.invoke("--export", f.output)).error).toContain("引用或其他配置无法安全保留");
     expect(await readdir(f.output)).toEqual([]);
     const unchanged = 'gsActivityPush: { "99": [7702] } # 已是旧格式\r\n';
     await writeFile(f.yaml, unchanged);

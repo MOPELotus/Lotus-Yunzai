@@ -5,15 +5,15 @@
   "description": "抽卡记录",
   "sections": {
     "display-settings": {
-      "description": "抽卡记录：设置",
+      "description": "抽卡显示设置解析、校验与默认运势等级配置",
       "source": "packages/gacha/display-settings.ts"
     },
     "file-import": {
-      "description": "抽卡记录",
+      "description": "抽卡记录 JSON 文件导入流程与提示",
       "source": "packages/gacha/file-import.ts"
     },
     "player-art": {
-      "description": "抽卡记录：立绘",
+      "description": "抽卡记录展示立绘默认角色配置",
       "source": "packages/gacha/player-art.ts"
     }
   },
@@ -59,27 +59,27 @@
   },
   "parameters": {
     "file-import.text_677178ee12": {
-      "prefix": "prefix",
-      "profileId": "profileId"
+      "prefix": "命令前缀",
+      "profileId": "档案编号"
     },
     "file-import.text_63b1e8c9be": {
-      "gameName": "gameName"
+      "gameName": "游戏名称"
     },
     "file-import.text_8434f7549f": {
-      "prefix": "prefix",
-      "profileId": "profileId"
+      "prefix": "命令前缀",
+      "profileId": "档案编号"
     },
     "file-import.text_f011502428": {
-      "value1": "retry(profileId)"
+      "value1": "重试导入命令"
     },
     "file-import.text_9bcf841c71": {
-      "gameName": "gameName"
+      "gameName": "游戏名称"
     },
     "file-import.text_a003cbb555": {
-      "value1": "retry(profileId)"
+      "value1": "重试导入命令"
     },
     "file-import.text_168e2b032d": {
-      "gameName": "gameName"
+      "gameName": "游戏名称"
     }
   }
 }

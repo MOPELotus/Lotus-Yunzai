@@ -5,27 +5,27 @@
   "description": "验证码",
   "sections": {
     "src.infrastructure.models": {
-      "description": "验证码",
+      "description": "本地验证码模型下载与管理",
       "source": "packages/captcha/src/infrastructure/models.ts"
     },
     "src.infrastructure.resize": {
-      "description": "验证码",
+      "description": "验证码图像重采样与缩放",
       "source": "packages/captcha/src/infrastructure/resize.ts"
     },
     "src.protocols.v3.client": {
-      "description": "验证码",
+      "description": "极验 v3 协议网络客户端",
       "source": "packages/captcha/src/protocols/v3/client.ts"
     },
     "src.protocols.v3.codec": {
-      "description": "验证码",
+      "description": "极验 v3 协议编解码与资源校验",
       "source": "packages/captcha/src/protocols/v3/codec.ts"
     },
     "src.solvers.embedded": {
-      "description": "验证码",
+      "description": "内置图标点选验证码识别器",
       "source": "packages/captcha/src/solvers/embedded.ts"
     },
     "src.solvers.grid": {
-      "description": "验证码",
+      "description": "九宫格验证码识别器",
       "source": "packages/captcha/src/solvers/grid.ts"
     }
   },
@@ -57,21 +57,21 @@
   },
   "parameters": {
     "src.infrastructure.models.text_9e4cc7b109": {
-      "id": "id",
-      "hostname": "url.hostname",
-      "value3": "details.code ?? '网络错误'"
+      "id": "模型标识",
+      "hostname": "下载服务器主机名",
+      "value3": "错误代码或网络错误提示"
     },
     "src.infrastructure.resize.text_1c5e95babe": {
-      "kernel": "kernel"
+      "kernel": "重采样核名称"
     },
     "src.protocols.v3.client.text_2139bea0dc": {
-      "status": "result.status"
+      "status": "HTTP状态码"
     },
     "src.protocols.v3.client.text_c09671368e": {
-      "status": "response.status"
+      "status": "HTTP状态码"
     },
     "src.protocols.v3.client.text_946fa7616c": {
-      "status": "response.status"
+      "status": "HTTP状态码"
     }
   }
 }

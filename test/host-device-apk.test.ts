@@ -15,7 +15,7 @@ test("OneBot 与 Milky 的设备绑定先提示 JSON，附件缺失或拒绝再�
     async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
       sendOneBot(command);
       const prompt = await onebot.next("send_msg");
-      expect(prompt.params).toMatchObject({ user_id: 42, message: expect.stringContaining("请发送 档案 2 的设备 JSON") });
+      expect(prompt.params).toMatchObject({ user_id: 42, message: expect.stringContaining("请发送档案 2 的设备 JSON") });
       prompt.respond({ message_id: 1 });
       const unavailable = await onebot.next("send_msg");
       expect(unavailable.params.user_id).toBe(42);
@@ -37,7 +37,7 @@ test("OneBot 与 Milky 的设备绑定先提示 JSON，附件缺失或拒绝再�
 
       await sendMilky(command);
       const milkyPrompt = await milky.next("send_private_message");
-      expect(JSON.stringify(milkyPrompt.params.message)).toContain("请发送 档案 2 的设备 JSON");
+      expect(JSON.stringify(milkyPrompt.params.message)).toContain("请发送档案 2 的设备 JSON");
       milkyPrompt.respond({ message_seq: 5 });
       const attached = await milky.next("upload_private_file");
       expect(attached.params).toMatchObject({ user_id: 43, file_name: apkName, file_uri: `base64://${Buffer.from(source).toString("base64")}` });

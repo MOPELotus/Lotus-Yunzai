@@ -80,7 +80,7 @@ test("匿名前瞻读取拒绝跳转及错地址的成功回包", async () => {
       },
       async directRequest() { fallback++; return {} },
     });
-    await expect(provider.request(index)).rejects.toThrow("官方接口回包地址不一致");
+    await expect(provider.request(index)).rejects.toThrow("官方接口响应地址不一致");
   }
   expect(fallback).toBe(0);
 });

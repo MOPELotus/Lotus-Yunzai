@@ -45,7 +45,7 @@ test("群改名使用两个协议各自的字段、实时群角色和原会话",
         expect(write.params).toEqual({ group_id: 702, new_group_name: name });
         write.respond({});
         const reply = await milky.next("send_private_message");
-        expect(reply.params).toMatchObject({ user_id: 43, message: [{ data: { text: "✅ 群昵称修改成功" } }] });
+        expect(reply.params).toMatchObject({ user_id: 43, message: [{ data: { text: "✅ 群名称修改成功" } }] });
         reply.respond({ message_seq: 104 });
       }
 

@@ -5,63 +5,63 @@
   "description": "米游社与游戏请求",
   "sections": {
     "bbs-checkin": {
-      "description": "米游社与游戏请求：米游社社区 · 签到",
+      "description": "查询米游社社区任务状态及执行各游戏分区签到",
       "source": "packages/hoyo-client/bbs-checkin.ts"
     },
     "bbs-forum-posts": {
-      "description": "米游社与游戏请求：米游社社区",
+      "description": "获取米游社指定游戏版块的论坛帖子目录",
       "source": "packages/hoyo-client/bbs-forum-posts.ts"
     },
     "captcha-business": {
-      "description": "米游社与游戏请求：验证码",
+      "description": "处理米游社及游戏记录请求的验证码挑战与校验流程",
       "source": "packages/hoyo-client/captcha-business.ts"
     },
     "cloud-genshin-wallet": {
-      "description": "米游社与游戏请求：原神",
+      "description": "查询云原神国服及国际服钱包余额与免费时长",
       "source": "packages/hoyo-client/cloud-genshin-wallet.ts"
     },
     "cloud-zzz-wallet": {
-      "description": "米游社与游戏请求：绝区零",
+      "description": "云·绝区零钱包凭据校验及免费时长余额查询",
       "source": "packages/hoyo-client/cloud-zzz-wallet.ts"
     },
     "cn-read-diagnostics": {
-      "description": "米游社与游戏请求",
+      "description": "米游社国服读取请求的 HTTP 异常诊断日志记录",
       "source": "packages/hoyo-client/cn-read-diagnostics.ts"
     },
     "credentials": {
-      "description": "米游社与游戏请求",
+      "description": "账号登录态提取及 LToken、CookieToken 令牌换票与身份一致性校验",
       "source": "packages/hoyo-client/credentials.ts"
     },
     "daily-note": {
-      "description": "米游社与游戏请求：每日便笺",
+      "description": "每日便笺（体力、洞天宝钱与委托等游戏实时状态）响应解析与归属校验",
       "source": "packages/hoyo-client/daily-note.ts"
     },
     "device-fingerprint": {
-      "description": "米游社与游戏请求：设备信息",
+      "description": "安卓设备指纹与设备身份载荷的构建及格式校验",
       "source": "packages/hoyo-client/device-fingerprint.ts"
     },
     "errors": {
-      "description": "米游社与游戏请求",
+      "description": "请求异常类定义，涵盖人工验证码驳回及绝区零国际服手动抽卡链接提示",
       "source": "packages/hoyo-client/errors.ts"
     },
     "gacha-auth-request": {
-      "description": "米游社与游戏请求：抽卡记录 · 请求",
+      "description": "抽卡与星铁流水查询的 Stoken 登录凭据校验及请求 Cookie 构造",
       "source": "packages/hoyo-client/gacha-auth-request.ts"
     },
     "game-checkin": {
-      "description": "米游社与游戏请求：游戏 · 签到",
+      "description": "多款国服游戏的每日签到状态查询、签到提交及人机验证处理",
       "source": "packages/hoyo-client/game-checkin.ts"
     },
     "game-record": {
-      "description": "米游社与游戏请求：游戏",
+      "description": "原神、崩坏：星穹铁道与绝区零的官方战绩、面板及月报数据查询请求模块",
       "source": "packages/hoyo-client/game-record.ts"
     },
     "genshin-backpack": {
-      "description": "米游社与游戏请求：原神 · 背包",
+      "description": "原神背包与养成计算请求参数校验及签名模块",
       "source": "packages/hoyo-client/genshin-backpack.ts"
     },
     "genshin-blueprint": {
-      "description": "米游社与游戏请求：原神",
+      "description": "米游社与游戏请求：原神 · 尘歌壶模数",
       "source": "packages/hoyo-client/genshin-blueprint.ts"
     },
     "genshin-gacha": {
@@ -69,207 +69,207 @@
       "source": "packages/hoyo-client/genshin-gacha.ts"
     },
     "genshin-gcg": {
-      "description": "米游社与游戏请求：原神",
+      "description": "米游社与游戏请求：原神 · 七圣召唤",
       "source": "packages/hoyo-client/genshin-gcg.ts"
     },
     "genshin-hard-challenge": {
-      "description": "米游社与游戏请求：原神",
+      "description": "米游社与游戏请求：原神 · 幽境危战",
       "source": "packages/hoyo-client/genshin-hard-challenge.ts"
     },
     "genshin-miniapp": {
-      "description": "米游社与游戏请求：原神",
+      "description": "原神外部抽卡记录导出与数据校验",
       "source": "packages/hoyo-client/genshin-miniapp.ts"
     },
     "genshin-monthly": {
-      "description": "米游社与游戏请求：原神 · 月历",
+      "description": "原神官方原石札记数据请求与校验",
       "source": "packages/hoyo-client/genshin-monthly.ts"
     },
     "genshin-panel": {
-      "description": "米游社与游戏请求：原神 · 面板",
+      "description": "原神角色面板、天赋、战绩及月谕圣牌数据请求",
       "source": "packages/hoyo-client/genshin-panel.ts"
     },
     "genshin-pay-log": {
-      "description": "米游社与游戏请求：原神",
+      "description": "原神充值记录解析与月份统计",
       "source": "packages/hoyo-client/genshin-pay-log.ts"
     },
     "genshin-team-damage": {
-      "description": "米游社与游戏请求：原神",
+      "description": "原神队伍伤害计算请求与结果校验",
       "source": "packages/hoyo-client/genshin-team-damage.ts"
     },
     "genshin-world-boss": {
-      "description": "米游社与游戏请求：原神",
+      "description": "原神世界 BOSS 击杀记录请求与数据校验",
       "source": "packages/hoyo-client/genshin-world-boss.ts"
     },
     "hoyolab-bh3-checkin": {
-      "description": "米游社与游戏请求：HoYoLAB · 签到",
+      "description": "HoYoLAB 崩坏3国际服签到",
       "source": "packages/hoyo-client/hoyolab-bh3-checkin.ts"
     },
     "hoyolab-checkin-transport": {
-      "description": "米游社与游戏请求：HoYoLAB · 签到",
+      "description": "HoYoLAB 国际服签到与绝区零战绩/月报底层网络请求传输",
       "source": "packages/hoyo-client/hoyolab-checkin-transport.ts"
     },
     "hoyolab-cookie": {
-      "description": "米游社与游戏请求：HoYoLAB",
+      "description": "HoYoLAB 国际服 Cookie 归属与有效性校验",
       "source": "packages/hoyo-client/hoyolab-cookie.ts"
     },
     "hoyolab-default-checkin": {
-      "description": "米游社与游戏请求：HoYoLAB · 签到",
+      "description": "HoYoLAB 国际服默认角色签到通用流程",
       "source": "packages/hoyo-client/hoyolab-default-checkin.ts"
     },
     "hoyolab-genshin-checkin": {
-      "description": "米游社与游戏请求：HoYoLAB · 原神 · 签到",
+      "description": "HoYoLAB 国际服原神签到",
       "source": "packages/hoyo-client/hoyolab-genshin-checkin.ts"
     },
     "hoyolab-role-checkin": {
-      "description": "米游社与游戏请求：HoYoLAB · 签到",
+      "description": "HoYoLAB 国际服绑定角色签到（星铁、绝区零、未定事件簿）",
       "source": "packages/hoyo-client/hoyolab-role-checkin.ts"
     },
     "index": {
-      "description": "米游社与游戏请求",
+      "description": "米游社账号凭据刷新、角色目录同步与游戏数据请求调度",
       "source": "packages/hoyo-client/index.ts"
     },
     "legacy-cookie-token": {
-      "description": "米游社与游戏请求",
+      "description": "国服 v1 通行证 Cookie Token 格式校验与接口身份验证",
       "source": "packages/hoyo-client/legacy-cookie-token.ts"
     },
     "miyoushe-exchange": {
-      "description": "米游社与游戏请求",
+      "description": "米游社商城限购查询、收货地址脱敏处理、验证码校验与兑换提交",
       "source": "packages/hoyo-client/miyoushe-exchange.ts"
     },
     "miyoushe-shop": {
-      "description": "米游社与游戏请求：米游币商城",
+      "description": "米游社米游币商城商品列表与商品详情接口查询",
       "source": "packages/hoyo-client/miyoushe-shop.ts"
     },
     "passport-qr": {
-      "description": "米游社与游戏请求：通行证 · 二维码",
+      "description": "米哈游通行证官方扫码登录会话创建、状态轮询与凭据校验",
       "source": "packages/hoyo-client/passport-qr.ts"
     },
     "record-fingerprint": {
-      "description": "米游社与游戏请求",
+      "description": "米游社战绩查询所需的设备指纹申请与请求重试",
       "source": "packages/hoyo-client/record-fingerprint.ts"
     },
     "redeem-preview.games": {
-      "description": "米游社与游戏请求：兑换",
+      "description": "支持前瞻兑换码查询的游戏配置、命令前缀与别名匹配",
       "source": "packages/hoyo-client/redeem-preview/games.ts"
     },
     "redeem-preview.http": {
-      "description": "米游社与游戏请求：兑换",
+      "description": "官方前瞻兑换码查询的 HTTPS 目标校验与只读响应读取",
       "source": "packages/hoyo-client/redeem-preview/http.ts"
     },
     "redeem-preview.official": {
-      "description": "米游社与游戏请求：兑换",
+      "description": "官方前瞻活动发现、直播接口请求与兑换码拉取",
       "source": "packages/hoyo-client/redeem-preview/official.ts"
     },
     "redeem-preview.planet-launch": {
-      "description": "米游社与游戏请求：兑换",
+      "description": "《星布谷地》公测前瞻固定兑换码与有效期提示构造",
       "source": "packages/hoyo-client/redeem-preview/planet-launch.ts"
     },
     "redeem-preview.service": {
-      "description": "米游社与游戏请求：兑换",
+      "description": "前瞻兑换码查询调度、状态判定与消息文本格式化",
       "source": "packages/hoyo-client/redeem-preview/service.ts"
     },
     "redeem-submit": {
-      "description": "米游社与游戏请求：兑换",
+      "description": "提交 HoYoLAB 国际服兑换码兑换请求",
       "source": "packages/hoyo-client/redeem-submit.ts"
     },
     "registration-time": {
-      "description": "米游社与游戏请求：注册",
+      "description": "查询账号在游戏内的注册时间活动数据",
       "source": "packages/hoyo-client/registration-time.ts"
     },
     "starrail-challenge": {
-      "description": "米游社与游戏请求：星铁",
+      "description": "查询《崩坏：星穹铁道》挑战战绩",
       "source": "packages/hoyo-client/starrail-challenge.ts"
     },
     "starrail-gacha": {
-      "description": "米游社与游戏请求：星铁 · 抽卡记录",
+      "description": "米游社与游戏请求：星铁 · 跃迁抽卡记录与五星列表查询",
       "source": "packages/hoyo-client/starrail-gacha.ts"
     },
     "starrail-grid-fight": {
-      "description": "米游社与游戏请求：星铁",
+      "description": "米游社与游戏请求：星铁 · 货币战争战绩校验与解析",
       "source": "packages/hoyo-client/starrail-grid-fight.ts"
     },
     "starrail-growth": {
-      "description": "米游社与游戏请求：星铁",
+      "description": "米游社与游戏请求：星铁 · 养成计算器（角色、光锥及行迹升级材料查询与计算）",
       "source": "packages/hoyo-client/starrail-growth.ts"
     },
     "starrail-ledger": {
-      "description": "米游社与游戏请求：星铁",
+      "description": "米游社与游戏请求：星铁 · 流水与在线记录（授权查询星琼/开拓力等自助流水及开拓力恢复记录）",
       "source": "packages/hoyo-client/starrail-ledger.ts"
     },
     "starrail-monthly": {
-      "description": "米游社与游戏请求：星铁 · 月历",
+      "description": "崩坏：星穹铁道月收入数据解析与校验",
       "source": "packages/hoyo-client/starrail-monthly.ts"
     },
     "starrail-panel": {
-      "description": "米游社与游戏请求：星铁 · 面板",
+      "description": "崩坏：星穹铁道角色面板请求与校验",
       "source": "packages/hoyo-client/starrail-panel.ts"
     },
     "starrail-record": {
-      "description": "米游社与游戏请求：星铁",
+      "description": "崩坏：星穹铁道战绩名片请求与身份校验",
       "source": "packages/hoyo-client/starrail-record.ts"
     },
     "starrail-rogue": {
-      "description": "米游社与游戏请求：星铁",
+      "description": "崩坏：星穹铁道模拟宇宙战绩请求与校验",
       "source": "packages/hoyo-client/starrail-rogue.ts"
     },
     "starrail-roster": {
-      "description": "米游社与游戏请求：星铁",
+      "description": "崩坏：星穹铁道角色名册请求与校验",
       "source": "packages/hoyo-client/starrail-roster.ts"
     },
     "zzz-climbing-tower": {
-      "description": "米游社与游戏请求：绝区零",
+      "description": "绝区零拟真鏖战试炼数据解析与校验",
       "source": "packages/hoyo-client/zzz-climbing-tower.ts"
     },
     "zzz-deadly": {
-      "description": "米游社与游戏请求：绝区零",
+      "description": "绝区零危局强袭战数据解析与校验",
       "source": "packages/hoyo-client/zzz-deadly.ts"
     },
     "zzz-exploration": {
-      "description": "米游社与游戏请求：绝区零",
+      "description": "请求与校验绝区零区域探索及图鉴收集数据",
       "source": "packages/hoyo-client/zzz-exploration.ts"
     },
     "zzz-gacha-auth": {
-      "description": "米游社与游戏请求：绝区零 · 抽卡记录",
+      "description": "获取并校验绝区零国服抽卡链接所需的授权密钥（authkey）",
       "source": "packages/hoyo-client/zzz-gacha-auth.ts"
     },
     "zzz-gacha-link": {
-      "description": "米游社与游戏请求：绝区零 · 抽卡记录",
+      "description": "解析与校验绝区零官方抽卡链接并分页拉取各频段调频记录",
       "source": "packages/hoyo-client/zzz-gacha-link.ts"
     },
     "zzz-game-record": {
-      "description": "米游社与游戏请求：绝区零 · 游戏",
+      "description": "拉取与校验官方绝区零战绩、代理人及邦布列表数据",
       "source": "packages/hoyo-client/zzz-game-record.ts"
     },
     "zzz-hollow-zero": {
-      "description": "米游社与游戏请求：绝区零",
+      "description": "解析与校验绝区零零号空洞挑战详情与最高战绩数据",
       "source": "packages/hoyo-client/zzz-hollow-zero.ts"
     },
     "zzz-holo-boss": {
-      "description": "米游社与游戏请求：绝区零",
+      "description": "绝区零拟境湮灭战数据规范化与响应校验",
       "source": "packages/hoyo-client/zzz-holo-boss.ts"
     },
     "zzz-monthly": {
-      "description": "米游社与游戏请求：绝区零 · 月历",
+      "description": "绝区零月度收支数据解析与校验模块",
       "source": "packages/hoyo-client/zzz-monthly.ts"
     },
     "zzz-panel": {
-      "description": "米游社与游戏请求：绝区零 · 面板",
+      "description": "绝区零角色面板数据请求与校验模块",
       "source": "packages/hoyo-client/zzz-panel.ts"
     },
     "zzz-shiyu": {
-      "description": "米游社与游戏请求：绝区零",
+      "description": "绝区零式舆防卫战战绩请求与校验模块",
       "source": "packages/hoyo-client/zzz-shiyu.ts"
     },
     "zzz-tuning": {
-      "description": "米游社与游戏请求：绝区零",
+      "description": "绝区零调频卡池类型与名称映射配置",
       "source": "packages/hoyo-client/zzz-tuning.ts"
     },
     "zzz-void-front": {
-      "description": "米游社与游戏请求：绝区零",
+      "description": "绝区零临界推演战绩响应校验与数据规范化",
       "source": "packages/hoyo-client/zzz-void-front.ts"
     },
     "zzz-zenkov": {
-      "description": "米游社与游戏请求：绝区零",
+      "description": "绝区零迷宫诡域战绩与图鉴响应校验及数据规范化",
       "source": "packages/hoyo-client/zzz-zenkov.ts"
     }
   },
@@ -571,7 +571,7 @@
     "index.text_97be1ddb31": "档案 Cookie 无效。",
     "index.text_9f552559dc": "续期后原神档案的角色已变更，请重新发起请求。",
     "index.text_a244dc1d4d": "绝区零档案角色已变化，请重新发起请求。",
-    "index.text_b459dd4576": "续期后星铁档案角色已变更，请重新查询。",
+    "index.text_b459dd4576": "续期后星铁档案的角色已变更，请重新查询。",
     "index.text_b88632271e": "米游社角色列表格式有误。",
     "index.text_bc0b12a479": "米游社角色查询失败。",
     "index.text_c4336e65d1": "该角色已不在续期后的档案中，请重新查询。",
@@ -598,7 +598,7 @@
     "miyoushe-exchange.text_bd9b3017f1": "兑换商品编号无效。",
     "miyoushe-exchange.text_c57427e3c7": "兑换目标与商品类型不匹配。",
     "miyoushe-exchange.text_e5919ff8b4": "商城验证码申请未完成。",
-    "miyoushe-exchange.text_e736eb4674": "商城验证码业务账号或频率限制，停止重试。",
+    "miyoushe-exchange.text_e736eb4674": "商城验证码触发业务账号或频率限制，已停止重试。",
     "miyoushe-shop.text_19b2a64595": "米游社商城暂时不可用。",
     "miyoushe-shop.text_6a6523693b": "商城请求频繁，请稍后再试。",
     "miyoushe-shop.text_7ed5f7bf80": "暂时无法连接米游社商城。",
@@ -654,8 +654,8 @@
     "redeem-preview.official.text_6916a57e6e": "官方活动详情暂不可用，请稍后重试",
     "redeem-preview.official.text_6f83a34202": "返回格式异常",
     "redeem-preview.official.text_8be5f4f843": "官方活动列表格式异常",
-    "redeem-preview.official.text_b1978d89b1": "活动发现不完整：{value1}",
-    "redeem-preview.official.text_b8c6a61c9f": "官方接口回包地址不一致",
+    "redeem-preview.official.text_b1978d89b1": "活动信息获取不完整：{value1}",
+    "redeem-preview.official.text_b8c6a61c9f": "官方接口响应地址不一致",
     "redeem-preview.official.text_e322210fc6": "官方接口响应格式异常或超限",
     "redeem-preview.official.text_e512cf016f": "超时",
     "redeem-preview.planet-launch.text_3220c0ee9b": "《星布谷地》公测前瞻兑换码",
@@ -738,7 +738,7 @@
     "starrail-gacha.text_e568721bec": "星铁五星列表超过分页上限，本次未取完。",
     "starrail-gacha.text_ebe9736b22": "角色活动跃迁",
     "starrail-grid-fight.text_97e68f7926": "官方货币战争战绩格式无效。",
-    "starrail-grid-fight.text_f17aa157af": "货币战争回应的角色或区服与当前档案不一致。",
+    "starrail-grid-fight.text_f17aa157af": "货币战争响应的角色或区服与当前档案不一致。",
     "starrail-growth.text_0f79801a1e": "米游社未返回该角色的完整主行迹。",
     "starrail-growth.text_1695f4e124": "额外行迹",
     "starrail-growth.text_2957fe507f": "星铁养成计算",
@@ -1054,316 +1054,316 @@
   },
   "parameters": {
     "cloud-genshin-wallet.text_fc172384f6": {
-      "label": "label"
+      "label": "云游戏服务名称（如“云原神”或“云原神国际服”）"
     },
     "cloud-genshin-wallet.text_2bcd94a82c": {
-      "label": "label"
+      "label": "云游戏服务名称（如“云原神”或“云原神国际服”）"
     },
     "cloud-genshin-wallet.text_90aebf1837": {
-      "label": "label"
+      "label": "云游戏服务名称（如“云原神”或“云原神国际服”）"
     },
     "cloud-genshin-wallet.text_18590ee0eb": {
-      "label": "label"
+      "label": "云游戏服务名称（如“云原神”或“云原神国际服”）"
     },
     "cloud-genshin-wallet.text_ec84e20a79": {
-      "label": "label"
+      "label": "云游戏服务名称（如“云原神”或“云原神国际服”）"
     },
     "cloud-genshin-wallet.text_fabe920fc2": {
-      "label": "label"
+      "label": "云游戏服务名称（如“云原神”或“云原神国际服”）"
     },
     "cloud-genshin-wallet.text_a43032d39e": {
-      "label": "label"
+      "label": "云游戏服务名称（如“云原神”或“云原神国际服”）"
     },
     "cloud-genshin-wallet.text_2421bc1596": {
-      "label": "label"
+      "label": "云游戏服务名称（如“云原神”或“云原神国际服”）"
     },
     "credentials.text_624451d9b4": {
-      "target": "target"
+      "target": "目标令牌名称（如 LToken 或 CookieToken）"
     },
     "credentials.text_e7c8543f5a": {
-      "target": "target"
+      "target": "目标令牌名称（如 LToken 或 CookieToken）"
     },
     "credentials.text_79193902c9": {
-      "target": "target"
+      "target": "目标令牌名称（如 LToken 或 CookieToken）"
     },
     "credentials.text_641592e9b6": {
-      "target": "target"
+      "target": "目标令牌名称（如 LToken 或 CookieToken）"
     },
     "credentials.text_8809dadbcc": {
-      "target": "target"
+      "target": "目标令牌名称（如 LToken 或 CookieToken）"
     },
     "credentials.text_717358c7ff": {
-      "target": "target"
+      "target": "目标令牌名称（如 LToken 或 CookieToken）"
     },
     "credentials.text_30aeb3b0d5": {
-      "target": "target"
+      "target": "目标令牌名称（如 LToken 或 CookieToken）"
     },
     "daily-note.text_26d2b74fe7": {
-      "value1": "index + 1"
+      "value1": "委托条目序号（从 1 开始）"
     },
     "gacha-auth-request.text_d3a55d02ae": {
-      "subject": "subject"
+      "subject": "发起请求的功能名称（如星铁流水或具体游戏抽卡）"
     },
     "gacha-auth-request.text_7ee4355f5c": {
-      "game": "game"
+      "game": "游戏名称"
     },
     "game-checkin.text_e4f69cc76f": {
-      "name": "route.name"
+      "name": "游戏名称"
     },
     "game-checkin.text_a552ed7cd5": {
-      "name": "route.name"
+      "name": "游戏名称"
     },
     "game-checkin.text_68aa39d9ad": {
-      "name": "route.name"
+      "name": "游戏名称"
     },
     "game-checkin.text_e4e94cc9b7": {
-      "name": "route.name"
+      "name": "游戏名称"
     },
     "game-checkin.text_06f1fca3ad": {
-      "name": "route.name"
+      "name": "游戏名称"
     },
     "game-checkin.text_2375fa68e4": {
-      "name": "route.name"
+      "name": "游戏名称"
     },
     "game-checkin.text_3d0f75c29c": {
-      "subject": "subject"
+      "subject": "带游戏名称的签到功能名称"
     },
     "game-checkin.text_e9d7dda1a2": {
-      "subject": "subject"
+      "subject": "带游戏名称的签到功能名称"
     },
     "game-record.text_6b92956648": {
-      "subject": "subject"
+      "subject": "查询主题"
     },
     "game-record.text_df1d8641e0": {
-      "subject": "subject"
+      "subject": "查询主题"
     },
     "game-record.text_99b53fb45b": {
-      "subject": "subject"
+      "subject": "查询主题"
     },
     "game-record.text_a00ef87f25": {
-      "value1": "subject.replace(/查询$/u, \"\")"
+      "value1": "去除末尾“查询”的查询主题"
     },
     "game-record.text_7c6d31e82d": {
-      "label": "label"
+      "label": "查询对象名称"
     },
     "game-record.text_b28f638e75": {
-      "label": "label"
+      "label": "查询对象名称"
     },
     "game-record.text_e03f7c80cf": {
-      "subject": "subject"
+      "subject": "查询主题"
     },
     "game-record.text_9a2fe7ac88": {
-      "label": "label"
+      "label": "查询对象名称"
     },
     "game-record.text_20c322406a": {
-      "label": "label"
+      "label": "查询对象名称"
     },
     "game-record.text_e081ffda7d": {
-      "subject": "subject"
+      "subject": "查询主题"
     },
     "game-record.text_c0f09da0e9": {
-      "subject": "subject"
+      "subject": "查询主题"
     },
     "game-record.text_7a715ff587": {
-      "label": "label"
+      "label": "查询对象名称"
     },
     "game-record.text_656c331127": {
-      "label": "label"
+      "label": "查询对象名称"
     },
     "game-record.text_7dbba95ad1": {
-      "label": "label"
+      "label": "查询对象名称"
     },
     "genshin-backpack.text_0418cc4709": {
-      "kind": "kind"
+      "kind": "计算类型标签"
     },
     "genshin-backpack.text_3fcddb2f58": {
-      "kind": "kind"
+      "kind": "操作类型名称"
     },
     "genshin-backpack.text_a38207a01f": {
-      "kind": "kind"
+      "kind": "操作类型名称"
     },
     "genshin-backpack.text_af8d452502": {
-      "kind": "kind"
+      "kind": "操作类型名称"
     },
     "genshin-backpack.text_5a46ba7be9": {
-      "kind": "kind"
+      "kind": "操作类型名称"
     },
     "genshin-backpack.text_79836ab0b2": {
-      "kind": "kind"
+      "kind": "操作类型名称"
     },
     "genshin-panel.text_45f231eb2d": {
-      "label": "label"
+      "label": "功能模块名称标签"
     },
     "genshin-panel.text_41b1813f8f": {
-      "label": "label"
+      "label": "功能模块名称标签"
     },
     "genshin-pay-log.text_fa4962f757": {
-      "value1": "Number(month.slice(-2))"
+      "value1": "月份数字"
     },
     "hoyolab-checkin-transport.text_691992adbc": {
-      "subject": "subject"
+      "subject": "请求主题名称"
     },
     "hoyolab-checkin-transport.text_be525019c4": {
-      "subject": "subject"
+      "subject": "请求主题名称"
     },
     "hoyolab-checkin-transport.text_cbe06a21d0": {
-      "subject": "subject"
+      "subject": "请求主题名称"
     },
     "hoyolab-checkin-transport.text_c8da6cdd22": {
-      "subject": "subject"
+      "subject": "请求主题名称"
     },
     "hoyolab-checkin-transport.text_3d0f75c29c": {
-      "subject": "subject"
+      "subject": "请求主题名称"
     },
     "hoyolab-checkin-transport.text_e9d7dda1a2": {
-      "subject": "subject"
+      "subject": "请求主题名称"
     },
     "hoyolab-default-checkin.text_691992adbc": {
-      "subject": "subject"
+      "subject": "请求主题名称"
     },
     "hoyolab-default-checkin.text_3661f1e5e0": {
-      "name": "game.name"
+      "name": "游戏名称"
     },
     "hoyolab-default-checkin.text_34486d64ee": {
-      "name": "game.name"
+      "name": "游戏名称"
     },
     "hoyolab-default-checkin.text_dc6c3b9e24": {
-      "name": "game.name"
+      "name": "游戏名称"
     },
     "hoyolab-default-checkin.text_85e5969f7c": {
-      "name": "game.name"
+      "name": "游戏名称"
     },
     "hoyolab-default-checkin.text_2de6071f91": {
-      "name": "game.name"
+      "name": "游戏名称"
     },
     "hoyolab-role-checkin.text_691992adbc": {
-      "subject": "subject"
+      "subject": "请求主题名称"
     },
     "hoyolab-role-checkin.text_7eb2cbbb20": {
-      "name": "name"
+      "name": "游戏名称"
     },
     "hoyolab-role-checkin.text_3661f1e5e0": {
-      "name": "name"
+      "name": "游戏名称"
     },
     "hoyolab-role-checkin.text_34486d64ee": {
-      "name": "name"
+      "name": "游戏名称"
     },
     "hoyolab-role-checkin.text_2de6071f91": {
-      "name": "name"
+      "name": "游戏名称"
     },
     "redeem-preview.http.text_a7934a720b": {
-      "statusCode": "response.statusCode"
+      "statusCode": "HTTP 响应状态码"
     },
     "redeem-preview.official.text_1cf0e42297": {
-      "status": "response.status"
+      "status": "HTTP 响应状态码"
     },
     "redeem-preview.official.text_03eaaa1efb": {
-      "endpoint": "endpoint",
-      "detail": "detail",
-      "value3": "lastError?.code || lastError?.message || \"超时\""
+      "endpoint": "请求的官方接口域名与路径",
+      "detail": "首次请求失败的错误信息",
+      "value3": "直连重试返回的错误码、错误信息或超时提示"
     },
     "redeem-preview.official.text_1c9cc227ad": {
-      "value1": "code ?? \"返回格式异常\""
+      "value1": "接口返回码 retcode 或返回格式异常提示"
     },
     "redeem-preview.official.text_08d0d3b14d": {
-      "version": "version"
+      "version": "当前推断出的游戏版本号"
     },
     "redeem-preview.official.text_b1978d89b1": {
-      "value1": "errors.join(\"；\")"
+      "value1": "各阶段请求失败原因拼接文本"
     },
     "redeem-preview.service.text_d9da937f01": {
-      "start": "start"
+      "start": "官宣开播时间"
     },
     "redeem-preview.service.text_521a32bc59": {
-      "name": "game.name",
-      "newestVersion": "newestVersion"
+      "name": "游戏名称",
+      "newestVersion": "检测到的最新版本号"
     },
     "redeem-preview.service.text_63da29d5f7": {
-      "end": "end",
-      "reason": "reason"
+      "end": "特别节目结束时间",
+      "reason": "未确认有效期的说明"
     },
     "redeem-preview.service.text_a9a43c79eb": {
-      "gameName": "result.gameName"
+      "gameName": "游戏名称"
     },
     "redeem-preview.service.text_68077b9caf": {
-      "title": "title",
-      "reason": "result.reason"
+      "title": "活动或游戏标题",
+      "reason": "查询失败原因"
     },
     "redeem-preview.service.text_4827648c81": {
-      "title": "title",
-      "reason": "result.reason"
+      "title": "前瞻兑换码结果标题",
+      "reason": "暂不可用的具体原因"
     },
     "redeem-preview.service.text_8ffe9af59e": {
-      "text": "result.expiry.text"
+      "text": "有效期时间文本"
     },
     "redeem-preview.service.text_9f92adbb68": {
-      "source": "result.source"
+      "source": "官方页面链接"
     },
     "redeem-preview.service.text_3298b9735c": {
-      "expirySource": "result.expirySource"
+      "expirySource": "有效期信息的官方来源链接或文本"
     },
     "starrail-gacha.text_e37f4a45c0": {
-      "label": "label"
+      "label": "缺失或无效的数组字段名称"
     },
     "starrail-ledger.text_4464b90e26": {
-      "action": "action"
+      "action": "当前请求操作名称（星铁流水授权或星铁流水查询）"
     },
     "starrail-ledger.text_7a164fbe8a": {
-      "action": "action"
+      "action": "当前请求操作名称（星铁流水授权或星铁流水查询）"
     },
     "starrail-ledger.text_81cb6e5539": {
-      "action": "action"
+      "action": "当前请求操作名称（星铁流水授权或星铁流水查询）"
     },
     "starrail-ledger.text_d51a86f9d0": {
-      "action": "action"
+      "action": "当前请求操作名称（星铁流水授权或星铁流水查询）"
     },
     "starrail-ledger.text_d668038810": {
-      "action": "action"
+      "action": "当前请求操作名称（星铁流水授权或星铁流水查询）"
     },
     "starrail-ledger.text_2a6a4c6138": {
-      "action": "action"
+      "action": "当前请求操作名称（星铁流水授权或星铁流水查询）"
     },
     "starrail-ledger.text_920750a297": {
-      "action": "action"
+      "action": "当前请求操作名称（星铁流水授权或星铁流水查询）"
     },
     "starrail-ledger.text_c480639c27": {
-      "action": "action"
+      "action": "当前请求操作名称（星铁流水授权或星铁流水查询）"
     },
     "starrail-ledger.text_6e235a3e27": {
-      "maxLedgerPages": "maxLedgerPages"
+      "maxLedgerPages": "允许查询的最大流水页数"
     },
     "zzz-climbing-tower.text_53aaa87438": {
-      "field": "field"
+      "field": "无效字段名称"
     },
     "zzz-climbing-tower.text_7494b08fdb": {
-      "number": "number"
+      "number": "赛季编号"
     },
     "zzz-exploration.text_d056810820": {
-      "field": "field"
+      "field": "无效字段名称"
     },
     "zzz-game-record.text_725c93487b": {
-      "id": "id"
+      "id": "代理人的数字编号"
     },
     "zzz-game-record.text_0c382eb58a": {
-      "id": "id"
+      "id": "邦布的数字编号"
     },
     "zzz-hollow-zero.text_432a4cfcd8": {
-      "field": "field"
+      "field": "校验失败的字段名称"
     },
     "zzz-holo-boss.text_08256966ea": {
-      "field": "field"
+      "field": "校验失败的字段名称"
     },
     "zzz-monthly.text_7310cf1d4e": {
-      "field": "field"
+      "field": "校验失败的字段名称"
     },
     "zzz-tuning.text_44d1a27a4a": {
-      "name": "name"
+      "name": "调频频段名称"
     },
     "zzz-void-front.text_669109f62a": {
-      "field": "field"
+      "field": "校验失败的具体响应字段名称"
     },
     "zzz-zenkov.text_cc17f034d7": {
-      "field": "field"
+      "field": "无效字段名称"
     }
   }
 }

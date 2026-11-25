@@ -1013,14 +1013,14 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     send(originalDecision);
     await groupReplyWith("已同意合成申请人(70)的加群申请");
     send(oneBotMessage([quote(originalReceipt), text("拒绝")], operator, 82));
-    await groupReplyWith("找不到原消息了，手动拒绝");
+    await groupReplyWith("找不到原消息，请手动拒绝");
     client.send(JSON.stringify(oneBotJoin("910003", 73, "合成风险申请")));
     const riskReceipt = await waitUntil(() => oneBotJoinReceipts.size === 2 ? [...oneBotJoinReceipts][1] : undefined,
       "OneBot 风险申请未收到群内通知。");
     await waitUntil(() => oneBotReplies().find(({ params }) => params.message_type === "private" &&
       params.user_id === 52 && JSON.stringify(params.message).includes("合成风险申请")), "风险申请未通知原主人。");
     send(oneBotMessage([quote(riskReceipt), text("#同意")], operator, 82));
-    await groupReplyWith("该账号为风险账号请手动处理");
+    await groupReplyWith("该账号为风险账号，请手动处理");
     expect(oneBotCalls.filter(({ action, params }) => action === "set_group_add_request" &&
       ["910001", "910002", "910003"].includes(String(params.flag))).map(({ params }) => params)).toEqual([
       { flag: "910001", sub_type: "add", approve: true, reason: "" },
@@ -1515,7 +1515,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
       { action: "set_friend_add_request", params: { flag: incomingFriend.flag, approve: false, remark: "" } },
     ]);
     await webhook("message_receive", milkyPrivate("#拒绝好友申请94"));
-    await milkyOwnerReply(operator, "风险账号请在 QQ 中手动处理");
+    await milkyOwnerReply(operator, "风险账号，请在 QQ 中手动处理");
     await webhook("message_receive", milkyPrivate("#同意好友申请97"));
     await milkyOwnerReply(operator, "这个 QQ 有多条待处理的好友申请");
     await webhook("message_receive", milkyPrivate("#同意好友申请98"));
@@ -1546,7 +1546,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     const delivery = await waitUntil(() => oneBotReplies().find(({ params }) => params.user_id === 42 &&
       JSON.stringify(params.message).includes("合成 OneBot 纯文本")), "当前好友未收到 OneBot 主人的文字回复。");
     expect(delivery.params).toEqual({ user_id: 42, message_type: "private", message: [text(privateText)], auto_escape: true });
-    await ownerReplyWith("已把消息发给它了哦");
+    await ownerReplyWith("消息已发送");
     client.send(JSON.stringify(oneBotPrivate("#回复 43 不能向同名另一账号的好友送出")));
     await ownerReplyWith("好友列表查无此人");
     expect(oneBotReplies().some(({ params }) => params.user_id === 43 && JSON.stringify(params.message).includes("不能向同名"))).toBe(false);
@@ -1554,7 +1554,7 @@ test("双协议群管理复核名单、成员权限和各项网关回执", async
     await webhook("message_receive", milkyPrivate("回复 43 合成 Milky 文字", operator));
     const milkyDelivery = await milkyOwnerReply(43, "合成 Milky 文字");
     expect(milkyDelivery.params.message).toEqual([text("合成 Milky 文字")]);
-    await milkyOwnerReply(operator, "已把消息发给它了哦");
+    await milkyOwnerReply(operator, "消息已发送");
     await webhook("message_receive", milkyPrivate("#回复 42 不能用到 OneBot 好友"));
     await milkyOwnerReply(operator, "好友列表查无此人");
     const unknownOwnerReply = milkyPrivate("#回复43 合成 Milky 未知回复");

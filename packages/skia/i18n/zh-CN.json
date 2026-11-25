@@ -5,79 +5,79 @@
   "description": "图片渲染",
   "sections": {
     "banded-png": {
-      "description": "图片渲染",
+      "description": "超长图片分带 PNG 编码与尺寸校验",
       "source": "packages/skia/banded-png.ts"
     },
     "checkin-receipt-card": {
-      "description": "图片渲染：签到 · 图片卡片",
+      "description": "签到结果回执图片卡片渲染",
       "source": "packages/skia/checkin-receipt-card.ts"
     },
     "daily-note-card": {
-      "description": "图片渲染：每日便笺 · 图片卡片",
+      "description": "每日便笺体力与委托状态图片卡片渲染",
       "source": "packages/skia/daily-note-card.ts"
     },
     "daily-note-reminder-card": {
-      "description": "图片渲染：每日便笺 · 图片卡片",
+      "description": "群体力提醒图片卡片渲染",
       "source": "packages/skia/daily-note-reminder-card.ts"
     },
     "donation-card": {
-      "description": "图片渲染：捐赠 · 图片卡片",
+      "description": "捐赠支持二维码图片卡片渲染",
       "source": "packages/skia/donation-card.ts"
     },
     "forward-images": {
-      "description": "图片渲染",
+      "description": "分批发送渲染图片并处理会话或档案变更时的中断提示",
       "source": "packages/skia/forward-images.ts"
     },
     "gacha-detail-card": {
-      "description": "图片渲染：抽卡记录 · 图片卡片",
+      "description": "基于 Skia 绘制游戏抽卡记录详情与运势统计图片卡片",
       "source": "packages/skia/gacha-detail-card.ts"
     },
     "gacha-pool-card": {
-      "description": "图片渲染：抽卡记录 · 图片卡片",
+      "description": "抽卡记录卡池图卡渲染，负责读取主题资源、校验数据并绘制各期卡池卡片",
       "source": "packages/skia/gacha-pool-card.ts"
     },
     "gacha-version-card": {
-      "description": "图片渲染：抽卡记录 · 图片卡片",
+      "description": "版本抽卡统计卡片的 Skia 渲染与分页排版",
       "source": "packages/skia/gacha-version-card.ts"
     },
     "genshin-backpack-card": {
-      "description": "图片渲染：原神 · 背包 · 图片卡片",
+      "description": "原神背包素材统计卡片的 Skia 渲染",
       "source": "packages/skia/genshin-backpack-card.ts"
     },
     "genshin-gacha-special-card": {
-      "description": "图片渲染：原神 · 抽卡记录 · 图片卡片",
+      "description": "特殊卡池抽卡记录卡片的 Skia 渲染与字体资源加载",
       "source": "packages/skia/genshin-gacha-special-card.ts"
     },
     "genshin-world-boss-card": {
-      "description": "图片渲染：原神 · 图片卡片",
+      "description": "原神世界 BOSS 击杀统计卡片的 Skia 渲染",
       "source": "packages/skia/genshin-world-boss-card.ts"
     },
     "genshin-world-boss-ranking-card": {
-      "description": "图片渲染：原神 · 图片卡片",
+      "description": "原神 BOSS 击杀排行卡片的 Skia 渲染",
       "source": "packages/skia/genshin-world-boss-ranking-card.ts"
     },
     "index": {
-      "description": "图片渲染",
+      "description": "Skia 画布底层渲染、GPU/CPU 引擎校验与 PNG/RGBA 导出",
       "source": "packages/skia/index.ts"
     },
     "info-card": {
-      "description": "图片渲染：图片卡片",
+      "description": "通用信息卡片布局、分页与 PNG 渲染",
       "source": "packages/skia/info-card.ts"
     },
     "passport-qr-card": {
-      "description": "图片渲染：通行证 · 二维码 · 图片卡片",
+      "description": "通行证扫码登录二维码卡片渲染",
       "source": "packages/skia/passport-qr-card.ts"
     },
     "profile-card": {
-      "description": "图片渲染：档案 · 图片卡片",
+      "description": "账号资料卡与 UID 列表卡片渲染",
       "source": "packages/skia/profile-card.ts"
     },
     "rank-stats-card": {
-      "description": "图片渲染：图片卡片",
+      "description": "伤害排名统计曲线图卡片渲染",
       "source": "packages/skia/rank-stats-card.ts"
     },
     "status-card": {
-      "description": "图片渲染：运行状态 · 图片卡片",
+      "description": "运行状态卡片排版与 PNG 渲染",
       "source": "packages/skia/status-card.ts"
     }
   },
@@ -259,7 +259,7 @@
     "genshin-gacha-special-card.text_d1597c51ed": "原神",
     "genshin-gacha-special-card.text_d974a78661": "本页无五星记录",
     "genshin-gacha-special-card.text_f8a3c21dfd": "{label}特殊池记录的原版图片不可用。",
-    "genshin-gacha-special-card.text_fa30358a73": "{label}特殊池记录的原 Genshin 资源目录不可用。",
+    "genshin-gacha-special-card.text_fa30358a73": "{label}特殊池记录的原版 Genshin 资源目录不可用。",
     "genshin-world-boss-card.text_7fc5fcb98d": "原神世界 BOSS 击杀",
     "genshin-world-boss-card.text_b0a2fe264f": "击杀 ",
     "genshin-world-boss-card.text_b6b5f699a9": "暂无击杀记录",
@@ -303,7 +303,7 @@
     "rank-stats-card.text_7a12fd90d1": "排名百分比",
     "rank-stats-card.text_b2e8dfa288": "{value1}万",
     "rank-stats-card.text_ba837c6601": "排名趋势 · {title}",
-    "status-card.text_8eb70bb0a9": "抽卡卡片缩放比例须在 1 至 4 之间。",
+    "status-card.text_8eb70bb0a9": "状态卡缩放比例须在 1 至 4 之间。",
     "checkin-receipt-card.profile_label": "档案 {profileId}",
     "passport-qr-card.profile_label": "档案 {profileId}",
     "checkin-receipt-card.text_33d658749e": "Lotus-Yunzai{value1}",
@@ -322,206 +322,206 @@
   },
   "parameters": {
     "checkin-receipt-card.text_458830452d": {
-      "file": "file"
+      "file": "字体文件路径"
     },
     "daily-note-card.text_24a88328e5": {
-      "file": "file"
+      "file": "字体文件路径"
     },
     "daily-note-card.text_86cb4427a0": {
-      "checkin": "checkin"
+      "checkin": "米游社签到状态"
     },
     "forward-images.text_2922d95437": {
-      "index": "index"
+      "index": "分段序号"
     },
     "forward-images.text_822ee89ef3": {
-      "index": "index"
+      "index": "分段序号"
     },
     "gacha-detail-card.text_f24e9795ef": {
-      "name": "config.name"
+      "name": "游戏名称"
     },
     "gacha-detail-card.text_a1f691506f": {
-      "name": "config.name"
+      "name": "对应游戏的名称"
     },
     "gacha-detail-card.text_e21fca08eb": {
-      "player": "games[game].player"
+      "player": "玩家称呼"
     },
     "gacha-detail-card.text_b11c206e2f": {
-      "upExpect": "luck.upExpect"
+      "upExpect": "获取当期UP五星的理论期望抽数"
     },
     "gacha-detail-card.text_d83656d5cb": {
-      "fiveExpect": "luck.fiveExpect"
+      "fiveExpect": "五星期望抽数"
     },
     "gacha-detail-card.text_969df75329": {
-      "fiveExpect": "luck.fiveExpect"
+      "fiveExpect": "五星平均出金的理论期望抽数"
     },
     "gacha-detail-card.text_90bb620f2c": {
-      "fivePercent": "luck.fivePercent"
+      "fivePercent": "平均出金抽数超越其他玩家的百分比"
     },
     "gacha-detail-card.text_a1bc5d6980": {
-      "smallWin": "luck.smallWin",
-      "smallNum": "luck.smallNum",
-      "upRate": "luck.upRate"
+      "smallWin": "小保底未歪的次数",
+      "smallNum": "触发小保底的总次数",
+      "upRate": "小保底不歪的理论期望概率"
     },
     "gacha-detail-card.text_088e2a01e8": {
-      "winPercent": "luck.winPercent"
+      "winPercent": "小保底不歪率超越其他玩家的百分比"
     },
     "gacha-detail-card.text_1a19bda7c7": {
-      "value1": "Number(luck.fiveAvg) <= Number(luck.fiveExpect) ? \"出金快于\" : \"出金慢于\""
+      "value1": "实际出金速度与期望值的对比词"
     },
     "gacha-detail-card.text_6b0c8e3331": {
-      "prefix": "prefix"
+      "prefix": "游戏对应的指令前缀字符"
     },
     "gacha-detail-card.text_98191bc336": {
-      "prefix": "prefix"
+      "prefix": "游戏对应的指令前缀字符"
     },
     "gacha-detail-card.text_64a1a00d6e": {
-      "prefix": "prefix"
+      "prefix": "游戏对应的指令前缀字符"
     },
     "gacha-detail-card.text_eb8d491b40": {
-      "prefix": "prefix"
+      "prefix": "命令前缀"
     },
     "gacha-detail-card.text_e4f468b9b3": {
-      "uid": "model.uid",
-      "poolName": "model.poolName"
+      "uid": "玩家UID",
+      "poolName": "卡池名称"
     },
     "gacha-detail-card.text_dc8941f893": {
-      "page": "page.page",
-      "total": "page.total"
+      "page": "当前页码",
+      "total": "总页数"
     },
     "gacha-detail-card.text_2b0a4e937a": {
-      "page": "pageInfo.page",
-      "total": "pageInfo.total",
-      "from": "pageInfo.from",
-      "to": "pageInfo.to",
-      "count": "pageInfo.count"
+      "page": "当前图片页码",
+      "total": "总图片页数",
+      "from": "当前页起始记录序号",
+      "to": "当前页结束记录序号",
+      "count": "五星记录总数"
     },
     "gacha-detail-card.text_74729256f3": {
-      "shownNum": "gacha.shownNum",
-      "hiddenNum": "gacha.hiddenNum",
-      "prefix": "games[game].prefix",
-      "value4": "model.recordArchive ? \"逐抽\" : \"\"",
-      "poolName": "poolName"
+      "shownNum": "当前展示的记录条数",
+      "hiddenNum": "被折叠未显示的较早记录条数",
+      "prefix": "游戏对应的指令前缀字符",
+      "value4": "逐抽档案模式标识词或空字符串",
+      "poolName": "卡池类型名称"
     },
     "gacha-detail-card.text_12723f0f0f": {
-      "name": "games[game].name"
+      "name": "对应游戏的名称"
     },
     "gacha-detail-card.text_664bea2328": {
-      "unclassified": "model.gacha.unclassified"
+      "unclassified": "未能识别星级的抽卡记录条数"
     },
     "gacha-detail-card.text_dbef80175a": {
-      "name": "games[game].name"
+      "name": "游戏名称"
     },
     "gacha-version-card.text_0b72e021d2": {
-      "label": "config.label"
+      "label": "游戏名称"
     },
     "gacha-version-card.text_965472f277": {
-      "label": "config.label"
+      "label": "游戏名称"
     },
     "gacha-version-card.text_bdb4b2fc9d": {
-      "uid": "model.uid",
-      "poolName": "model.poolName"
+      "uid": "玩家UID",
+      "poolName": "卡池名称"
     },
     "gacha-version-card.text_dc8941f893": {
-      "page": "page.page",
-      "total": "page.total"
+      "page": "当前页码",
+      "total": "总页数"
     },
     "gacha-version-card.text_1a6ad19554": {
-      "totalNum": "totalNum",
-      "value2": "totalNum - unassignedDraws",
-      "unassignedDraws": "unassignedDraws"
+      "totalNum": "累计抽数",
+      "value2": "已确认分期抽数",
+      "unassignedDraws": "未归入期次的抽数"
     },
     "gacha-version-card.text_e1a9a10145": {
-      "unclassifiedDraws": "unclassifiedDraws"
+      "unclassifiedDraws": "未辨认星级的抽数"
     },
     "gacha-version-card.text_84c666ec41": {
-      "page": "pageInfo.page",
-      "total": "pageInfo.total",
-      "from": "pageInfo.from",
-      "to": "pageInfo.to",
-      "count": "pageInfo.count"
+      "page": "当前页码",
+      "total": "总页数",
+      "from": "起始期数",
+      "to": "结束期数",
+      "count": "总期数"
     },
     "gacha-version-card.text_83a8704549": {
-      "shownNum": "gacha.shownNum",
-      "hiddenNum": "gacha.hiddenNum",
-      "prefix": "games[game].prefix",
-      "value4": "model.recordArchive ? \"逐抽\" : \"\"",
-      "poolName": "poolName"
+      "shownNum": "显示的卡池期数",
+      "hiddenNum": "隐藏的卡池期数",
+      "prefix": "命令前缀",
+      "value4": "逐抽模式标识",
+      "poolName": "卡池名称"
     },
     "gacha-version-card.text_ee0ed776e0": {
-      "label": "config.label"
+      "label": "游戏名称"
     },
     "gacha-version-card.text_10ab28c5db": {
-      "label": "config.label"
+      "label": "游戏名称"
     },
     "genshin-gacha-special-card.text_0cbbaa970a": {
-      "label": "config.label"
+      "label": "游戏名称"
     },
     "genshin-gacha-special-card.text_f8a3c21dfd": {
-      "label": "config.label"
+      "label": "游戏名称"
     },
     "genshin-gacha-special-card.text_18353d32c9": {
-      "allNum": "pool.allNum"
+      "allNum": "总抽数"
     },
     "genshin-gacha-special-card.text_abf65ef355": {
-      "typeName": "pool.typeName"
+      "typeName": "卡池类型名称"
     },
     "genshin-gacha-special-card.text_8f64a19805": {
-      "firstTime": "pool.firstTime",
-      "lastTime": "pool.lastTime"
+      "firstTime": "最早记录时间",
+      "lastTime": "最近记录时间"
     },
     "genshin-gacha-special-card.text_482155d2f0": {
-      "shownNum": "pool.shownNum",
-      "hiddenNum": "pool.hiddenNum"
+      "shownNum": "已显示的五星记录数",
+      "hiddenNum": "未显示的五星记录数"
     },
     "genshin-gacha-special-card.text_370e796ce4": {
-      "label": "games[game].label"
+      "label": "游戏名称"
     },
     "genshin-gacha-special-card.text_fa30358a73": {
-      "label": "games[game].label"
+      "label": "游戏名称"
     },
     "genshin-gacha-special-card.text_6a8bacf43f": {
-      "label": "games[game].label"
+      "label": "游戏名称"
     },
     "genshin-gacha-special-card.text_a6743dc8ab": {
-      "page": "page.page",
-      "total": "page.total",
-      "value3": "crossPool ? \"各池\" : \"\"",
-      "from": "page.from",
-      "to": "page.to"
+      "page": "当前页码",
+      "total": "总页数",
+      "value3": "跨池前缀标识",
+      "from": "起始记录序号",
+      "to": "结束记录序号"
     },
     "index.text_121da2c6b1": {
-      "value1": "mode.toUpperCase()"
+      "value1": "渲染后端类型（GPU/CPU）"
     },
     "index.text_722e85b72f": {
-      "value1": "mode.toUpperCase()"
+      "value1": "渲染后端类型（GPU/CPU）"
     },
     "index.text_8520a16020": {
-      "value1": "mode.toUpperCase()"
+      "value1": "渲染后端类型（GPU/CPU）"
     },
     "index.text_03494cc773": {
-      "message": "error.message"
+      "message": "GPU 后端失败原因"
     },
     "index.text_f6bae4175a": {
-      "value1": "backend.toUpperCase()"
+      "value1": "渲染后端名称（GPU 或 CPU，大写）"
     },
     "passport-qr-card.text_a1ba9d524f": {
-      "file": "file"
+      "file": "缺失的字体文件相对路径"
     },
     "profile-card.text_0ae1c81d69": {
-      "file": "file"
+      "file": "缺失的字体文件相对路径"
     },
     "profile-card.text_63514a39f5": {
-      "command": "group.command"
+      "command": "切换当前角色或 UID 的指令文本"
     },
     "rank-stats-card.text_ba837c6601": {
-      "title": "stats.title"
+      "title": "伤害排名榜单标题"
     },
     "rank-stats-card.text_27fde30335": {
-      "value1": "format.format(stats.total)",
-      "value2": "date.format(now)"
+      "value1": "格式化后的统计样本总数",
+      "value2": "格式化后的生成时间"
     },
     "rank-stats-card.text_b2e8dfa288": {
-      "value1": "(value / 10_000).toFixed(1)"
+      "value1": "除以一万并保留一位小数的数值"
     },
     "checkin-receipt-card.profile_label": {
       "profileId": "当前档案编号"
@@ -530,22 +530,22 @@
       "profileId": "当前档案编号"
     },
     "checkin-receipt-card.text_33d658749e": {
-      "value1": "model.generatedAt ? ` · ${model.generatedAt}` : \"\""
+      "value1": "生成时间后缀"
     },
     "daily-note-card.text_33d658749e": {
-      "value1": "model.generatedAt ? ` · ${model.generatedAt}` : \"\""
+      "value1": "生成时间后缀"
     },
     "donation-card.text_c657691343": {
-      "value1": "shanghaiTime.format(at)"
+      "value1": "格式化后的生成时间"
     },
     "passport-qr-card.text_33d658749e": {
-      "value1": "model.generatedAt ? ` · ${model.generatedAt}` : \"\""
+      "value1": "带前置分隔符的生成时间文本（无时间时为空）"
     },
     "profile-card.text_33d658749e": {
-      "value1": "model.generatedAt ? ` · ${model.generatedAt}` : \"\""
+      "value1": "带前置分隔符的生成时间文本（无时间时为空）"
     },
     "status-card.text_c657691343": {
-      "value1": "localTime(at, timeZone)"
+      "value1": "格式化后的本地时间字符串"
     }
   }
 }
