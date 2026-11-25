@@ -15,10 +15,10 @@ export async function runManaged(directory: string, ready?: () => Promise<void>,
     "托管宿主", 0, "当前目录已有托管宿主运行。");
   const supervisor = createManagedSupervisor(root, { onWorkerReady, powerState });
   let stopping = false;
-  let interrupted = false;
+  let requestedSignal: "SIGINT" | "SIGTERM" | undefined;
   let reportedInterrupt = false;
-  const normalizeInterrupt = (status: number) => {
-    if (!interrupted || (status !== 130 && status !== 0)) return status;
+  const normalizeStop = (status: number) => {
+    if (!requestedSignal || (status !== (requestedSignal === "SIGINT" ? 130 : 143) && status !== 0)) return status;
     if (!reportedInterrupt && !ready) console.info(formatTerminalLog("mark", "结束运行"));
     reportedInterrupt = true;
     return 0;
@@ -27,8 +27,8 @@ export async function runManaged(directory: string, ready?: () => Promise<void>,
     stopping = true;
     void supervisor.stop(signal);
   };
-  const interrupt = () => { if (!stopping) interrupted = true; stop("SIGINT"); };
-  const terminate = () => stop("SIGTERM");
+  const interrupt = () => { if (!stopping) requestedSignal = "SIGINT"; stop("SIGINT"); };
+  const terminate = () => { if (!stopping) requestedSignal = "SIGTERM"; stop("SIGTERM"); };
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
   let closeControl: (() => void) | undefined;
@@ -46,10 +46,10 @@ export async function runManaged(directory: string, ready?: () => Promise<void>,
       }
     }
     const status = await supervisor.done;
-    return ready && stopping ? 0 : normalizeInterrupt(status);
+    return ready && stopping ? 0 : normalizeStop(status);
   } catch (error) {
     const status = started ? await supervisor.done : 1;
-    if (interrupted && (status === 130 || status === 0)) return normalizeInterrupt(status);
+    if (requestedSignal && (status === (requestedSignal === "SIGINT" ? 130 : 143) || status === 0)) return normalizeStop(status);
     console.error(error instanceof Error ? error.message : "托管宿主无法启动。");
     return status || 1;
   } finally {
