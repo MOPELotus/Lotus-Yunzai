@@ -118,7 +118,7 @@ function bootSupervisor(active: string, env: NodeJS.ProcessEnv = {}) {
     },
     async stop() {
       supervisor.kill("SIGTERM");
-      expect(await deadline(supervisor.exited, "托管更新测试宿主退出超时。", 12_000)).toBe(143);
+      expect(await deadline(supervisor.exited, "托管更新测试宿主退出超时。", 12_000)).toBe(0);
     },
     async close() {
       for (const { socket } of clients) socket.close();
@@ -142,8 +142,10 @@ const cronClock = `
     const replacement = fixtureExists(fixtureEpoch);
     if (!replacement) fixtureWrite(fixtureEpoch, String(DateConstructor.now()));
     const started = Number(fixtureRead(fixtureEpoch, "utf8"));
-    const offset = Math.floor(started / 60_000) * 60_000 - 4_000 - started;
-    const now = () => DateConstructor.now() + offset + (replacement ? 60_000 : 0);
+    const defaultClock = Bun.env.FIXTURE_DEFAULT_UPDATE_CLOCK === "1";
+    const tick = defaultClock ? DateConstructor.UTC(2026, 10, 25, 4, 30) : Math.floor(started / 60_000) * 60_000;
+    const offset = tick - 4_000 - started;
+    const now = () => DateConstructor.now() + offset + (!defaultClock && replacement ? 60_000 : 0);
     globalThis.Date = new Proxy(DateConstructor, {
       get: (target, key, receiver) => key === "now" ? now : Reflect.get(target, key, receiver),
       construct: (target, args, constructor) => Reflect.construct(target, args.length ? args : [now()], constructor),
@@ -184,22 +186,14 @@ async function fixtureRepository(temporary: string, fail: boolean, audit?: strin
       ${original}
     `);
   }
-  if (schedule === "cron") {
+  if (schedule === "cron" || schedule === "legacy-default") {
     const app = join(writer, "app.ts");
     await writeFile(app, cronClock + await readFile(app, "utf8"));
   }
   if (schedule === "legacy-default") {
-    const app = join(writer, "app.ts");
-    await writeFile(app, `
-      const fixtureSetTimeout = globalThis.setTimeout;
-      globalThis.setTimeout = new Proxy(fixtureSetTimeout, {
-        apply(target, self, args) {
-          if (args[1] === 86_400_000) args[1] = 1_500;
-          return Reflect.apply(target, self, args);
-        },
-      });
-      ${await readFile(app, "utf8")}
-    `);
+    const supervisor = join(writer, "scripts/run-managed.ts");
+    // The parent validates receipt lifetimes too; use the same controlled wall clock.
+    await writeFile(supervisor, cronClock + await readFile(supervisor, "utf8"));
   }
   git(temporary, "init", "--bare", "--quiet", "--initial-branch=main", remote);
   git(writer, "init", "--quiet", "--initial-branch=main");
@@ -1207,7 +1201,8 @@ async function exerciseScheduledUpdate(schedule: Schedule, fail: boolean) {
   try {
     const { active, old, candidate } = await fixtureRepository(temporary, fail, undefined, schedule);
     const supervisor = bootSupervisor(active, {
-      TZ: "UTC", FIXTURE_UPDATE_EPOCH: schedule === "cron" ? join(temporary, "fixture-epoch") : undefined,
+      TZ: "UTC", FIXTURE_UPDATE_EPOCH: schedule !== "interval" ? join(temporary, "fixture-epoch") : undefined,
+      FIXTURE_DEFAULT_UPDATE_CLOCK: schedule === "legacy-default" ? "1" : undefined,
     });
     try {
       const initial = await deadline(supervisor.nextEndpoint(), "定时更新测试宿主启动超时。");
@@ -1259,7 +1254,7 @@ async function exerciseScheduledUpdate(schedule: Schedule, fail: boolean) {
 }
 
 test.skipIf(!Bun.which("git"))("update_time 在软关机期间静默更新并向各机器人主人回执", () => exerciseScheduledUpdate("interval", false), 35_000);
-test.skipIf(!Bun.which("git"))("旧 bot.yaml 省略 update_time 仍可静默更新和发送原会话回执", () => exerciseScheduledUpdate("legacy-default", false), 35_000);
+test.skipIf(!Bun.which("git"))("旧 bot.yaml 未指定更新计划时按默认时刻静默更新并回执", () => exerciseScheduledUpdate("legacy-default", false), 35_000);
 test.skipIf(!Bun.which("git"))("update_cron 启动失败后恢复旧提交和原关机时间并向各机器人主人回执", () => exerciseScheduledUpdate("cron", true), 35_000);
 
 async function exerciseMilkyScheduledUpdate(fail: boolean) {
