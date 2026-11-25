@@ -106,7 +106,7 @@ function observe(stream: ReadableStream<Uint8Array>) {
 function start(root: string) {
   const host = Bun.spawn([process.execPath, "app.ts"], {
     cwd: root, stdin: "pipe", stdout: "pipe", stderr: "pipe",
-    env: { PATH: process.env.PATH, TZ: "UTC" },
+    env: { PATH: process.env.PATH, TZ: "UTC", LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_PORT: "0" },
   });
   const output = observe(host.stdout);
   const errors = observe(host.stderr);

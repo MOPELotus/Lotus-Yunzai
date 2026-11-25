@@ -2,12 +2,13 @@ import { createTranslator as createTextTranslator } from "../packages/i18n/index
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
 import { delimiter, dirname, isAbsolute } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 import { isGitRevision } from "./local-git.ts";
 import { pluginProbeTokenEnvironment, pluginStartupGraceMs, readPluginLoading } from "./plugin-load-progress.ts";
 
 const failure = $t("lib.update-health.text_02cecbc624");
-const listenLine = /(?:^|\n)HTTP 正在监听 http:\/\/127\.0\.0\.1:([1-9]\d{0,4})\/status\r?\n/u;
+const listenLine = /(?:^|\n)(?:\[\d{2}:\d{2}:\d{2}\.\d{3}\]\[(?:MARK|INFO)\] \[HTTP\] )?HTTP 正在监听 http:\/\/127\.0\.0\.1:([1-9]\d{0,4})\/status\r?\n/u;
 const stopTimeout = 1_000;
 const maxBodyBytes = 4_096;
 
@@ -24,7 +25,7 @@ function monitorPort(stream: ReadableStream<Uint8Array>) {
         if (chunk.done) break;
         if (found) continue;
         const output = tail + decoder.decode(chunk.value, { stream: true });
-        const match = listenLine.exec(output);
+        const match = listenLine.exec(stripVTControlCharacters(output));
         const value = match && Number(match[1]);
         if (value && value <= 65_535) {
           port.resolve(value);

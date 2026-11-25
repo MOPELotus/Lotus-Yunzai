@@ -12,6 +12,7 @@ const groupId = 77;
 const pluginName = "离线夹具";
 const pluginDirectory = "installed-milky-fixture";
 const probe = "#Milky安装验收";
+const previousProbe = "#Milky原宿主验收";
 
 function git(root: string, ...args: string[]) {
   const result = Bun.spawnSync(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
@@ -34,6 +35,11 @@ async function fixture(root: string, port: number, fail: boolean) {
   const dependencies = await realpath(join(active, "node_modules"));
   await Promise.all([
     cp(new URL("../scripts/run-managed.ts", import.meta.url), join(active, "scripts/run-managed.ts")),
+    writeFile(join(active, "plugins/install-baseline-fixture.js"),
+      `export default class extends plugin {
+        constructor() { super({ rule: [{ reg: ${JSON.stringify("^" + previousProbe + "$")}, fnc: "answer" }] }); }
+        answer() { return this.reply("原宿主仍可响应"); }
+      }\n`),
     writeFile(join(active, ".gitignore"), "/node_modules\n/config/\n/data/\n/logs/\n"),
     writeFile(join(active, "package.json"), JSON.stringify({
       name: "lotus-yunzai", private: true, type: "module", scripts: { typecheck: "bun --version" },
@@ -205,8 +211,8 @@ async function exerciseMilkyInstall(fail: boolean) {
       oneBot = competitor;
       const frames: { action: string; echo: string; params: { message: string } }[] = [];
       const competitorReply = Promise.withResolvers<void>();
-      const expectedProbe = fail ? /^Lotus-Yunzai 版本/u : /^已加载审批插件$/u;
-      const commandProbe = fail ? "#版本" : probe;
+      const expectedProbe = fail ? /^原宿主仍可响应$/u : /^已加载审批插件$/u;
+      const commandProbe = fail ? previousProbe : probe;
       competitor.addEventListener("message", ({ data }) => {
         const frame = JSON.parse(data) as typeof frames[number];
         if (frame.echo) competitor.send(JSON.stringify({ echo: frame.echo, status: "ok", retcode: 0, data: { message_id: 1 } }));

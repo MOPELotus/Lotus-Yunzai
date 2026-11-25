@@ -98,7 +98,7 @@ test("隔离目录启动真实宿主，检查完整提交和状态后等待插�
   await expectReaped(root);
 }));
 
-test("探测隔离宿主变量和代理，重试临时状态、错误提交和过大的响应", () => fixture(async (root) => {
+test("探测识别分块彩色时间前缀并隔离变量和代理，重试临时状态、错误提交和过大的响应", () => fixture(async (root) => {
   await writeFile(join(root, "app.ts"), `
     import assert from "node:assert/strict";
     assert.equal(process.env.LOTUS_HTTP_PORT, "0");
@@ -119,7 +119,7 @@ test("探测隔离宿主变量和代理，重试临时状态、错误提交和�
       return Response.json({ status: "ok", revision: "${revision}" });
     } });
     console.log("prefix".repeat(50_000));
-    process.stdout.write("HTTP 正在监");
+    process.stdout.write("\\x1b[90m[12:34:56.789][MARK]\\x1b[0m \\x1b[34m[HTTP]\\x1b[0m HTTP 正在监");
     await Bun.sleep(20);
     console.log("听 " + server.url.origin + "/status");
   `);
