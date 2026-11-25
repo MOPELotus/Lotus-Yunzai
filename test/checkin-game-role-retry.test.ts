@@ -123,7 +123,7 @@ test("实际定时运行可同档持久保存待查角色和社区补跑，两�
     }, communityWrites: { "6": "accepted" } });
     expect(trace.splice(0)).toEqual([
       "roles:hkrpg_cn", "wait:5000", "roles:hkrpg_cn", "wait:15000", "roles:hkrpg_cn",
-      "roles:nap_cn", "community:read", "community:submit",
+      "roles:nap_cn", "community:read", "community:submit", "community:read",
     ]);
     at += 3_600_000;
     round = 3;

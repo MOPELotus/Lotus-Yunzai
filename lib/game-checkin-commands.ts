@@ -125,7 +125,7 @@ function outcome(rows: readonly GameCheckinResult[], officialClient = "米游社
 }
 
 export function gameCheckinCommands(directory: string | undefined, lifecycleSignal: AbortSignal,
-  { makeClient = createProfileHoyoClient, transport, renderReceipt = renderCheckinReceiptCard, manualRelay, audit, scheduleStore,
+  { makeClient = createProfileHoyoClient, transport, renderReceipt = renderCheckinReceiptCard, manualRelay, audit, scheduleStore, prepareDevice,
     waitForReadRetry = (milliseconds, signal) => setTimeout(milliseconds, undefined, { signal }) }: {
     readonly makeClient?: typeof createProfileHoyoClient;
     readonly transport?: Parameters<typeof createProfileHoyoClient>[1];
@@ -133,6 +133,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     readonly manualRelay?: () => ManualRelay | undefined;
     readonly audit?: Pick<ReturnType<typeof createCheckinAudit>, "append">;
     readonly scheduleStore?: ReturnType<typeof createCheckinScheduleStore>;
+    readonly prepareDevice?: (qq: string, profileId: number) => Promise<unknown>;
     readonly waitForReadRetry?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
   } = {}) {
   const profiles = createProfileStore(directory);
@@ -214,8 +215,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             try {
               const value = await client.submitCnGameCheckin(source, { signal, proof });
               await verifyCurrent();
-              const confirmed = await client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false });
-              if (!confirmed.signed) throw new Error("签到结果未确认，停止重复提交。");
+              // The sequence owns the independent status read. Once this POST is
+              // accepted, a failed or delayed read must never request another proof.
               return { accepted: true, value };
             } catch (rejected) {
               if (rejected instanceof GameRecordRequestError && rejected.reason === "risk" &&
@@ -286,6 +287,10 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
     try {
       await input.verifySession?.();
       signal.throwIfAborted();
+      await prepareDevice?.(qq, profileId);
+      signal.throwIfAborted();
+      await input.verifySession?.();
+      input.verifyDay?.();
       settings = await profiles.checkinSettings(qq, profileId);
       knownRevision = settings.revision;
       if (input.source !== "manual" && !settings.enabled) return { status: "busy" };
@@ -542,7 +547,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           if (row.community === "未执行") row.community = "跳过";
         }
         let receivedBefore: number | undefined;
-        if (accepted && !notes.length) {
+        if (accepted) {
           try {
             receivedBefore = state?.receivedPoints;
             state = await client.fetchBbsMissionState(account, { signal, ...captchaOptions, recoverCookie: false });
@@ -551,7 +556,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             return;
           }
         }
-        return state && !notes.length ? bbsPoints(state, receivedBefore) : undefined;
+        return state ? bbsPoints(state, receivedBefore) : undefined;
       }
       if (gameRows.length) {
         try {
