@@ -279,3 +279,26 @@ test("创建挑战可重试 HTML 410，提交校验仍只发送一次", async ()
   expect(creates).toBe(2);
   expect(submits).toBe(1);
 }));
+
+
+test("社区 misc 的空 captcha_id 不遮蔽有效 v3，非空 v4 字段仍拒绝", async () => {
+  for (const captcha_id of ["", "different-v4-id"]) {
+    let verifies = 0, reads = 0;
+    await scoped(async () => {
+      const client = createHoyoClient(async (url, init) => {
+        if (url.pathname.endsWith("createVerification")) return ok({ gt: "fixture-gt", challenge: "fresh-bbs",
+          captcha_id, new_captcha: 1, success: 1, offline: 0, risk_type: "" });
+        if (url.pathname.endsWith("verifyVerification")) { verifies++; return ok({ challenge: "accepted" }); }
+        reads++;
+        return new Headers(init.headers).has("x-rpc-challenge") ? ok({ total_points: 20, states: [] }) : risk();
+      });
+      const result = await client.fetchBbsMissionState(source);
+      expect(result.totalPoints).toBe(20);
+    }).then(() => expect(captcha_id).toBe(""), error => {
+      expect(captcha_id).toBe("different-v4-id");
+      expect(error).toMatchObject({ code: "response" });
+    });
+    expect(verifies).toBe(captcha_id === "" ? 1 : 0);
+    expect(reads).toBe(captcha_id === "" ? 2 : 1);
+  }
+});

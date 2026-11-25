@@ -1,4 +1,4 @@
-import { getDefaultCaptchaSolver } from "@lotus-yunzai/hoyo-client";
+import { CaptchaBusinessRejectedError, getDefaultCaptchaSolver } from "@lotus-yunzai/hoyo-client";
 import { createHash } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { createProfileStore, MAX_PROFILE_ID, ProfileError, profileCookieAccountId, type ProfileAccountContext } from "@lotus-yunzai/account";
@@ -76,6 +76,7 @@ function rowsFor(settings: Settings) {
 }
 
 function bbsIssue(error: unknown) {
+  if (error instanceof CaptchaBusinessRejectedError) return error.message;
   if (error instanceof BbsCheckinRequestError) return error.message;
   if (error instanceof HoyoRequestError && error.code === "invalid-input") return error.message;
   return "米游社社区签到暂未完成，请在官方客户端核对。";
@@ -526,7 +527,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             }
             const explicit = error instanceof BbsCheckinRequestError ||
               (error instanceof HoyoRequestError && (error.code === "api" || error.code === "invalid-input"));
-            const blocked = !(error instanceof HoyoRequestError) || error instanceof BbsCheckinRequestError || error.code !== "api";
+            const blocked = !(error instanceof CaptchaBusinessRejectedError) &&
+              (!(error instanceof HoyoRequestError) || error instanceof BbsCheckinRequestError || error.code !== "api");
             await journal?.settle(row.forum, explicit ? (blocked ? "blocked" : "rejected") : "unconfirmed");
             row.community = explicit ? "失败" : "未确认";
             count(explicit ? "failed" : "unconfirmed");

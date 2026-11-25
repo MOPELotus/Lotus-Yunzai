@@ -3,7 +3,7 @@ import { setTimeout as wait } from "node:timers/promises";
 import type { Game } from "@lotus-yunzai/account";
 import { getDefaultCaptchaSolver, type CaptchaChallenge, type CaptchaEvent, type CaptchaProof } from "./captcha.ts";
 import type { HoyoTransport } from "./credentials.ts";
-import { HoyoRequestError } from "./errors.ts";
+import { CaptchaBusinessRejectedError, HoyoRequestError } from "./errors.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 
 type Json = Record<string, unknown>;
@@ -42,7 +42,7 @@ function inline(payload: Json): V3Challenge | undefined {
   const data = obj(payload.data);
   const challenge = obj(data?.gt_result) ?? data;
   if (!challenge || [challenge.captchaVersion, challenge.captcha_version, challenge.version].some(version => version !== undefined && ![3, "3", "v3"].includes(version as number | string)) ||
-      challenge.captchaId !== undefined || challenge.captcha_id !== undefined || !field(challenge.gt, 256) || !field(challenge.challenge, 1024)) return;
+      [challenge.captchaId, challenge.captcha_id].some(id => id !== undefined && id !== "") || !field(challenge.gt, 256) || !field(challenge.challenge, 1024)) return;
   const flag = (value: unknown) => value === true || value === false || value === 0 || value === 1 ? value : undefined;
   return { captchaVersion: 3, gt: challenge.gt, challenge: challenge.challenge, new_captcha: flag(challenge.new_captcha), success: flag(challenge.success) };
 }
@@ -93,6 +93,9 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
   const cache = new Map<string, Response>();
   let captured: Captured | undefined;
   let replaying = false;
+  let replayTargetKey: string | undefined;
+  let lastBusinessState: "rejected" | "uncertain" = "rejected";
+  let stage: "challenge" | "verification" | "business" = "challenge";
   let rpc: { key: string; headers: HeadersInit } | undefined;
   const request: HoyoTransport = async (url, init) => {
     await guard();
@@ -106,6 +109,7 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
       for (const [name, value] of new Headers(rpc.headers)) headers.set(name, value);
       outgoing = { ...outgoing, headers };
     }
+    if (key === replayTargetKey) { lastBusinessState = "uncertain"; stage = "business"; }
     const response = await transport(url, outgoing);
     await guard();
     if (url.origin === "https://public-data-api.mihoyo.com" && url.pathname === "/device-fp/api/getFp") return response;
@@ -117,6 +121,7 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
       if (payload && !rateLimited(payload) && risk(payload)) {
         // A successful envelope on a write must carry its inline challenge. Otherwise it is ambiguous.
         if (code(payload.retcode) === 0 && (init.method ?? "GET").toUpperCase() !== "GET" && !inline(payload)) return response;
+        if (key === replayTargetKey) lastBusinessState = "rejected";
         captured = { url, init, payload, trace: response.headers.get("x-trace-id")?.trim() || undefined };
         return response;
       }
@@ -130,6 +135,7 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
   replaying = true;
   const target: Captured = captured;
   const route = registered(target.url, options.game)!;
+  const rejectedWrite = route.kind === "bbs" && (target.init.method ?? "GET").toUpperCase() === "POST";
   if (route.kind === "inline" && !inline(target.payload)) throw originalError;
   const tool = code(target.payload.retcode) === 10035;
   const appKey = route.game === "sr" ? "hkrpg_game_record" : route.game === "zzz" ? "game_record_zzz" : undefined;
@@ -147,6 +153,7 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
     }
   }
   const targetKey = requestKey(target.url, target.init);
+  replayTargetKey = targetKey;
   async function api(path: string, body?: Json): Promise<Json> {
     await guard();
     const overseas = route.overseas;
@@ -194,9 +201,10 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
     return payload;
   }
   let firstInline = inline(target.payload);
-  const solved = await solver.run<T>({ signal, verify: guard, context: options.context, notify: options.notify,
+  const execute = () => solver.run<T>({ signal, verify: guard, context: options.context, notify: options.notify,
     allowManual: options.allowManual ?? Boolean(options.context || options.notify),
     async challenge() {
+      stage = "challenge";
       if (route.kind === "inline") {
         if (firstInline) { const first = firstInline; firstInline = undefined; return first; }
         // The last write was explicitly refused by the business; obtaining a new challenge is safe.
@@ -217,6 +225,7 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
       return challenge;
     },
     async accept(proof: CaptchaProof) {
+      stage = "verification";
       if (!("validate" in proof) || !field(proof.challenge, 1024) || !field(proof.validate) || proof.seccode !== `${proof.validate}|jordan`) return { accepted: false };
       let headers: HeadersInit;
       if (route.kind === "inline") headers = { "x-rpc-challenge": proof.challenge, "x-rpc-validate": proof.validate, "x-rpc-seccode": proof.seccode };
@@ -238,7 +247,19 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
       } finally { rpc = undefined; }
     },
   });
+  let solved: Awaited<ReturnType<typeof execute>>;
+  try { solved = await execute(); }
+  catch (error) {
+    await guard();
+    if (rejectedWrite && lastBusinessState === "rejected") {
+      throw new CaptchaBusinessRejectedError(code(target.payload.retcode)!, stage, error);
+    }
+    throw error;
+  }
   await guard();
   if (solved.ok) return solved.value;
+  if (rejectedWrite && lastBusinessState === "rejected") {
+    throw new CaptchaBusinessRejectedError(code(target.payload.retcode)!, stage, originalError);
+  }
   throw originalError;
 }
