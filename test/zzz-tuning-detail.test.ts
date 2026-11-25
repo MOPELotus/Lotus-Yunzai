@@ -93,6 +93,6 @@ test("formats only live inventory for the displayed UID, with authoritative zero
   expect(buildZzzTuningInventoryReply({ uid, profileId: 3, live: { uid, inventory: { masterTape: -1, boopon: 1.2 } } })).toBeUndefined();
   const inventory = { polychrome: 1_234, monochrome: 0, encryptedMasterTape: 11, masterTape: 2, boopon: 0 };
   expect(buildZzzTuningInventoryReply({ uid, profileId: 3, live: { uid, inventory } })).toBe(
-    "Profile 3（UID: 123456789）\n当前库存：\n菲林 × 1,234 · 菲林底片 × 0\n加密母带 × 11 · 原装母带 × 2 · 邦布券 × 0",
+    "档案 3（UID: 123456789）\n当前库存：\n菲林 × 1,234 · 菲林底片 × 0\n加密母带 × 11 · 原装母带 × 2 · 邦布券 × 0",
   );
 });
