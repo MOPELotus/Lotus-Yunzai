@@ -119,7 +119,7 @@ test.skipIf(!valkey || !git)("宿主按显式授权预检和一次迁移旧限�
     expect((await stat(join(stage.state.directory, archive, "42/1.json"))).mode & 0o777).toBe(0o600);
     await rm(stage.directory, { recursive: true, force: true });
     const outcome = await migrateInstallation(source, target, undefined, inputs);
-    expect(outcome).toMatchObject({ status: "published", paths: ["config", "data"], trssWish: preview.trssWish });
+    expect(outcome).toMatchObject({ status: "published", paths: ["backup", "config", "data"], trssWish: preview.trssWish });
     expect(await readFile(join(source, oldConfig), "utf8")).toBe(oldSettings);
     expect(await readFile(join(source, "config/redis.yaml"), "utf8")).toBe(unrelatedRedis);
     expect(await readFile(authorizationFile, "utf8")).toBe(authText);
