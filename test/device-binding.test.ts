@@ -257,7 +257,7 @@ test("扫码只使用临时设备，不覆盖未完整的旧设备档案", async
     for (const device of [{ bound: false, fp, model: "Fixture" }, { bound: true, model: "Fixture Model" }]) {
       await writeFile(file, Bun.YAML.stringify({ device }));
       const slot = await profiles.openLoginSlot("42");
-      expect(slot.device.id).toMatch(/^[A-F0-9]{32}$/u);
+      expect(slot.device.id).toMatch(/^[a-f0-9]{32}$/u);
       expect(slot.device.fp).toBe("");
       await profiles.saveLogin(slot, { stuid: "77", stoken: "fixture-stoken", credentials: {
         ltoken: "fixture-ltoken", cookie: "ltoken=fixture-ltoken;ltuid=77;cookie_token=fixture;account_id=77;",
@@ -265,6 +265,20 @@ test("扫码只使用临时设备，不覆盖未完整的旧设备档案", async
       } });
       expect(Bun.YAML.parse(await readFile(file, "utf8"))).toMatchObject({ device });
       expect((await profiles.accountContext("42")).device.fp).toBe("");
+    }
+    for (const savedId of ["abcdef0123456789abcdef0123456789", "ABCDEF0123456789ABCDEF0123456789",
+      "AbCdEf0123456789aBcDeF0123456789"]) {
+      const device = { bound: true, id: savedId, fp: otherFp, model: "Existing Pixel" };
+      await writeFile(file, Bun.YAML.stringify({ device }));
+      const slot = await profiles.openLoginSlot("42");
+      expect(slot.device.id).toBe(savedId);
+      expect(slot.device.fp).toBe(otherFp);
+      await profiles.saveLogin(slot, { stuid: "77", stoken: "fixture-stoken", credentials: {
+        ltoken: "fixture-ltoken", cookie: "ltoken=fixture-ltoken;ltuid=77;cookie_token=fixture;account_id=77;",
+        stokenCookie: "stuid=77;stoken=fixture-stoken;",
+      } });
+      expect(Bun.YAML.parse(await readFile(file, "utf8"))).toMatchObject({ device });
+      expect((await profiles.accountContext("42")).device.id).toBe(savedId);
     }
   } finally {
     await rm(root, { recursive: true, force: true });
