@@ -21,6 +21,8 @@ async function fixture(run) {
       identity: async pid => running ? { ...old, pid } : null,
       kill: () => { running = false; },
       prepareBun: async () => '/fake/bun',
+      preparePm2: async () => ({available:true,provider:'fixture'}),
+      inspectBoot: async () => ({status:'not-configured',newAutostartConfigured:false}),
       execute: async (command, args) => { calls.push([command, ...args]); },
       sleep: async () => {
         const state = JSON.parse(await readFile(statePath, 'utf8'));
@@ -38,6 +40,28 @@ test('交接前不停止旧端，完成迁移、初始化和后台启动后才�
   assert.equal(result.receipt, 'last reply');
   assert.equal(x.running(), false);
   assert.deepEqual(x.calls.slice(-3).map(call => call.slice(1)), [['run', 'migrate', x.source], ['run', 'bootstrap'], ['run', 'start:bg']]);
+  assert.equal(result.boot.status, 'not-configured');
+  assert.equal(result.boot.newAutostartConfigured, false);
+}));
+test('PM2真实预检失败发生在交接前，旧机器人不停止', () => fixture(async x => {
+  x.dependencies.preparePm2 = async () => { throw Error('PM2 unavailable'); };
+  await assert.rejects(runLegacyMigration(x, x.dependencies), /PM2 unavailable/u);
+  const state = JSON.parse(await readFile(x.statePath, 'utf8'));
+  assert.equal(state.failedStage, 'preparing-background');
+  assert.equal(state.recovery, 'old-untouched');
+  assert.equal(x.running(), true);
+  assert.equal(x.calls.some(call => call.includes('migrate')), false);
+}));
+test('已确认旧自启冲突在ready之前阻断，不写旧服务且不停止旧机器人', () => fixture(async x => {
+  x.dependencies.inspectBoot = async () => ({ status: 'blocked', unit: 'old-bot.service', scope: 'system',
+    newAutostartConfigured: false, message: 'old service conflict' });
+  await assert.rejects(runLegacyMigration(x, x.dependencies), /old service conflict/u);
+  const state = JSON.parse(await readFile(x.statePath, 'utf8'));
+  assert.equal(state.failedStage, 'checking-boot');
+  assert.equal(state.boot.unit, 'old-bot.service');
+  assert.equal(state.recovery, 'old-untouched');
+  assert.equal(x.running(), true);
+  assert.equal(x.calls.some(call => call.includes('migrate')), false);
 }));
 for (const failure of ['migrate', 'bootstrap', 'start:bg']) {
   test(`${failure}失败时停止已尝试的新端并恢复旧端`, () => fixture(async x => {
@@ -208,10 +232,14 @@ test('真实PM2 CLI输出版本banner时仍识别尾部jlist进程数组', () =>
   assert.equal(JSON.parse(await readFile(x.statePath, 'utf8')).recovery, 'old-restored');
 }));
 
-test('真实Node改title后使用restoreArgv恢复，不能以空身份argv启动', () => fixture(async x => {
+const nodeExecutable = process.versions.bun ? (() => {
+  const found = spawnSync('node', ['-p', 'process.execPath'], { encoding: 'utf8' });
+  return found.status === 0 ? found.stdout.trim() : undefined;
+})() : process.execPath;
+test('真实Node改title后使用restoreArgv恢复，不能以空身份argv启动', { skip: !nodeExecutable }, () => fixture(async x => {
   const script = join(x.source, 'titled.mjs'), marker = join(x.source, 'running.json');
   await writeFile(script, `import{writeFile}from'node:fs/promises';process.title='lotus-title-fixture';await writeFile(${JSON.stringify(marker)},JSON.stringify({pid:process.pid}));setInterval(()=>{},1000);`);
-  const child = spawn(process.execPath, [script], { cwd: x.source, stdio: 'ignore' });
+  const child = spawn(nodeExecutable, [script], { cwd: x.source, stdio: 'ignore' });
   await once(child, 'spawn');
   let restoredPid;
   try {

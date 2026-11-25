@@ -5,6 +5,7 @@ import { constants } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { migrationEnvironment } from './legacy-migrate-environment.mjs';
+import { prepareMigrationPm2, inspectLegacyBoot } from './legacy-migrate-background.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const catalog = JSON.parse(await readFile(new URL('../i18n/legacy-migrate/zh-CN.json', import.meta.url), 'utf8')).messages;
@@ -123,6 +124,7 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
   await mkdir(lock, { mode: 0o700 });
   const logFile = await open(join(dirname(statePath), 'worker.log'), constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW, 0o600);
   const io = { execute, capture, identity: processIdentity, kill: (pid, sig) => process.kill(pid, sig), sleep, prepareBun,
+    preparePm2: prepareMigrationPm2, inspectBoot: inspectLegacyBoot, parsePm2ProcessList,
     restore: async old => {
       const child = spawn(old.execPath, old.restoreArgv || old.argv, { cwd: old.cwd, env: old.env || process.env, detached: true,
         stdio: ['ignore', logFile.fd, logFile.fd] });
@@ -174,6 +176,14 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
     await retry('git', ['submodule', 'update', '--init', '--recursive']);
     await stage('installing', 'preparing');
     await retry(bun, ['install']);
+    options.env.PATH = join(target, 'node_modules/.bin') + delimiter + options.env.PATH;
+    await stage('preparing-background', 'background');
+    const background = await io.preparePm2(target, bun, dirname(statePath), options, io);
+    await state({ background });
+    await stage('checking-boot', 'boot_check');
+    const boot = await io.inspectBoot(old, { ...oldOptions, signal }, io);
+    await state({ boot });
+    if (boot.status === 'blocked') throw Error(boot.message);
     await stage('ready-to-stop', 'ready');
     let approved = false;
     for (let i = 0; i < 3600; i++) {

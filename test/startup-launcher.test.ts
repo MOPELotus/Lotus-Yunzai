@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
 import { afterEach, expect, test } from "bun:test";
-import { copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -457,8 +457,12 @@ async function fixture() {
   roots.add(root);
   const cwd = join(root, "checkout");
   await Promise.all(["lib", "plugins/atlas", "scripts", "config"].map((path) => mkdir(join(cwd, path), { recursive: true })));
+  await mkdir(join(cwd, "packages"));
+  await symlink(join(source, "packages/i18n"), join(cwd, "packages/i18n"), "dir");
   await Promise.all([
-    ...["package.json", "scripts/launcher.ts", "scripts/startup.ts", "scripts/managed-entry.ts",
+    cp(join(source, "i18n"), join(cwd, "i18n"), { recursive: true }),
+    cp(join(source, "plugins/atlas/i18n"), join(cwd, "plugins/atlas/i18n"), { recursive: true }),
+    ...["package.json", "lib/i18n-preload.ts", "scripts/launcher.ts", "scripts/startup.ts", "scripts/managed-entry.ts",
       "plugins/atlas/legacy-atlas-directory.ts", "plugins/atlas/snapshot-pointer.ts", "plugins/atlas/locale.ts",
       "plugins/atlas/source-values.ts", "plugins/atlas/initialization-progress.ts",
       "plugins/atlas/theme-directories.ts"].map((path) =>
@@ -525,6 +529,7 @@ test("noninteractive first start requires a source choice before starting the ho
 test("非交互完整初始化默认最新版并完成首次设置，随后启动不再要求初始化", async () => {
   const { cwd, config, attempts, start } = await fixture();
   const [code, output, error] = await start(["init"]);
+  if (code !== 0) throw new Error(error);
   expect(code).toBe(0);
   expect(error).not.toContain("尚未完成初始化");
   expect(output).toContain("已就绪");

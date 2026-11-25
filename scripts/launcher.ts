@@ -12,6 +12,7 @@ import { lockFile, managedStartupLockPath } from "../lib/file-lock.ts";
 import { stopForeground } from "../lib/foreground-control.ts";
 import { backgroundCleanStop, backgroundStartupFailure } from "../lib/managed-exit.ts";
 import { recoverMigrationPublicationForStartup } from "../lib/migration-publication.ts";
+import { realpathSync } from "node:fs";
 
 const name = "LOTUS-YUNZAI";
 const legacyName = "lotus-yunzai";
@@ -58,6 +59,16 @@ function pm2Executable() {
   const binary = Bun.which("pm2");
   if (!binary) throw new Error($t("scripts.launcher.text_306fc16aea"));
   return binary;
+}
+
+function pm2Command(binary: string, ...args: readonly string[]) {
+  // The bundled CLI is JavaScript. Run it with the same Bun instead of relying
+  // on its /usr/bin/env node shebang on a Bun-only installation.
+  try {
+    const local = fileURLToPath(new URL("../node_modules/pm2/bin/pm2", import.meta.url));
+    if (realpathSync(binary) === realpathSync(local)) return [process.execPath, local, ...args];
+  } catch { /* Global and test-provided PM2 executables keep their own interpreter. */ }
+  return [binary, ...args];
 }
 
 async function present(path: string) {
@@ -217,7 +228,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
   async function application(path: string, attempt?: string) {
     if (!await privateHome(path) || !await daemonListening(join(path, "rpc.sock"))) return;
     if (!binary) throw new Error($t("scripts.launcher.text_8e593cd64e"));
-    const lookup = Bun.spawn([binary, "jlist"], { ...spawnOptions(path), stdout: "pipe", timeout: 2_500 });
+    const lookup = Bun.spawn(pm2Command(binary, "jlist"), { ...spawnOptions(path), stdout: "pipe", timeout: 2_500 });
     const [code, result] = await Promise.all([lookup.exited, new Response(lookup.stdout).text()]);
     if (code !== 0) throw new Error($t("scripts.launcher.text_d83512dfbd"));
     let processes: unknown;
@@ -266,7 +277,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
     if (!checked?.active || !checked.owned || checked.id !== active.id || checked.pid !== active.pid || checked.token !== active.token) {
       throw new Error($t("scripts.launcher.text_2021cc549c"));
     }
-    return Bun.spawn([binary, "stop", active.id], spawnOptions(active.path)).exited;
+    return Bun.spawn(pm2Command(binary, "stop", active.id), spawnOptions(active.path)).exited;
   }
   const selected = active ?? current ?? legacy;
   if (action === "logs" && !selected) {
@@ -286,7 +297,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
       return 0;
     }
     const args = action === "status" ? ["status"] : [action, selected.id ?? name, ...(action === "logs" && !options.includes("--raw") ? ["--raw"] : []), ...options];
-    const client = Bun.spawn([binary, ...args], { ...spawnOptions(selected.path), ...(action === "logs" && { stdout: "pipe" as const }) });
+    const client = Bun.spawn(pm2Command(binary, ...args), { ...spawnOptions(selected.path), ...(action === "logs" && { stdout: "pipe" as const }) });
     return action === "logs" ? waitForLogs(client) : client.exited;
   }
 
@@ -347,7 +358,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
     signal?.throwIfAborted();
     if (active.workerToken) {
       const until = performance.now() + listenTimeoutMs + 25_000;
-      const code = await Bun.spawn([binary, "restart", active.id], { ...spawnOptions(active.path), timeout: listenTimeoutMs + 25_000 }).exited;
+      const code = await Bun.spawn(pm2Command(binary, "restart", active.id), { ...spawnOptions(active.path), timeout: listenTimeoutMs + 25_000 }).exited;
       if (code !== 0) return code;
       do {
         signal?.throwIfAborted();
@@ -362,7 +373,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
       } while (performance.now() < until);
       throw new Error($t("scripts.launcher.text_15dffcfc9e"));
     }
-    const code = await Bun.spawn([binary, "stop", active.id], { ...spawnOptions(active.path), timeout: 25_000 }).exited;
+    const code = await Bun.spawn(pm2Command(binary, "stop", active.id), { ...spawnOptions(active.path), timeout: 25_000 }).exited;
     if (code !== 0) return code;
     const stopped = await application(active.path);
     if (!stopped?.owned || stopped.id !== active.id || stopped.active || stopped.pid !== undefined) {
@@ -401,20 +412,20 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
     signal?.throwIfAborted();
     if (retained && (retained.active || retained.pid !== undefined || retained.id === undefined ||
         retained.id !== current.id ||
-        await Bun.spawn([binary, "delete", retained.id], { ...spawn, stdout: "ignore", timeout: 2_500 }).exited !== 0)) {
+        await Bun.spawn(pm2Command(binary, "delete", retained.id), { ...spawn, stdout: "ignore", timeout: 2_500 }).exited !== 0)) {
       throw new Error($t("scripts.launcher.text_ec937bf293"));
     }
     signal?.throwIfAborted();
   }
 
-  const start = Bun.spawn([binary, "start", config, "--only", name], spawn);
+  const start = Bun.spawn(pm2Command(binary, "start", config, "--only", name), spawn);
   const cancelled = Promise.withResolvers<void>();
   const interrupt = () => cancelled.resolve();
   signal?.addEventListener("abort", interrupt, { once: true });
 
   async function stopOwnedApplication(id: string | undefined) {
     if (id === undefined ||
-        await Bun.spawn([executable, "stop", id], { ...spawn, timeout: 25_000 }).exited !== 0) {
+        await Bun.spawn(pm2Command(executable, "stop", id), { ...spawn, timeout: 25_000 }).exited !== 0) {
       throw new Error($t("scripts.launcher.text_49e7c891f3"));
     }
   }
