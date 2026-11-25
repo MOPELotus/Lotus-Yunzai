@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawnManagedWorker } from "../lib/managed-worker.ts";
 import { pluginProbeTokenEnvironment } from "../lib/plugin-load-progress.ts";
 import { nativeCatalogTable } from "../plugins/meme/catalog-file.ts";
-import { copyHost } from "./host-fixture.ts";
+import { copyHost, linkHostPackages } from "./host-fixture.ts";
 
 async function waitFor<T>(read: () => T | Promise<T>) {
   const deadline = performance.now() + 4_000;
@@ -45,7 +45,7 @@ test.skipIf(!git || process.platform === "win32")("受管宿主接管后才建�
   }
   try {
     await copyHost(root);
-    await symlink(fileURLToPath(new URL("../packages", import.meta.url)), join(root, "packages"), "dir");
+    await linkHostPackages(root);
     const source = fileURLToPath(new URL("../plugins/meme", import.meta.url));
     const destination = join(root, "plugins", "meme");
     const linked = ["node_modules", "resources/builtin"];
@@ -63,15 +63,30 @@ test.skipIf(!git || process.platform === "win32")("受管宿主接管后才建�
     gitRun("-c", "user.name=Lotus Test", "-c", "user.email=test@invalid", "commit", "--quiet", "--no-gpg-sign", "--allow-empty", "-m", "test");
     const revision = gitRun("rev-parse", "HEAD");
     await mkdir(config, { recursive: true });
+    await writeFile(join(root, "config/bot.yaml"), "log_level: debug\n");
     await writeFile(join(config, "other.yaml"), 'autoUpdateRes: true\nautoUpdateResCron: "* * * * * ?"\n');
     await writeFile(join(config, "server.yaml"), `backend: remote\nurl: ${service.url.href}\n`);
-    const fixtureEnv = { PATH: process.env.PATH, LOTUS_MEME_DB: file, LOTUS_MEME_CONFIG_DIR: config,
+    const fixtureEnv = { PATH: process.env.PATH, LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_PORT: "0", LOTUS_MEME_DB: file, LOTUS_MEME_CONFIG_DIR: config,
       LOTUS_MEME_SERVER_URL: service.url.href };
+    const probeToken = crypto.randomUUID();
+    const listener = Promise.withResolvers<void>();
     const probe = Bun.spawn([process.execPath, "app.ts"], { cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
-      env: { ...fixtureEnv, [pluginProbeTokenEnvironment]: crypto.randomUUID() } });
-    const [stdout, stderr, exit] = await Promise.all([new Response(probe.stdout).text(), new Response(probe.stderr).text(), probe.exited]);
-    if (exit !== 0) throw new Error(stderr);
-    expect(stdout + stderr).toContain("已加载 meme");
+      env: { ...fixtureEnv, [pluginProbeTokenEnvironment]: probeToken },
+      ipc(message) {
+        if (message?.type === "lotus-yunzai-probe-listener" && message.token === probeToken &&
+            message.host === "127.0.0.1" && Number.isInteger(message.port) && message.port > 0) listener.resolve();
+      },
+    });
+    const stdout = new Response(probe.stdout).text(), stderr = new Response(probe.stderr).text();
+    const timer = setTimeout(() => listener.reject(new Error("探测宿主未报告完成加载。")), 4_000);
+    try {
+      await Promise.race([listener.promise, probe.exited.then(async () => { throw new Error(await stderr); })]);
+    } finally {
+      clearTimeout(timer);
+      probe.kill("SIGTERM");
+      await probe.exited;
+    }
+    expect(await stdout + await stderr).toMatch(/加载插件\s*\[meme\]/u);
     expect(await Bun.file(file).exists()).toBe(false);
 
     const env = { ...fixtureEnv, LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: "meme-readiness-fixture" };

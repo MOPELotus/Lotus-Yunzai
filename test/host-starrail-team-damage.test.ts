@@ -62,7 +62,8 @@ async function prepare(root: string) {
     await cp(join(proof, "theme"), join(root, "theme"), { recursive: true });
   }
   for (const [qq, profile, selected] of [[42, 2, uid], [43, 2, otherUid]] as const) {
-    await write(root, `profiles/${qq}-${profile}.yaml`, Bun.YAML.stringify({ user: { qq: String(qq) }, profile: { id: profile }, account: {
+    await write(root, `profiles/${qq}-${profile}.yaml`, Bun.YAML.stringify({ user: { qq: String(qq) }, profile: { id: profile },
+      device: { id: `fixture-team-device-${qq}`, fp: "0123456789abc", bound: true }, account: {
       cookie: `cookie_token=team-${qq}`, stuid: String(qq), stoken: "fixture-session",
       game_roles: { sr: [{ uid: selected, region: "prod_gf_cn", game_biz: "hkrpg_cn" }] }, current_uid: { sr: selected },
     } }));

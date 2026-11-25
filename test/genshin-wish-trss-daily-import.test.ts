@@ -193,6 +193,9 @@ test.skipIf(!valkey)("旧 TRSS 限抽从停写的 Valkey 精确续接，日界�
     await mkdir(moduleDirectory, { recursive: true });
     await cp(new URL("../plugins/genshin/wish-sim/", import.meta.url), moduleDirectory, { recursive: true });
     await cp(new URL("../plugins/genshin/wish-calendar.ts", import.meta.url), join(moduleDirectory, "../wish-calendar.ts"));
+    await cp(new URL("../plugins/genshin/i18n/", import.meta.url), join(moduleDirectory, "../i18n"), { recursive: true });
+    await mkdir(join(installation, "packages/i18n"), { recursive: true });
+    await cp(new URL("../packages/i18n/index.ts", import.meta.url), join(installation, "packages/i18n/index.ts"));
     for (const directory of ["lib", "node_modules"]) {
       await symlink(fileURLToPath(new URL("../" + directory, import.meta.url)), join(installation, directory), "dir");
     }
