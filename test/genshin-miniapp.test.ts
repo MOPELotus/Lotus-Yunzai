@@ -162,3 +162,11 @@ test("第三方跳转、异常、超限和档案变化都不泄漏凭据", () =>
   })).rejects.toMatchObject({ code: "profile-changed" });
   expect(sent).toBe(true);
 }));
+
+
+test("小助手明确无记录时说明缺档，不导入空列表覆盖本地记录", () => fixture(async (source) => {
+  await expect(readGenshinMiniapp(source, transport(() => Response.json({ code: 300, result: "抽卡记录不存在" }))))
+    .rejects.toMatchObject({ code: "api", message: "提瓦特小助手暂无此账号的抽卡记录，本地记录已保留。" });
+  await expect(readGenshinMiniapp(source, transport(() => Response.json({ code: 300, result: authkey }))))
+    .rejects.toMatchObject({ code: "response", message: "外部服务没有返回有效的抽卡列表。" });
+}));

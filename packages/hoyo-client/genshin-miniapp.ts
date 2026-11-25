@@ -34,6 +34,9 @@ function validTime(value: unknown): value is string {
 }
 
 function parseExport(value: unknown, uid: string, authkey: string) {
+  if (record(value) && value.code === 300 && value.result === "抽卡记录不存在" && value.list === undefined) {
+    throw new HoyoRequestError("api", "提瓦特小助手暂无此账号的抽卡记录，本地记录已保留。");
+  }
   if (!record(value) || !Array.isArray(value.list) || value.list.length > maxRecords ||
       (value.info != null && !record(value.info)) || (value.retcode != null && value.retcode !== 0 && value.retcode !== "0")) {
     throw new HoyoRequestError("response", "外部服务没有返回有效的抽卡列表。");
