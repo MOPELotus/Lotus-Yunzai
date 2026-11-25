@@ -105,7 +105,7 @@ test("国服三款官方体力 GET 采用固定接口、已选 UID、原档案�
       expect(headers.get("cookie")).not.toContain(context.account.stoken);
       expect(headers.get("x-rpc-device_id")).toBe(context.device.id);
       expect(headers.get("x-rpc-device_fp")).toBe(context.device.fp);
-      expect(headers.get("x-rpc-app_version")).toBe("2.40.1");
+      expect(headers.get("x-rpc-app_version")).toBe("2.118.1");
       expect(headers.get("x-rpc-client_type")).toBe("5");
       expect(headers.get("referer")).toBe("https://webstatic.mihoyo.com/");
       const [t, r, digest] = headers.get("DS")!.split(",");

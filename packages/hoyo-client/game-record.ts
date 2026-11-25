@@ -22,7 +22,7 @@ export function isGameRecordCookieExpired(error: unknown): boolean {
 }
 
 const origin = "https://api-takumi-record.mihoyo.com";
-const appVersion = "2.40.1";
+const appVersion = "2.118.1";
 const signingSalt = "xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs";
 const records = {
   gs: { path: "/game_record/app/genshin/api/dailyNote", gameBiz: "hk4e_cn", regions: ["cn_gf01", "cn_qd01"], uid: /^[1-5]\d{8}$/u },
@@ -95,7 +95,7 @@ function requestHeaders(source: ProfileRequestContext, query: string, body?: str
   const model = device.model && valid(device.model) ? device.model : "Android";
   const android = device.androidVersion && /^\d{1,2}(?:\.\d+){0,2}$/u.test(device.androidVersion) ? device.androidVersion : "12";
   const headers = new Headers({ Accept: "application/json", Cookie: cookie,
-    "User-Agent": `Mozilla/5.0 (Linux; Android ${android}; ${model}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.73 Mobile Safari/537.36 miHoYoBBS/${appVersion}`,
+    "User-Agent": `Mozilla/5.0 (Linux; Android ${android}; ${model}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 miHoYoBBS/${appVersion}`,
     "x-rpc-app_version": appVersion, "x-rpc-client_type": "5", Referer: "https://webstatic.mihoyo.com/",
     DS: `${time},${nonce},${hash}`,
   });

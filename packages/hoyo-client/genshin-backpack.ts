@@ -74,7 +74,7 @@ const maxProbeItems = 128;
 const maxResponseItems = 1024;
 // The calculator includes per-character upgrade plans alongside the small inventory list.
 const maxResponseBytes = 12 * 1024 * 1024;
-const appVersion = "2.40.1";
+const appVersion = "2.118.1";
 const signingSalt = "xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs";
 
 function object(value: unknown): Json | undefined {
@@ -170,7 +170,7 @@ function requestHeaders(source: ProfileRequestContext, query: string, body: stri
     Accept: "application/json", "Content-Type": "application/json", Cookie: cookie,
     "x-rpc-device_id": device.id, "x-rpc-device_fp": device.fp,
     "x-rpc-app_version": appVersion, "x-rpc-client_type": "5", Referer: "https://webstatic.mihoyo.com/",
-    "User-Agent": `Mozilla/5.0 (Linux; Android ${android}; ${model}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.73 Mobile Safari/537.36 miHoYoBBS/${appVersion}`,
+    "User-Agent": `Mozilla/5.0 (Linux; Android ${android}; ${model}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 miHoYoBBS/${appVersion}`,
     DS: `${time},${nonce},${digest}`,
   });
 }
