@@ -22,7 +22,7 @@ test("一次初始化完成面板和运行资料，构建候选不改运行资�
     }));
     await Bun.write(join(root, "build-panel.ts"), 'await Bun.write("panel-built", "ok");');
     await Bun.write(join(root, "packages/skia/index.ts"), "export {};");
-    await Promise.all(["scripts/bootstrap.ts", "lib/initialization-state.ts", "scripts/verify-builtin-resources.ts", "lib/builtin-resource-validation.ts", "lib/resource-progress.ts", "lib/renderer/shotium.ts", "lib/initialization-progress.ts", "lib/terminal-log-format.ts", "lib/terminal-output.ts", "lib/runtime-logs.ts", "lib/shanghai-date.ts"].map(async file => {
+    await Promise.all(["packages/i18n/index.ts", "i18n/zh-CN.json", "lib/i18n-preload.ts", "scripts/bootstrap.ts", "lib/initialization-state.ts", "scripts/verify-builtin-resources.ts", "lib/builtin-resource-validation.ts", "lib/resource-progress.ts", "lib/renderer/shotium.ts", "lib/initialization-progress.ts", "lib/terminal-log-format.ts", "lib/terminal-output.ts", "lib/runtime-logs.ts", "lib/shanghai-date.ts"].map(async file => {
       await mkdir(dirname(join(root, file)), { recursive: true });
       await cp(new URL(`../${file}`, import.meta.url), join(root, file));
     }));
@@ -79,7 +79,7 @@ test("缺依赖时启动提示 bootstrap 且不访问包注册表", async () => 
     return new Response(null, { status: 404 });
   } });
   try {
-    for (const name of ["bunfig.toml", "bun.lock", "package.json", "scripts", "lib"]) {
+    for (const name of ["bunfig.toml", "bun.lock", "package.json", "scripts", "lib", "i18n", "packages/i18n"]) {
       await cp(new URL(`../${name}`, import.meta.url), join(root, name), { recursive: true });
     }
     await mkdir(join(root, "plugins", "atlas"), { recursive: true });

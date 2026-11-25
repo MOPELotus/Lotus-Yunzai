@@ -1,16 +1,19 @@
 import { expect, test } from "bun:test";
-import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { linkHostPackages } from "./host-fixture.ts";
 
 test("本机 OCR 截止或连接退出时终止并回收识别子进程", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-local-ocr-"));
   try {
-    const module = join(root, "local-ocr.ts");
+    await Promise.all([mkdir(join(root, "lib")), mkdir(join(root, "i18n")), linkHostPackages(root)]);
+    await copyFile(new URL("../i18n/zh-CN.json", import.meta.url), join(root, "i18n/zh-CN.json"));
+    const module = join(root, "lib/local-ocr.ts");
     await copyFile(new URL("../lib/local-ocr.ts", import.meta.url), module);
     const { createLocalOcr } = await import(module) as typeof import("../lib/local-ocr.ts");
     const pidPath = join(root, "pid");
-    await writeFile(join(root, "local-ocr-worker.ts"), `
+    await writeFile(join(root, "lib/local-ocr-worker.ts"), `
 await Bun.write(${JSON.stringify(pidPath)}, String(process.pid));
 for (;;) {}
 `);

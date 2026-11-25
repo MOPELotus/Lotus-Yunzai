@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { atlasResetTarget } from "../plugins/atlas/snapshot-pointer.ts";
 import { prepareStartup } from "../scripts/startup.ts";
+import { assertInitializationComplete, beginInitialization } from "../lib/initialization-state.ts";
 
 test("普通启动在图鉴重置时仍可继续，且保留重置指针", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-startup-"));
@@ -24,7 +25,7 @@ test("普通启动在图鉴重置时仍可继续，且保留重置指针", async
   }
 });
 
-test("便笺素材不完整或读取失败时，普通启动和显式初始化都可继续", async () => {
+test("普通启动保留便笺素材回退，显式初始化缺少必需素材时保留未完成标记", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lotus-atlas-startup-note-"));
   const warning = console.warn;
   const priorTheme = Bun.env.LOTUS_ATLAS_THEME_DIR;
@@ -39,11 +40,16 @@ test("便笺素材不完整或读取失败时，普通启动和显式初始化�
       } } } } } },
     }));
     const resources = join(directory, "data/daily-note/resources");
+    const supplied = join(directory, "isolated-daily-note");
+    await mkdir(join(directory, "data/daily-note"), { recursive: true });
+    await mkdir(supplied);
+    // An operator-provided linked partial theme remains untouched at ordinary startup.
+    await symlink(supplied, resources);
     const font = join(resources, "miao-theme/fonts/HYWH-65W.ttf");
     await Bun.write(font, "原有本地字体");
     console.warn = (line: unknown) => { warnings.push(String(line)); };
 
-    await prepareStartup(root, undefined, AbortSignal.timeout(2_000), true);
+    await prepareStartup(root, undefined, AbortSignal.timeout(2_000));
     const incomplete = warnings.find(line => line.startsWith("[体力]"));
     expect(incomplete).toContain("补齐");
     expect(incomplete).toContain("LOTUS_DAILY_NOTE_RESOURCES");
@@ -55,10 +61,17 @@ test("便笺素材不完整或读取失败时，普通启动和显式初始化�
     await symlink(unreadable, unreadable);
     warnings.length = 0;
     await prepareStartup(root, undefined, AbortSignal.timeout(2_000));
-    await prepareStartup(root, undefined, AbortSignal.timeout(2_000), true);
     const ioFailures = warnings.filter(line => line.startsWith("[体力]"));
-    expect(ioFailures).toHaveLength(2);
+    expect(ioFailures).toHaveLength(1);
     expect(ioFailures.every(line => line.includes("使用文字回执"))).toBe(true);
+    expect(await readlink(unreadable)).toBe(unreadable);
+    expect(await Bun.file(font).text()).toBe("原有本地字体");
+
+    const runId = await beginInitialization(root);
+    await expect(prepareStartup(root, undefined, AbortSignal.timeout(2_000), true))
+      .rejects.toThrow("图鉴内置素材缺失");
+    expect(await Bun.file(join(directory, "data/.initialization-pending.json")).json()).toMatchObject({ runId });
+    await expect(assertInitializationComplete(root)).rejects.toThrow("bootstrap");
     expect(await readlink(unreadable)).toBe(unreadable);
     expect(await Bun.file(font).text()).toBe("原有本地字体");
   } finally {

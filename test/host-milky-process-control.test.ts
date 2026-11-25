@@ -116,7 +116,7 @@ test.skipIf(process.platform !== "linux")("Milky 主人可软停启、同 PID �
     `);
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
-      env: { PATH: process.env.PATH },
+      env: { PATH: process.env.PATH, LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_PORT: "0" },
     });
     const stdout = new Response(host.stdout).text();
     const stderr = new Response(host.stderr).text();
@@ -203,7 +203,7 @@ test("旧托管器下 Milky 主人可查看安装目录，更新和安装给出�
     const ipc: { type?: string }[] = [];
     const host = Bun.spawn([process.execPath, "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "ignore", stderr: "pipe",
-      env: { PATH: process.env.PATH, LOTUS_MANAGED_TOKEN: crypto.randomUUID() },
+      env: { PATH: process.env.PATH, LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_PORT: "0", LOTUS_MANAGED_TOKEN: crypto.randomUUID() },
       ipc(message: { type?: string }) { ipc.push(message); },
     });
     const stderr = new Response(host.stderr).text();

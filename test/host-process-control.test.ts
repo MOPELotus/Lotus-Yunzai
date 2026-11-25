@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { createProcessReceipts } from "../lib/process-receipts.ts";
 import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
 
@@ -35,6 +36,9 @@ function boot(root: string, managed?: { token: string; receive: (message: unknow
 
   async function nextOutput(pattern: RegExp) {
     while (true) {
+      // Compare message bodies while retaining strict line/recipient/PID assertions.
+      unread = stripVTControlCharacters(unread).replace(
+        /(^|\n)\[\d{2}:\d{2}:\d{2}\.\d{3}\]\[(?:TRACE|TRAC|DEBUG|DEBU|INFO|WARN|ERROR|ERRO|FATAL|FATA|MARK)\] (?:\[Lotus-Yunzai\] )?/gu, "$1");
       const match = pattern.exec(unread);
       if (match) {
         unread = unread.slice(match.index + match[0].length);

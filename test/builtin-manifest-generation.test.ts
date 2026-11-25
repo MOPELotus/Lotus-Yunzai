@@ -1,11 +1,15 @@
 import {test,expect} from "bun:test";
 import {mkdtemp,mkdir,writeFile,copyFile,readFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {dirname,join} from "node:path";
 test("更新清单接受内置包上游删除，保留新增文件并排除未跟踪的私人覆盖",async()=>{
  const root=await mkdtemp(join(tmpdir(),"lotus-manifest-generation-"));
  try{
   for(const p of ["scripts","resources/builtin","plugins/example/resources"])await mkdir(join(root,p),{recursive:true});
+  for(const file of ["lib/i18n-preload.ts","packages/i18n/index.ts","i18n/zh-CN.json"]){
+   await mkdir(dirname(join(root,file)),{recursive:true});
+   await copyFile(new URL(`../${file}`,import.meta.url),join(root,file));
+  }
   await copyFile(new URL("../scripts/update-builtin-resource-manifest.ts",import.meta.url),join(root,"scripts/update.ts"));
   await writeFile(join(root,"resources/builtin/removed.txt"),"old");
   await writeFile(join(root,"plugins/example/resources/public.txt"),"tracked");
