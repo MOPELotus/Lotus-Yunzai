@@ -183,3 +183,13 @@ chmod 700 "$BUN_INSTALL/bin/bun"
   assert.equal(await readFile(join(work, 'install-home/.bashrc'), 'utf8'), 'private-install');
   assert.equal(env.HOME, home); assert.equal(env.SHELL, '/bin/bash');
 }));
+
+test('真实Node CLI批准交接，仓库根目录尾斜杠不误判不安全', () => fixture(async x => {
+  await updateMigrationState(x.statePath, { phase: 'ready-to-stop', marker: 'preserved' });
+  const worker = new URL('../scripts/legacy-migrate.mjs', import.meta.url);
+  const result = spawnSync(process.execPath, [worker.pathname, '--approve', '--source', x.source, '--state', x.statePath], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const approved = JSON.parse(await readFile(x.statePath, 'utf8'));
+  assert.equal(approved.handoffApproved, true); assert.equal(approved.marker, 'preserved');
+  assert.equal(approved.phase, 'ready-to-stop'); assert.equal(x.running(), true);
+}));
