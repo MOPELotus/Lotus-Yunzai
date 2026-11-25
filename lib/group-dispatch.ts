@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { watchConfigFiles } from "./config-watch.ts";
 import { readLocalConfig } from "./config.ts";
 import { isMilkyOwnerSession } from "./command-permissions.ts";
@@ -6,7 +9,7 @@ import { groupModerationSession } from "./adapters/group-moderation.ts";
 import type { BotEvent, MessageEvent } from "./messages.ts";
 
 const defaults = {
-  groupCD: 500, singleCD: 2_000, onlyReplyAt: 0, botAlias: ["云崽", "云宝"],
+  groupCD: 500, singleCD: 2_000, onlyReplyAt: 0, botAlias: [$t("lib.group-dispatch.text_6aef6183d1"), $t("lib.group-dispatch.text_fdfb2e778d")],
   addPrivate: 1, addReply: 1, addRecall: 60,
 };
 
@@ -22,35 +25,35 @@ const legacyFeatureSelectors = new Map<string, readonly string[]>([
   ["[Lotus-Plugin] Scheduler", ["@lotus-yunzai/checkin-plan", "@lotus-yunzai/checkin-schedule-settings"]],
   ["[Lotus-Plugin] Login", ["@lotus-yunzai/passport-login"]],
   ["[Lotus-Plugin] Permissions", ["@lotus-yunzai/permissions"]],
-  ["[Lotus-Plugin] Group Manager", ["@lotus-yunzai/group-member-export", "[group] 退群档案清理"]],
+  ["[Lotus-Plugin] Group Manager", ["@lotus-yunzai/group-member-export", $t("lib.group-dispatch.text_b947a06f05")]],
   ["[Lotus-Plugin] Donate", ["@lotus-yunzai/donation"]],
   ["[Lotus-Plugin] Gacha Log", ["[gacha] 抽卡记录"]],
   ["[Lotus-Plugin] Music", ["[media] 点歌"]],
   ["[Lotus-Plugin] Bilibili", ["[media] B 站解析"]],
   ["[Lotus-Plugin] Douyin", ["[media] 抖音解析"]],
-  ["椰奶小助手", ["[group] 群名片", "[group] 机器人账号资料", "回复撤回"]],
+  ["椰奶小助手", ["[group] 群名片", $t("lib.group-dispatch.text_4ec61e89e0"), $t("lib.group-dispatch.text_20aff9e552")]],
   ["椰奶点赞", ["[group] 资料卡点赞"]],
-  ["椰奶助手-其他", ["[group] 图片文字识别", "头像", "群头像", "取face", "取直链", "日志等级"]],
+  ["椰奶助手-其他", ["[group] 图片文字识别", $t("lib.group-dispatch.text_3ea2d23c90"), $t("lib.group-dispatch.text_9352fee677"), $t("lib.group-dispatch.text_be7f15d660"), $t("lib.group-dispatch.text_549bd77375"), $t("lib.group-dispatch.text_0f8effe393")]],
   ["椰奶助手-发消息", ["[group] 消息代发"]],
   ["椰奶配置-index", ["[group] 设置"]],
   ["椰奶配置-通知", ["[group] 通知设置"]],
-  ["椰奶群管-基础", ["[group] 群禁言", "[group] 群成员移出", "[group] 群头衔", "[group] 群管理员", "[group] 群禁言列表",
-    "[group] 从未发言成员", "[group] 群成员活动排行", "[group] 群精华", "[group] 自助禁言", "[group] 定时群禁言", "[group] 群通知",
-    "[group] 加群申请通知", "[group] 引用加群审核"]],
-  ["椰奶群管-黑白名单", ["[group] 群管黑名单", "[group] 群管白名单"]],
-  ["椰奶群管-违禁词", ["[group] 违禁词", "[group] 头衔屏蔽词"]],
+  ["椰奶群管-基础", ["[group] 群禁言", $t("lib.group-dispatch.text_acdbb3b3ce"), $t("lib.group-dispatch.text_f2ff8255e6"), $t("lib.group-dispatch.text_6378f5965a"), $t("lib.group-dispatch.text_be8ed50a7f"),
+    $t("lib.group-dispatch.text_2085d1a4d9"), $t("lib.group-dispatch.text_ee95fb76d0"), $t("lib.group-dispatch.text_7e9e74cee5"), $t("lib.group-dispatch.text_72a26f420f"), $t("lib.group-dispatch.text_60f201a12d"), $t("lib.group-dispatch.text_9350a29ff4"),
+    $t("lib.group-dispatch.text_fe974ca1bc"), $t("lib.group-dispatch.text_750680acf9")]],
+  ["椰奶群管-黑白名单", ["[group] 群管黑名单", $t("lib.group-dispatch.text_e8f40d82ce")]],
+  ["椰奶群管-违禁词", ["[group] 违禁词", $t("lib.group-dispatch.text_cfa7c6af5d")]],
   ["椰奶群管-群公告", ["[group] 群公告"]],
   ["椰奶群管-投票", ["[group] 群投票"]],
   ["椰奶群管-入群验证", ["[group] 入群验证"]],
   ["椰奶私聊群管", ["[group] 私聊群管"]],
-  ["椰奶申请处理", ["[group] 加群申请列表", "[group] 引用加群审核", "[group] 加群申请审核"]],
+  ["椰奶申请处理", ["[group] 加群申请列表", $t("lib.group-dispatch.text_750680acf9"), $t("lib.group-dispatch.text_6324d27a08")]],
   ["复读", ["主动复读"]],
   ["genshin-inventory", ["[genshin] 背包"]],
   ["genshin-world-boss-kill-count-inventory", ["[genshin] 世界 BOSS"]],
   ["AutoCalendar", ["[guides] 定时日历"]],
   ["抽卡期望计算", ["[gacha] 抽卡期望"]],
   ["椰奶状态", ["[system] 状态"]],
-  ["状态统计", ["[system] 状态", "[system] 消息统计"]],
+  ["状态统计", ["[system] 状态", $t("lib.group-dispatch.text_1cf4898bea")]],
   ["meme-plugin", ["[meme] 表情合成"]],
   ["清语表情", ["[meme] 表情合成"]],
   ["清语表情:表情包生成", ["[meme] 表情合成"]],
@@ -96,7 +99,7 @@ async function readRoutingFile(root: URL, path: string, maxBytes: number) {
     if (value != null && (typeof value !== "object" || Array.isArray(value))) throw new Error();
     return record(value);
   } catch {
-    throw new Error(`无法读取 ${path}。`);
+    throw new Error($t("lib.group-dispatch.text_cafd49aeeb", { "path": path }));
   }
 }
 
@@ -177,7 +180,7 @@ async function readRoutingLists(root: URL) {
 }
 
 function watchRoutingFiles(name: "bot" | "group" | "other", signal: AbortSignal, reload: () => Promise<void>) {
-  watchConfigFiles(signal, reload, () => console.warn(`[群派发] ${name}.yaml 重载失败，保留上次有效设置。`));
+  watchConfigFiles(signal, reload, () => console.warn($t("lib.group-dispatch.text_a1b120de56", { "name": name })));
 }
 
 export async function readGroupDispatch(root: URL, watchSignal?: AbortSignal) {

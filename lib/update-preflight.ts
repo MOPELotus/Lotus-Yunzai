@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, realpath } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -64,7 +67,7 @@ function isRegularFile(entry: TreeEntry | undefined): entry is TreeEntry {
 async function repositories(git: LocalGit, directory: string): Promise<string[]> {
   if (!await isGitCheckout(git, directory)) return [];
   const output = await git(directory, ["config", "--local", "--no-includes", "--null", "--get-regexp", "^remote\\..*\\.url$"], true);
-  if (output === undefined) throw new Error("无法检查插件仓库来源。");
+  if (output === undefined) throw new Error($t("lib.update-preflight.text_b9754c707c"));
   return output.split("\0").filter(Boolean).map((entry) => entry.slice(entry.indexOf("\n") + 1));
 }
 
@@ -73,7 +76,7 @@ async function installedMetadata(git: LocalGit, name: string, directory: string)
   let source: string | undefined;
   try {
     const info = await lstat(manifest);
-    if (!info.isFile() || info.size > 512 * 1024) throw new Error("插件清单无效。");
+    if (!info.isFile() || info.size > 512 * 1024) throw new Error($t("lib.update-preflight.text_a3c04dc82c"));
     source = await Bun.file(manifest).text();
   } catch (error) {
     if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
@@ -141,7 +144,7 @@ async function inspectCandidate(
 
 export async function installedIdentities(host: string, name: string, plugin: { path: string; packageName: string }) {
   const git = createLocalGit();
-  if (!git) throw new Error("无法检查插件仓库来源。");
+  if (!git) throw new Error($t("lib.update-preflight.text_b9754c707c"));
   const path = await loadedPluginPath(host, { ...plugin, name });
   const metadata = path && await installedMetadata(git, name, path);
   return [`name:${plugin.packageName}`, ...(metadata ? metadata.identities : [])];
@@ -195,7 +198,7 @@ export async function trackedPluginNames(directory: string, revision: string) {
   if (listing !== undefined) return new Set(listing.split("\0").filter(Boolean));
   const entry = await git?.(directory, ["ls-tree", "-z", "--name-only", revision, "--", "plugins"]);
   if (entry === "") return new Set<string>();
-  throw new Error("无法检查宿主跟踪的插件目录。");
+  throw new Error($t("lib.update-preflight.text_2573eb14d1"));
 }
 
 async function externalBinding(directory: string) {

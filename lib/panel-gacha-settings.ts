@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isDeepStrictEqual } from "node:util";
 import { parseDocument } from "yaml";
 import { parseGachaDisplaySettings, type GachaDisplaySettings } from "@lotus-yunzai/gacha/display-settings";
@@ -6,17 +9,17 @@ import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global
 import { readPanelJson } from "./panel.ts";
 
 const fields = [
-  { key: "enabled", label: "显示欧皇度", type: "boolean" },
-  { key: "minSample", label: "欧皇度最少样本数", type: "number", min: 0, max: Number.MAX_SAFE_INTEGER,
-    hint: "少于此数会提示样本较少。限定池按已确认的 UP 五星数，其他池按五星数。" },
-  { key: "detailRows", label: "每张详情图的五星条数", type: "number", min: 0, max: Number.MAX_SAFE_INTEGER,
-    hint: "不计当前垫抽。填 0 在一张图显示全部；顶部仍按全部记录统计。" },
-  { key: "versionRows", label: "每张统计图的卡池期数", type: "number", min: 0, max: Number.MAX_SAFE_INTEGER,
-    hint: "填 0 在一张图显示全部期数。" },
-  { key: "levels", label: "欧皇度评级", type: "json",
-    hint: "按所列顺序使用首个达到门槛的评级。每项包括 min、title、desc、color；颜色使用十六进制。" },
-  { key: "models", label: "欧皇度出金概率模型覆盖", type: "json",
-    hint: "留 {} 使用默认模型。可按游戏和卡池填部分覆盖。原神 gs 下有 301、302、200、500，星铁 sr 下有 11、12、1。池内字段 base、soft、step、hard、upRate。" },
+  { key: "enabled", label: $t("lib.panel-gacha-settings.text_8425834877"), type: "boolean" },
+  { key: "minSample", label: $t("lib.panel-gacha-settings.text_61c91ae060"), type: "number", min: 0, max: Number.MAX_SAFE_INTEGER,
+    hint: $t("lib.panel-gacha-settings.text_a4c8a2ce0d") },
+  { key: "detailRows", label: $t("lib.panel-gacha-settings.text_b489cab706"), type: "number", min: 0, max: Number.MAX_SAFE_INTEGER,
+    hint: $t("lib.panel-gacha-settings.text_6d9a21b5c9") },
+  { key: "versionRows", label: $t("lib.panel-gacha-settings.text_a91cd12d75"), type: "number", min: 0, max: Number.MAX_SAFE_INTEGER,
+    hint: $t("lib.panel-gacha-settings.text_3416e91bb2") },
+  { key: "levels", label: $t("lib.panel-gacha-settings.text_7510b1ff56"), type: "json",
+    hint: $t("lib.panel-gacha-settings.text_4aa900b2a6") },
+  { key: "models", label: $t("lib.panel-gacha-settings.text_8079a8b117"), type: "json",
+    hint: $t("lib.panel-gacha-settings.text_d55effbe3e") },
 ] as const;
 
 function flatten({ luck, detailRows, versionRows, models }: GachaDisplaySettings) {

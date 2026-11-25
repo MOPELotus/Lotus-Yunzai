@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { createHash, randomInt } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import { transientReadResponse } from "@lotus-yunzai/http";
@@ -11,10 +14,10 @@ export class GameRecordRequestError extends HoyoRequestError {
   constructor(subject: string, readonly reason: "expired" | "risk" | "rate-limited" | "account",
     code: "api" | "http", status: number, retcode?: number) {
     super(code, {
-      expired: `官方${subject}的 Cookie 已失效。`,
-      risk: `官方${subject}要求验证，请在官方客户端处理后重试。`,
-      "rate-limited": `官方${subject}请求过于频繁，请稍后重试。`,
-      account: `米游社账号异常，暂时无法查询${subject.replace(/查询$/u, "")}。`,
+      expired: $t("game-record.text_6b92956648", { "subject": subject }),
+      risk: $t("game-record.text_df1d8641e0", { "subject": subject }),
+      "rate-limited": $t("game-record.text_99b53fb45b", { "subject": subject }),
+      account: $t("game-record.text_a00ef87f25", { "value1": subject.replace(/查询$/u, "") }),
     }[reason], status, retcode);
   }
 }
@@ -89,7 +92,7 @@ function requestHeaders(source: ProfileRequestContext, query: string, body?: str
   const cookie = account.cookie.trim();
   const valid = (value: string) => !/[^\x20-\x7E]/u.test(value);
   if (!cookie.includes("=") || !valid(account.cookie) || !valid(device.id ?? "") || !valid(device.fp ?? "")) {
-    throw new HoyoRequestError("invalid-input", "当前档案的 Cookie 或设备字段无效。");
+    throw new HoyoRequestError("invalid-input", $t("game-record.text_aea96e3b9b"));
   }
   const time = Math.round(Date.now() / 1000);
   const nonce = randomInt(100000, 1000000);
@@ -149,7 +152,7 @@ export async function readGameRecordPayload(response: Response, limit: number, s
 function apiError(payload: Json | undefined, status: number, retcode: number | undefined, label: string): HoyoRequestError {
   const message = [payload?.message, payload?.msg, object(payload?.data)?.message].find((item) => typeof item === "string") ?? "";
   const code = status === 401 || status === 429 ? "http" : "api";
-  const subject = `${label}查询`;
+  const subject = $t("game-record.text_7c6d31e82d", { "label": label });
   if (status === 429) return new GameRecordRequestError(subject, "rate-limited", code, status, retcode);
   if (retcode === 10041) return new GameRecordRequestError(subject, "account", code, status, retcode);
   if ((retcode !== undefined && riskCodes.has(retcode)) || /验证码|captcha|geetest|challenge|风控/iu.test(String(message))) {
@@ -157,7 +160,7 @@ function apiError(payload: Json | undefined, status: number, retcode: number | u
   }
   if (/visit too frequently|too frequent|rate limit|频繁/iu.test(String(message))) return new GameRecordRequestError(subject, "rate-limited", code, status, retcode);
   if (status === 401 || (retcode !== undefined && expiredCodes.has(retcode))) return new GameRecordRequestError(subject, "expired", code, status, retcode);
-  return new HoyoRequestError("api", `官方${label}接口拒绝请求。`, status, retcode);
+  return new HoyoRequestError("api", $t("game-record.text_b28f638e75", { "label": label }), status, retcode);
 }
 
 export function isUnspecifiedCnRecordRegion(region: string): boolean {
@@ -199,50 +202,50 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   const zzzMonthly = kind === "zzz-monthly";
   const monthly = zzzMonthly || starRailMonthly || genshinMonthly;
   const forZzz = zzzMonthly || Object.hasOwn(zzzCardPaths, kind);
-  const label = forNote ? "体力" : genshinMonthly ? "原石札记" : zzzPanelDetail ? "绝区零面板" : kind === "zzz-holo-boss" ? "拟境湮灭战" :
-    kind === "zzz-void-front" ? "临界推演" : climbingTower ? "拟真鏖战试炼" :
-    hollow ? (hollowLost ? "零号空洞：迷失之地" : "零号空洞：枯萎苗圃") : zenkov ? "迷宫诡域" : exploration ? "绝区零区域收集" : zzzMonthly ? "绝区零月报" : kind === "zzz-owned-buddy" ? "绝区零邦布" : forZzz ? "绝区零战绩" :
-    starRailRogue ? "星铁宇宙战绩" : starRailGridFight ? "货币战争战绩" : starRailMonthly ? "星铁月收入" : starRailRoster ? "星铁角色名册" : starRailPanel ? "星铁面板" : hardChallenge ? "幽境危战" : forGenshinChallenge ? (kind === "genshin-abyss" ? "深境螺旋" : "幻想真境剧诗") : forGenshinPanel ? "原神面板" : forDeck ? "七圣召唤牌组" : forGcgCards ? "七圣召唤收藏" : "原神战绩";
-  const subject = `${label}查询`;
+  const label = forNote ? $t("game-record.text_d6d2aa99fd") : genshinMonthly ? $t("game-record.text_68bc8c9666") : zzzPanelDetail ? $t("game-record.text_ce4af56042") : kind === "zzz-holo-boss" ? $t("game-record.text_29e80a0630") :
+    kind === "zzz-void-front" ? $t("game-record.text_86bf7c9458") : climbingTower ? $t("game-record.text_16a75e0027") :
+    hollow ? (hollowLost ? $t("game-record.text_fc57224a51") : $t("game-record.text_e865364b94")) : zenkov ? $t("game-record.text_0a991a8e6c") : exploration ? $t("game-record.text_ad3b2b17cf") : zzzMonthly ? $t("game-record.text_2551c3eb77") : kind === "zzz-owned-buddy" ? $t("game-record.text_42a387e33f") : forZzz ? $t("game-record.text_341ac2816f") :
+    starRailRogue ? $t("game-record.text_c0ef333bd0") : starRailGridFight ? $t("game-record.text_6bb5243e98") : starRailMonthly ? $t("game-record.text_92f4941f67") : starRailRoster ? $t("game-record.text_f61cd5e41f") : starRailPanel ? $t("game-record.text_6ce5363a7d") : hardChallenge ? $t("game-record.text_c3354e0ec8") : forGenshinChallenge ? (kind === "genshin-abyss" ? $t("game-record.text_82f72c6585") : $t("game-record.text_8cb870ae6a")) : forGenshinPanel ? $t("game-record.text_0b3ee04b94") : forDeck ? $t("game-record.text_fa0be28724") : forGcgCards ? $t("game-record.text_b25bca67a8") : $t("game-record.text_a2a4c50077");
+  const subject = $t("game-record.text_7c6d31e82d", { "label": label });
   const route = Object.hasOwn(records, game) ? records[game] : undefined;
   const savedRegion = isUnspecifiedCnRecordRegion(source.role.region) ? "" : source.role.region.trim();
   const region = game === "gs" ? genshinCnRecordRegion(source.role) :
     savedRegion || route?.regions[game !== "zzz" && uid.startsWith("5") ? 1 : 0];
   if ((!forNote && game !== (forZzz ? "zzz" : forStarRail ? "sr" : "gs")) || !route?.uid.test(uid) || !region || !route.regions.includes(region) || (gameBiz && gameBiz !== route.gameBiz) ||
       (game !== "zzz" && uid.startsWith("5") !== (region === route.regions[1]))) {
-    throw new HoyoRequestError("invalid-input", `${subject}仅支持档案中已确认的国服游戏角色和区服。`);
+    throw new HoyoRequestError("invalid-input", $t("game-record.text_e03f7c80cf", { "subject": subject }));
   }
   if ((starRailMonthly || starRailGridFight || starRailRogue) && (!savedRegion || !gameBiz.trim())) {
-    throw new HoyoRequestError("invalid-input", `${label}需使用档案中已同步的国服角色。`);
+    throw new HoyoRequestError("invalid-input", $t("game-record.text_9a2fe7ac88", { "label": label }));
   }
   if ((starRailMonthly || starRailGridFight || starRailRogue) && !source.device.id?.trim()) {
-    throw new HoyoRequestError("invalid-input", `当前档案缺少设备 ID，请重新扫码登录后查询${label}。`);
+    throw new HoyoRequestError("invalid-input", $t("game-record.text_20c322406a", { "label": label }));
   }
   if (options.kind === "genshin-panel-detail" && (!Array.isArray(options.characterIds) || !options.characterIds.length ||
       options.characterIds.length > 256 || options.characterIds.some(id => !Number.isSafeInteger(id) || id < 1))) {
-    throw new HoyoRequestError("invalid-input", "原神面板角色编号无效。");
+    throw new HoyoRequestError("invalid-input", $t("game-record.text_974ea07349"));
   }
   if (zzzPanelDetail && (!Number.isSafeInteger(options.characterId) || options.characterId < 1)) {
-    throw new HoyoRequestError("invalid-input", "绝区零面板代理人编号无效。");
+    throw new HoyoRequestError("invalid-input", $t("game-record.text_6cc7ff1ae6"));
   }
   if (genshinMonthly && (!Number.isInteger(options.month) || options.month < 1 || options.month > 12)) {
-    throw new HoyoRequestError("invalid-input", "原石札记月份无效。");
+    throw new HoyoRequestError("invalid-input", $t("game-record.text_e7cfad0439"));
   }
   if (options.kind === "starrail-monthly" && options.month !== undefined &&
       (!/^20\d{2}(?:0[1-9]|1[0-2])$/u.test(options.month) || options.month < "202304")) {
-    throw new HoyoRequestError("invalid-input", "星铁月收入月份无效。");
+    throw new HoyoRequestError("invalid-input", $t("game-record.text_7121d16ea8"));
   }
   const regionalPeriod = options.kind === "zzz-deadly" || options.kind === "zzz-holo-boss" || options.kind === "zzz-void-front";
   const zzzPeriod = options.kind === "zzz-hadal" || regionalPeriod;
   const usesRegion = regionalPeriod || climbingTower || hollowLost || zenkov || exploration || monthly;
   if (zzzPeriod && options.scheduleType !== 1 && options.scheduleType !== 2) {
-    throw new HoyoRequestError("invalid-input", "绝区零战绩查询期次无效。");
+    throw new HoyoRequestError("invalid-input", $t("game-record.text_3cfdf51fa0"));
   }
   if (kind === "genshin-abyss" && options.scheduleType !== 1 && options.scheduleType !== 2) {
-    throw new HoyoRequestError("invalid-input", "深境螺旋查询期次无效。");
+    throw new HoyoRequestError("invalid-input", $t("game-record.text_f30a132c32"));
   }
   if (kind === "starrail-rogue" && options.scheduleType !== 1 && options.scheduleType !== 2) {
-    throw new HoyoRequestError("invalid-input", "模拟宇宙查询期次无效。");
+    throw new HoyoRequestError("invalid-input", $t("game-record.text_291200ede8"));
   }
   const path = forNote ? route.path : starRailPanel ? "/game_record/app/hkrpg/api/avatar/info"
     : starRailGridFight ? "/game_record/app/hkrpg/api/grid_fight"
@@ -298,9 +301,9 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   }
 
   async function guard() {
-    if (signal?.aborted) throw new HoyoRequestError("transport", `${subject}已取消。`);
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("game-record.text_e081ffda7d", { "subject": subject }));
     await verifyProfile?.();
-    if (signal?.aborted) throw new HoyoRequestError("transport", `${subject}已取消。`);
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("game-record.text_e081ffda7d", { "subject": subject }));
   }
 
   await guard();
@@ -327,14 +330,14 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
       break;
     } catch {
       await guard();
-      if (deadline.aborted || attempt === 2) throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
+      if (deadline.aborted || attempt === 2) throw new HoyoRequestError("transport", $t("game-record.text_c0f09da0e9", { "subject": subject }));
     }
   }
-  if (!response) throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
+  if (!response) throw new HoyoRequestError("transport", $t("game-record.text_c0f09da0e9", { "subject": subject }));
   if (response.redirected || (response.url && response.url !== endpoint.href) ||
       (!response.ok && response.status !== 401 && response.status !== 429)) {
     await response.body?.cancel().catch(() => undefined);
-    throw new HoyoRequestError("http", `官方${label}接口返回 HTTP 错误。`, response.status);
+    throw new HoyoRequestError("http", $t("game-record.text_7a715ff587", { "label": label }), response.status);
   }
   if (response.status === 429) {
     await response.body?.cancel().catch(() => undefined);
@@ -352,13 +355,13 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     forNote ? 64 * 1024 : starRailPanel || options.kind === "genshin-panel-detail" ? 8 * 1024 * 1024 : 2 * 1024 * 1024,
     deadline, error => diagnostics.stream(response, error));
   await guard();
-  if (deadline.aborted) throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
+  if (deadline.aborted) throw new HoyoRequestError("transport", $t("game-record.text_c0f09da0e9", { "subject": subject }));
   const retcode = whole(payload?.retcode);
   if (response.status === 401) throw apiError(payload, response.status, retcode, label);
-  if (retcode === undefined) throw new HoyoRequestError("response", `官方${label}响应格式无效。`);
-  if (starRailPanel && retcode === 10102) throw new HoyoRequestError("api", "星铁面板数据未公开或未绑定角色。", response.status, retcode);
+  if (retcode === undefined) throw new HoyoRequestError("response", $t("game-record.text_656c331127", { "label": label }));
+  if (starRailPanel && retcode === 10102) throw new HoyoRequestError("api", $t("game-record.text_5a0e5f08d5"), response.status, retcode);
   if (retcode !== 0) throw apiError(payload, response.status, retcode, label);
   const data = (starRailGridFight || starRailRogue || climbingTower || hollow || zenkov || exploration || monthly || kind === "genshin-gcg-collection-summary") && payload?.data === null ? {} : object(payload?.data);
-  if (!data) throw new HoyoRequestError("response", `官方${label}响应缺少有效数据。`);
+  if (!data) throw new HoyoRequestError("response", $t("game-record.text_7dbba95ad1", { "label": label }));
   return { data, region };
 }

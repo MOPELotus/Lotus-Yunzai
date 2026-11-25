@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -35,28 +38,28 @@ function validTime(value: unknown): value is string {
 
 function parseExport(value: unknown, uid: string, authkey: string) {
   if (record(value) && value.code === 300 && value.result === "抽卡记录不存在" && value.list === undefined) {
-    throw new HoyoRequestError("api", "提瓦特小助手暂无此账号的抽卡记录，本地记录已保留。");
+    throw new HoyoRequestError("api", $t("genshin-miniapp.text_aa04f11a64"));
   }
   if (!record(value) || !Array.isArray(value.list) || value.list.length > maxRecords ||
       (value.info != null && !record(value.info)) || (value.retcode != null && value.retcode !== 0 && value.retcode !== "0")) {
-    throw new HoyoRequestError("response", "外部服务没有返回有效的抽卡列表。");
+    throw new HoyoRequestError("response", $t("genshin-miniapp.text_745048fb7a"));
   }
   const declared = [value.uid, record(value.info) ? value.info.uid : undefined].filter((entry) => entry != null);
   if (declared.some((entry) => decimal(entry) !== uid)) {
-    throw new HoyoRequestError("response", "外部抽卡记录的 UID 与当前档案不一致。");
+    throw new HoyoRequestError("response", $t("genshin-miniapp.text_049644f776"));
   }
 
   const grouped = new Map<GenshinGachaPool, GenshinGachaRow[]>(genshinGachaPools.map(({ type }) => [type, []]));
   const encodedKey = encodeURIComponent(authkey);
   for (const entry of value.list) {
-    if (!record(entry)) throw new HoyoRequestError("response", "外部抽卡记录格式无效。");
+    if (!record(entry)) throw new HoyoRequestError("response", $t("genshin-miniapp.text_37850bec03"));
     if ((entry.uid != null || !declared.length) && decimal(entry.uid) !== uid) {
-      throw new HoyoRequestError("response", "外部抽卡记录缺少本档案 UID 或属于其他账号。");
+      throw new HoyoRequestError("response", $t("genshin-miniapp.text_fc651b4ea5"));
     }
     const raw = decimal(entry.gacha_type);
     const pool = poolFor(raw);
     if (!raw || !pool || (entry.uigf_gacha_type != null && decimal(entry.uigf_gacha_type) !== String(pool))) {
-      throw new HoyoRequestError("response", "外部抽卡记录包含无效或不受支持的卡池编号。");
+      throw new HoyoRequestError("response", $t("genshin-miniapp.text_95bba08030"));
     }
     const id = decimal(entry.id);
     const rank = decimal(entry.rank_type);
@@ -64,7 +67,7 @@ function parseExport(value: unknown, uid: string, authkey: string) {
     if (!id || (rank !== "3" && rank !== "4" && rank !== "5") || !validTime(time) ||
         (item_type !== "角色" && item_type !== "武器") || typeof name !== "string" || !name.trim() ||
         name.length > 200 || /[\u0000-\u001f\u007f]|https?:\/\//iu.test(name) || name.includes(authkey) || name.includes(encodedKey)) {
-      throw new HoyoRequestError("response", "外部抽卡记录的编号、名称、类别、星级或时间无效。");
+      throw new HoyoRequestError("response", $t("genshin-miniapp.text_68dcc319d1"));
     }
     const row: GenshinGachaRow = { id, uid, gacha_type: raw as GenshinGachaRow["gacha_type"], uigf_gacha_type: String(pool),
       item_type, name, time, rank_type: rank };
@@ -80,13 +83,13 @@ function parseExport(value: unknown, uid: string, authkey: string) {
 }
 
 async function readExport(response: Response, signal: AbortSignal): Promise<unknown> {
-  const sizeError = () => new HoyoRequestError("response", "外部抽卡记录文件过大。");
+  const sizeError = () => new HoyoRequestError("response", $t("genshin-miniapp.text_5cfb0de3a6"));
   const claimed = response.headers.get("Content-Length");
   if (claimed && Number(claimed) > maxResponseBytes) {
     await response.body?.cancel().catch(() => undefined);
     throw sizeError();
   }
-  if (!response.body) throw new HoyoRequestError("response", "外部服务未返回抽卡记录文件。");
+  if (!response.body) throw new HoyoRequestError("response", $t("genshin-miniapp.text_dd015b8345"));
   const reader = response.body.getReader();
   try {
     const chunks: Uint8Array[] = [];
@@ -103,8 +106,8 @@ async function readExport(response: Response, signal: AbortSignal): Promise<unkn
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks, size))) as unknown;
   } catch (error) {
     if (error instanceof HoyoRequestError) throw error;
-    if (signal.aborted) throw new HoyoRequestError("transport", "外部抽卡记录请求已取消或超时。");
-    throw new HoyoRequestError("response", "外部服务未返回有效的抽卡记录 JSON。");
+    if (signal.aborted) throw new HoyoRequestError("transport", $t("genshin-miniapp.text_2b4fd575dd"));
+    throw new HoyoRequestError("response", $t("genshin-miniapp.text_da2004faf0"));
   } finally {
     await reader.cancel().catch(() => undefined);
     reader.releaseLock();
@@ -118,14 +121,14 @@ export async function readGenshinMiniapp(
   verifyProfile?: () => Promise<void>,
 ): Promise<Awaited<ReturnType<typeof readGenshinGacha>>> {
   async function guard() {
-    if (signal?.aborted) throw new HoyoRequestError("transport", "外部抽卡记录请求已取消。");
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("genshin-miniapp.text_4fd7f16c4d"));
     await verifyProfile?.();
-    if (signal?.aborted) throw new HoyoRequestError("transport", "外部抽卡记录请求已取消。");
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("genshin-miniapp.text_4fd7f16c4d"));
   }
 
   const { uid, region, url } = await readGenshinAuthKey(source, transport, { signal }, verifyProfile);
   const authkey = url.searchParams.get("authkey");
-  if (!authkey) throw new HoyoRequestError("response", "原神官方登录未返回抽卡凭据。");
+  if (!authkey) throw new HoyoRequestError("response", $t("genshin-miniapp.text_b17fb797e2"));
   await guard();
   const timeout = AbortSignal.timeout(30_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -137,11 +140,11 @@ export async function readGenshinMiniapp(
       credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: deadline,
     });
   } catch {
-    throw new HoyoRequestError("transport", "外部抽卡记录请求未完成。");
+    throw new HoyoRequestError("transport", $t("genshin-miniapp.text_df5a53d65a"));
   }
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
-    throw new HoyoRequestError("http", "外部抽卡记录导出失败。", response.status);
+    throw new HoyoRequestError("http", $t("genshin-miniapp.text_ccefe3e714"), response.status);
   }
   const pools = parseExport(await readExport(response, deadline), uid, authkey);
   await guard();

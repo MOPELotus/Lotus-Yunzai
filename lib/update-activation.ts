@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { lockFile } from "./file-lock.ts";
@@ -35,7 +38,7 @@ function statePaths(paths: readonly string[]): string[] {
         path.split("/").some((part) => !part || part === "." || part === ".." || part === ".git" || part === "node_modules") ||
         path === "panel" || path === "panel/dist" || path.startsWith("panel/dist/") ||
         unique.slice(0, index).some((parent) => path.startsWith(`${parent}/`))) {
-      throw new Error("持久状态路径无效或重叠。");
+      throw new Error($t("lib.update-activation.text_7a324d8798"));
     }
   }
   return unique;
@@ -59,7 +62,7 @@ async function checkedParents(root: string, path: string, create: boolean) {
       await mkdir(current);
       await syncDirectory(parent);
     }
-    if (!(await lstat(current)).isDirectory()) throw new Error("持久状态路径经过非实体目录。");
+    if (!(await lstat(current)).isDirectory()) throw new Error($t("lib.update-activation.text_e77de1e697"));
   }
 }
 
@@ -67,11 +70,11 @@ async function rollback(root: string, entry: Activation) {
   const backup = backupPath(root, entry.id);
   if (!await exists(backup)) return;
   if (await exists(root)) {
-    if (await exists(entry.candidate)) throw new Error("无法确认需要回退的版本目录。");
+    if (await exists(entry.candidate)) throw new Error($t("lib.update-activation.text_182305f4c8"));
     const stagingExists = await exists(dirname(entry.candidate));
     const destination = stagingExists ? await canonicalLocation(entry.candidate)
       : join(dirname(root), `.${basename(root)}.lotus-failed-${entry.id}`);
-    if (stagingExists && destination !== entry.candidate) throw new Error("候选暂存位置已变更。");
+    if (stagingExists && destination !== entry.candidate) throw new Error($t("lib.update-activation.text_f6c7b2ed89"));
     for (const path of entry.state) {
       const previousState = join(backup, path);
       const activeState = join(root, path);
@@ -102,7 +105,7 @@ export async function activateUpdate(
   const root = await canonicalLocation(active);
   const next = await canonicalLocation(candidate);
   const path = journalPath(root);
-  const lock = await lockFile(`${path}.sqlite`, "版本切换", 0);
+  const lock = await lockFile(`${path}.sqlite`, $t("lib.update-activation.text_5f29b6ab7b"), 0);
   try {
     return await switchVersion(root, next, verify, additionalStatePaths, path, validate);
   } finally {
@@ -116,7 +119,7 @@ async function switchVersion(
 ): Promise<ActivatedUpdate> {
   const [currentInfo, nextInfo] = await Promise.all([lstat(root), lstat(next)]);
   if (!currentInfo.isDirectory() || !nextInfo.isDirectory() || currentInfo.dev !== nextInfo.dev ||
-      within(root, next) || within(next, root)) throw new Error("候选和活动宿主须为同文件系统的独立目录。");
+      within(root, next) || within(next, root)) throw new Error($t("lib.update-activation.text_6bf382679a"));
 
   const protectedPaths = statePaths([...persistentDirectories, ...dotenvPaths, ...additionalStatePaths,
     ...(await readdir(root)).filter(isUpdateDotenvPath)]);
@@ -124,7 +127,7 @@ async function switchVersion(
   for (const name of protectedPaths) {
     await checkedParents(root, name, false);
     await checkedParents(next, name, false);
-    if (await exists(join(next, name))) throw new Error("候选目录占用了持久状态路径。");
+    if (await exists(join(next, name))) throw new Error($t("lib.update-activation.text_103216a041"));
     if (await exists(join(root, name))) state.push(name);
   }
   await validate?.(state);
@@ -157,7 +160,7 @@ async function switchVersion(
 export async function recoverUpdateActivation(active: string): Promise<boolean> {
   const root = await canonicalLocation(active);
   const path = journalPath(root);
-  const lock = await lockFile(`${path}.sqlite`, "版本切换", 0);
+  const lock = await lockFile(`${path}.sqlite`, $t("lib.update-activation.text_5f29b6ab7b"), 0);
   try {
     return await recover(root, path);
   } finally {
@@ -175,13 +178,13 @@ async function recover(root: string, path: string): Promise<boolean> {
 
 async function readJournal(root: string, path: string): Promise<Activation> {
   const info = await lstat(path);
-  if (!info.isFile() || info.size > 64 * 1024) throw new Error("版本切换记录无效。");
+  if (!info.isFile() || info.size > 64 * 1024) throw new Error($t("lib.update-activation.text_fe4534aa1e"));
   const entry = await Bun.file(path).json() as Activation;
   if (!entry || typeof entry.id !== "string" || !idPattern.test(entry.id) ||
       typeof entry.candidate !== "string" || !isAbsolute(entry.candidate) || typeof entry.committed !== "boolean" ||
       !Array.isArray(entry.state) || !entry.state.every((name) => typeof name === "string") ||
       resolve(entry.candidate) !== entry.candidate ||
-      within(root, entry.candidate) || within(entry.candidate, root)) throw new Error("版本切换记录无效。");
+      within(root, entry.candidate) || within(entry.candidate, root)) throw new Error($t("lib.update-activation.text_fe4534aa1e"));
   statePaths(entry.state);
   return entry;
 }

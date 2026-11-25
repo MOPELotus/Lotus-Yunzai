@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { basename, join } from "node:path";
 import { readMigrationSourceFile } from "./migration-files.ts";
 import type { LegacyPluginPlanEntry } from "./plugins/migration-plan.ts";
@@ -35,7 +38,7 @@ export async function readLegacyZzzUpdateNotice(archive: string | undefined,
       const owner = new HandlerScope();
       try {
         const prepared = tasks.prepare([{ owner, app: {
-          name: "迁移更新推送时间", task: { cron, fnc() {}, log: false },
+          name: $t("lib.migration-zzz-update-notice.text_a531bbfa7b"), task: { cron, fnc() {}, log: false },
         } }]);
         prepared.cancel();
       } finally {

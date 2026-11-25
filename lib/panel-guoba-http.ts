@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { readPanelJson } from "./panel.ts";
 
 export interface GuobaApiRequest {
@@ -188,11 +191,11 @@ async function runHandlers(
   if (reply) {
     const completed = reply as Response;
     return completed.status >= 500
-      ? apiError(completed.status, "扩展接口处理失败。", request.method)
+      ? apiError(completed.status, $t("lib.panel-guoba-http.text_c922c411b0"), request.method)
       : completed;
   }
   if (skipped && !failed) return;
-  return apiError(500, "扩展接口处理失败。", request.method);
+  return apiError(500, $t("lib.panel-guoba-http.text_c922c411b0"), request.method);
 }
 
 export async function dispatchGuobaApi(
@@ -206,7 +209,7 @@ export async function dispatchGuobaApi(
   try {
     requested = decodePath(pathname);
   } catch {
-    return apiError(400, "扩展接口路径无效。", method);
+    return apiError(400, $t("lib.panel-guoba-http.text_178e03908c"), method);
   }
 
   const matches = [];
@@ -227,7 +230,7 @@ export async function dispatchGuobaApi(
     }
   }
   if (!matches.length && allowed.size) {
-    return apiError(405, "扩展接口不支持此请求方法。", method, {
+    return apiError(405, $t("lib.panel-guoba-http.text_fa94bb352a"), method, {
       Allow: methods.filter((entry) => allowed.has(entry)).join(", "),
     });
   }
@@ -238,13 +241,13 @@ export async function dispatchGuobaApi(
       try {
         body = await readPanelJson(request);
       } catch {
-        return apiError(400, "扩展接口请求须为有效且不超过 64 KiB 的 JSON。", method);
+        return apiError(400, $t("lib.panel-guoba-http.text_e926fbd39b"), method);
       }
     }
     const query = queryParams(new URL(request.url).searchParams);
     const headers = extensionRequestHeaders(request);
     for (const { definition, params } of matches) {
-      if (accepting?.() === false) return apiError(404, "扩展接口不存在。", method);
+      if (accepting?.() === false) return apiError(404, $t("lib.panel-guoba-http.text_5302cb5b26"), method);
       const response = await runHandlers({
         method, path: pathname, query, params, body, headers,
         get: name => typeof name === "string" ? headers[name.toLowerCase()] : undefined,
@@ -252,5 +255,5 @@ export async function dispatchGuobaApi(
       if (response) return response;
     }
   }
-  return apiError(404, "扩展接口不存在。", method);
+  return apiError(404, $t("lib.panel-guoba-http.text_5302cb5b26"), method);
 }

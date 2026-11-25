@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { link, lstat, open, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -21,7 +24,7 @@ export async function syncDirectory(path: string) {
 }
 
 export async function move(source: string, destination: string) {
-  if (await exists(destination)) throw new Error("切换目标已存在。");
+  if (await exists(destination)) throw new Error($t("lib.filesystem-transaction.text_6348b5e36b"));
   await rename(source, destination);
   const parent = dirname(source);
   await syncDirectory(parent);

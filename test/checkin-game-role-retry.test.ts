@@ -7,6 +7,7 @@ import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
 import { createCheckinScheduleRuntime } from "../lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "../lib/checkin-schedule-store.ts";
 import { gameCheckinCommands } from "../lib/game-checkin-commands.ts";
+import { getLanguage, registerLanguage, setLanguage } from "../packages/i18n/index.ts";
 
 const date = "2026-11-19";
 const qq = "10001";
@@ -37,8 +38,15 @@ async function fixture(testRun: (root: string, path: string) => Promise<void>) {
   }
 }
 
-test("实际定时运行可同档持久保存待查角色和社区补跑，两类独立收尾且不重复签到提交", () =>
-  fixture(async (root, path) => {
+async function withPendingText<T>(language: string, run: () => Promise<T>): Promise<T> {
+  const previous = getLanguage();
+  registerLanguage("en-x-checkin", { core: { "lib.game-checkin-commands.text_231fe22042": "Pending" } });
+  setLanguage(language);
+  try { return await run(); } finally { setLanguage(previous); }
+}
+
+test.each(["zh-CN", "en-x-checkin"])("实际定时运行可同档持久保存待查角色和社区补跑，两类独立收尾且不重复签到提交 (%s)", language =>
+  withPendingText(language, () => fixture(async (root, path) => {
     const trace: string[] = [];
     let at = scheduled;
     let round = 1;
@@ -134,7 +142,7 @@ test("实际定时运行可同档持久保存待查角色和社区补跑，两�
     expect(await tick()).toEqual(finished);
     expect(trace).toEqual([]);
     expect(await readFile(path, "utf8")).toBe(profile("67890", "fixture-renewed-mid"));
-  }));
+  })));
 
 test("签到提交状态未知不会入队，日末补跑拒绝换绑后的档案", () =>
   fixture(async (root, path) => {

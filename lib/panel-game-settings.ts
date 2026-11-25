@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { readLegacyPanelRecoveryEnabled } from "./legacy-panel-recovery-flow.ts";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -85,42 +88,42 @@ async function showcasePanel(root: URL) {
     import("../plugins/starrail/panel-original-config.ts"),
   ]);
   const fields: readonly SettingField[] = [
-    { key: "panelTrialDifference", label: "原神、星铁临时试算伤害差值", type: "boolean",
-      hint: "显示试算结果相对原面板的暴击和期望变化。关闭后也停用下方的标题处理。" },
-    { key: "panelTrialLongTitle", label: "原神、星铁临时试算长标题", type: "select",
-      options: [{ label: "保留", value: 0 }, { label: "截断", value: 1 }, { label: "换行", value: 2 }] },
-    { key: "legacyPanelRecovery", label: "允许本人确认后恢复旧面板", type: "boolean",
-      hint: "仅限好友私聊，官方更新无结果且本机无档时提示。需本人确认才向原旧档服务提供 QQ 和游戏 UID。" },
+    { key: "panelTrialDifference", label: $t("lib.panel-game-settings.text_d8ed2c7c59"), type: "boolean",
+      hint: $t("lib.panel-game-settings.text_8c87777f47") },
+    { key: "panelTrialLongTitle", label: $t("lib.panel-game-settings.text_3a8d4109ba"), type: "select",
+      options: [{ label: $t("lib.panel-game-settings.text_670ec25af8"), value: 0 }, { label: $t("lib.panel-game-settings.text_dc26ee3912"), value: 1 }, { label: $t("lib.panel-game-settings.text_bd609a8e2d"), value: 2 }] },
+    { key: "legacyPanelRecovery", label: $t("lib.panel-game-settings.text_bb255c8225"), type: "boolean",
+      hint: $t("lib.panel-game-settings.text_900f6a2c95") },
     {
-      key: "genshinSource", label: "原神公开展柜来源", type: "text",
+      key: "genshinSource", label: $t("lib.panel-game-settings.text_02c5377c45"), type: "text",
       readonly: !!Bun.env.LOTUS_GENSHIN_SHOWCASE_SERVER?.trim(),
-      hint: "可填 1 到 3 位，依次为官服、渠道服、国际服。缺省位置沿用第一位。0 自动，2 Enka，3 MiniGG（仅国服），4 Hutao。",
+      hint: $t("lib.panel-game-settings.text_3462740839"),
     },
     {
-      key: "starrailSource", label: "星铁公开展柜来源", type: "text",
+      key: "starrailSource", label: $t("lib.panel-game-settings.text_7cd54f02ec"), type: "text",
       readonly: starRailShowcaseOverride(),
-      hint: "可填 1 到 3 位，依次为官服、渠道服、国际服。缺省位置沿用第一位。0 或 2 Mihomo，3 Avocado，4 EnkaHSR。",
+      hint: $t("lib.panel-game-settings.text_2a02d62820"),
     },
     {
-      key: "gridFightRecentCount", label: "星铁货币战争默认展示场数", type: "number", min: 1, max: 3,
-      hint: "影响货币战争简写查询；编号战报仍按所选场次查询。",
+      key: "gridFightRecentCount", label: $t("lib.panel-game-settings.text_b2b5a9c104"), type: "number", min: 1, max: 3,
+      hint: $t("lib.panel-game-settings.text_d3467386c0"),
     },
     {
-      key: "starrailLegacyAliasMode", label: "星铁旧角色别名群聊权限", type: "select",
-      hint: "适用于旧式角色别名设置和删除。私聊修改和新版别名命令均仅限机器人主人。",
+      key: "starrailLegacyAliasMode", label: $t("lib.panel-game-settings.text_e16c7c8fc0"), type: "select",
+      hint: $t("lib.panel-game-settings.text_af72e9f616"),
       options: [
-        { label: "仅机器人主人", value: 2 },
-        { label: "本群群主和管理员", value: 1 },
-        { label: "本群成员", value: 0 },
+        { label: $t("lib.panel-game-settings.text_dc138aeaa5"), value: 2 },
+        { label: $t("lib.panel-game-settings.text_e773cfdb25"), value: 1 },
+        { label: $t("lib.panel-game-settings.text_abb17b4835"), value: 0 },
       ],
     },
-    { key: "starrailBuiltInPortraitGroups", label: "星铁仅使用内置立绘的群", type: "text",
-      hint: "群号用逗号分隔。留空时所有群都按通常方式选图。" },
-    { key: "starrailOriginalEnabled", label: "允许成员引用星铁面板取原图", type: "boolean", hint: "机器人主人仍可引用自己的有效面板取图。" },
-    { key: "starrailOriginalRecall", label: "星铁面板原图自动撤回", type: "boolean" },
+    { key: "starrailBuiltInPortraitGroups", label: $t("lib.panel-game-settings.text_006040c943"), type: "text",
+      hint: $t("lib.panel-game-settings.text_20d7d5f853") },
+    { key: "starrailOriginalEnabled", label: $t("lib.panel-game-settings.text_1527b86f5c"), type: "boolean", hint: $t("lib.panel-game-settings.text_326d2bed77") },
+    { key: "starrailOriginalRecall", label: $t("lib.panel-game-settings.text_f98e4f15c7"), type: "boolean" },
     {
-      key: "starrailOriginalRecallSeconds", label: "星铁面板原图撤回时间（秒）", type: "number", min: 0,
-      max: originals.maxStarRailOriginalRecallSeconds, hint: "设为 0 时保留已发送的原图。",
+      key: "starrailOriginalRecallSeconds", label: $t("lib.panel-game-settings.text_ca33ef5e91"), type: "number", min: 0,
+      max: originals.maxStarRailOriginalRecallSeconds, hint: $t("lib.panel-game-settings.text_eb1fb987c9"),
     },
   ];
   async function read() {
@@ -196,18 +199,18 @@ async function showcasePanel(root: URL) {
 
 async function damagePanel(root: URL) {
   const { damageConfigOverride, resolveDamageSettings } = await import("../plugins/genshin/panel/lolomi/config.ts");
-  const hint = "保存后重启宿主生效。";
+  const hint = $t("lib.panel-game-settings.text_d3d0842647");
   const fields: readonly SettingField[] = [
-    { key: "lolomicalc", label: "启用原神伤害计算", type: "boolean", hint },
-    { key: "lolomiartis", label: "使用原神角色专用圣遗物评分", type: "boolean", hint },
-    { key: "templateteam", label: "使用预设配队计算", type: "boolean", hint },
-    { key: "conscompare", label: "展示命座伤害对比", type: "boolean", hint },
+    { key: "lolomicalc", label: $t("lib.panel-game-settings.text_d35991fc32"), type: "boolean", hint },
+    { key: "lolomiartis", label: $t("lib.panel-game-settings.text_711780249d"), type: "boolean", hint },
+    { key: "templateteam", label: $t("lib.panel-game-settings.text_8ca272d31c"), type: "boolean", hint },
+    { key: "conscompare", label: $t("lib.panel-game-settings.text_b7bcacf5dc"), type: "boolean", hint },
     {
-      key: "engineMode", label: "原神伤害引擎", type: "select", hint,
+      key: "engineMode", label: $t("lib.panel-game-settings.text_fa3427bb14"), type: "select", hint,
       options: [
-        { label: "自动", value: "auto" },
+        { label: $t("lib.panel-game-settings.text_7eb336e42c"), value: "auto" },
         { label: "Lolomi", value: "lolomi" },
-        { label: "Miao 规则", value: "miao" },
+        { label: $t("lib.panel-game-settings.text_127c8f8849"), value: "miao" },
       ],
     },
   ];
@@ -250,7 +253,7 @@ export function panelGameSettings(root: URL, section: Section) {
     try {
       const settings = await (section === "showcase" ? showcasePanel(root) : damagePanel(root));
       const fields = settings.fields.map(field => field.readonly
-        ? { ...field, hint: `当前由部署环境变量指定。 ${field.hint}` }
+        ? { ...field, hint: $t("lib.panel-game-settings.text_8f94d2cb93", { "hint": field.hint }) }
         : field);
       if (request.method === "GET") {
         const values = await settings.read();

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 const requestIdHeaders = ["x-request-id", "x-trace-id", "x-rpc-request_id", "cf-ray"] as const;
 const mediaTypes = new Set([
   "application/json", "application/problem+json", "application/octet-stream", "text/html", "text/plain",
@@ -48,7 +51,7 @@ export function observeCnRead(route: string, method: "GET" | "POST", callerSigna
         ...(ids && Object.keys(ids).length && { requestIds: ids }),
         ...(stage !== "http" && { networkCode: timeout?.aborted ? "ETIMEDOUT" : networkCode(reason) }),
       };
-      void Promise.resolve(console.warn("[米游社 HTTP]", diagnostic)).catch(() => undefined);
+      void Promise.resolve(console.warn($t("cn-read-diagnostics.text_67e59761e6"), diagnostic)).catch(() => undefined);
     } catch {
       // A failed diagnostic sink must not change the request result.
     }

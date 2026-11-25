@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { genshinResponseRegion } from "./genshin-response-region.ts";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
@@ -17,16 +20,16 @@ function characterId(value: unknown) {
   if (typeof id === "number" && Number.isSafeInteger(id) && id > 0) return id;
 }
 
-export function verifyRole(data: Json, uid: string, region: string, label = "原神面板") {
+export function verifyRole(data: Json, uid: string, region: string, label = $t("genshin-panel.text_0b3ee04b94")) {
   if (Object.hasOwn(data, "role") && data.role !== null && !object(data.role)) {
-    throw new HoyoRequestError("response", `${label}响应的角色信息无效。`);
+    throw new HoyoRequestError("response", $t("genshin-panel.text_45f231eb2d", { "label": label }));
   }
   for (const row of [data, object(data.role)]) {
     if (!row) continue;
     if (["role_id", "game_uid", "uid"].some(key => Object.hasOwn(row, key) && String(row[key]) !== uid) ||
         ["region", "server"].some(key => Object.hasOwn(row, key) && genshinResponseRegion(row[key]) !== region) ||
         (Object.hasOwn(row, "game_biz") && row.game_biz !== "hk4e_cn")) {
-      throw new HoyoRequestError("response", `${label}响应的角色或服务器不一致。`);
+      throw new HoyoRequestError("response", $t("genshin-panel.text_41b1813f8f", { "label": label }));
     }
   }
 }
@@ -34,7 +37,7 @@ export function verifyRole(data: Json, uid: string, region: string, label = "原
 function listOf(data: Json): Json[] {
   const list = data.list;
   if (!Array.isArray(list) || list.length > 256 || list.some(value => !object(value))) {
-    throw new HoyoRequestError("response", "原神面板响应缺少有效角色列表。");
+    throw new HoyoRequestError("response", $t("genshin-panel.text_a6d58d5007"));
   }
   return list;
 }
@@ -47,7 +50,7 @@ export async function readGenshinCharacterList(source: ProfileRequestContext, tr
   const ids = avatars.map(row => characterId(row.id));
   const characterIds = ids.filter(id => id !== undefined);
   if (ids.length !== characterIds.length || new Set(characterIds).size !== ids.length) {
-    throw new HoyoRequestError("response", "原神面板角色编号缺失或重复。");
+    throw new HoyoRequestError("response", $t("genshin-panel.text_298d166075"));
   }
   return { avatars, characterIds };
 }
@@ -66,11 +69,11 @@ async function readCharacterDetails(source: ProfileRequestContext, transport: Ho
   for (const row of listOf(detail.data)) {
     const id = characterId(object(row.base)?.id);
     if (id === undefined || !characterIds.includes(id) || avatars.has(id)) {
-      throw new HoyoRequestError("response", "原神面板详情中的角色编号不一致。");
+      throw new HoyoRequestError("response", $t("genshin-panel.text_b8c7872d89"));
     }
     avatars.set(id, row);
   }
-  if (!allowMissing && avatars.size !== characterIds.length) throw new HoyoRequestError("response", "原神面板角色详情不完整。");
+  if (!allowMissing && avatars.size !== characterIds.length) throw new HoyoRequestError("response", $t("genshin-panel.text_fe30b5a527"));
   return characterIds.flatMap(id => {
     const avatar = avatars.get(id);
     return avatar ? [avatar] : [];
@@ -111,7 +114,7 @@ export function createGenshinPersonalRecordReader(includeRoster: boolean, includ
 export async function readGenshinTalents(source: ProfileRequestContext, transport: HoyoTransport,
   { characterIds, signal }: GenshinPanelOptions & { readonly characterIds: readonly number[] }, verifyProfile?: () => Promise<void>) {
   if (new Set(characterIds).size !== characterIds.length) {
-    throw new HoyoRequestError("invalid-input", "原神天赋角色编号重复。");
+    throw new HoyoRequestError("invalid-input", $t("genshin-panel.text_0fe9163af1"));
   }
   return { avatars: await readCharacterDetails(source, transport, characterIds, signal, verifyProfile, true) };
 }
@@ -122,7 +125,7 @@ export type GenshinChallengeOptions = GenshinPanelOptions &
 export async function readGenshinTarotCollection(source: ProfileRequestContext, transport: HoyoTransport,
   { signal }: GenshinPanelOptions, verifyProfile?: () => Promise<void>) {
   const { data, region } = await readCnGameRecord(source, transport, { kind: "genshin-theater", signal }, verifyProfile);
-  verifyRole(data, source.role.uid, region, "原神月谕圣牌");
+  verifyRole(data, source.role.uid, region, $t("genshin-panel.text_b6799b3176"));
   return { collection: data.tarot_card_state };
 }
 
@@ -134,13 +137,13 @@ export function createGenshinChallengeReader() {
     const { signal } = options;
     if (!overview) {
       const index = await readCnGameRecord(source, transport, { kind: "genshin-index", signal }, verifyProfile);
-      verifyRole(index.data, source.role.uid, index.region, "原神战绩");
+      verifyRole(index.data, source.role.uid, index.region, $t("genshin-panel.text_a2a4c50077"));
       overview = index.data;
     }
     const { data, region } = await readCnGameRecord(source, transport, options.mode === "abyss"
       ? { kind: "genshin-abyss", scheduleType: options.scheduleType, signal }
       : { kind: "genshin-theater", signal }, verifyProfile);
-    verifyRole(data, source.role.uid, region, "原神战绩");
+    verifyRole(data, source.role.uid, region, $t("genshin-panel.text_a2a4c50077"));
     return { overview, challenge: data };
   };
 }

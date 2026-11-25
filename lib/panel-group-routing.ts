@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { isMap, isScalar, parseDocument, type Document } from "yaml";
@@ -6,9 +9,9 @@ import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global
 import { readPanelJson } from "./panel.ts";
 
 const fields = [
-  { key: "file", label: "配置文件", type: "text", readonly: true },
-  { key: "rules", label: "派发规则", type: "json", rows: 12,
-    hint: "按 default、机器人QQ:default、群号、机器人QQ:群号 从低到高覆盖。groupCD / singleCD 是群和成员冷却（毫秒），onlyReplyAt 为 0 关闭、1 需 @ 或别名、2 主人例外，botAlias 为别名列表，enable / disable 为功能列表。关键词可设置 addLimit、addPrivate、addReply、addAt、addRecall（撤回秒数）。清空规则会移除面板中列出的覆盖项。" },
+  { key: "file", label: $t("lib.panel-group-routing.text_1d27f02ed2"), type: "text", readonly: true },
+  { key: "rules", label: $t("lib.panel-group-routing.text_4ce0524c1b"), type: "json", rows: 12,
+    hint: $t("lib.panel-group-routing.text_c2d0801dfe") },
 ] as const;
 const known = ["groupCD", "singleCD", "onlyReplyAt", "botAlias", "addLimit", "addPrivate", "addReply", "addAt",
   "addRecall", "enable", "disable"] as const;
@@ -159,14 +162,14 @@ export function panelGroupRouting(root: URL, onSaved: () => Promise<void>) {
       });
       let warning: string | undefined;
       try { await onSaved(); }
-      catch { warning = "配置已保存，运行时重载失败，请重启后重试。"; }
+      catch { warning = $t("lib.panel-group-routing.text_970af71c40"); }
       return Response.json({ fields, values: await snapshot(), warning });
     } catch (error) {
       if (!active()) return new Response(null, { status: 401 });
       if (error instanceof GlobalConfigWriteError && error.reason === "config") {
-        return Response.json({ message: "无法安全更新现有群配置，请检查配置文件。" }, { status: 400 });
+        return Response.json({ message: $t("lib.panel-group-routing.text_42434a44ea") }, { status: 400 });
       }
-      return Response.json({ message: "群配置已变更，请重新加载后再保存。" }, { status: 409 });
+      return Response.json({ message: $t("lib.panel-group-routing.text_b3389dad0c") }, { status: 409 });
     }
   };
 }

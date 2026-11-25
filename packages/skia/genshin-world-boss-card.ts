@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { genshinSummaryOptions, quantityText, summaryBox, summaryIcon, summarySection, type GenshinSummaryCardOptions } from "./genshin-summary-elements.ts";
 import { drawInfoText, infoCardColors, measureInfoText, renderInfoCard } from "./info-card.ts";
 
@@ -15,7 +18,7 @@ export interface GenshinWorldBossCardModel {
 export type GenshinWorldBossCardOptions = GenshinSummaryCardOptions;
 
 export async function renderGenshinWorldBossCard(model: GenshinWorldBossCardModel, options: GenshinWorldBossCardOptions = {}) {
-  return renderInfoCard({ title: "原神世界 BOSS 击杀" }, ({ x: left, y, width, measure }) => {
+  return renderInfoCard({ title: $t("genshin-world-boss-card.text_7fc5fcb98d") }, ({ x: left, y, width, measure }) => {
     const gap = 14;
     const itemWidth = (width - gap) / 2;
     const groups = model.groups.filter(group => group.bosses.length > 0).map(group => {
@@ -25,7 +28,7 @@ export async function renderGenshinWorldBossCard(model: GenshinWorldBossCardMode
         const entries = group.bosses.slice(start, start + 2).map(boss => ({
           image: boss.image,
           name: measureInfoText(measure, boss.name, itemWidth - 92, 22),
-          count: measureInfoText(measure, "击杀 " + quantityText(boss.killCount) + " 次", itemWidth - 92, 18),
+          count: measureInfoText(measure, $t("genshin-world-boss-card.text_b0a2fe264f") + quantityText(boss.killCount) + $t("genshin-world-boss-card.text_f81526efce"), itemWidth - 92, 18),
         }));
         rows.push({ entries, height: Math.max(82, ...entries.map(item => 20 + item.name.length * 30 + item.count.length * 25)) });
       }
@@ -37,7 +40,7 @@ export async function renderGenshinWorldBossCard(model: GenshinWorldBossCardMode
       height: height || 30,
       async draw(ctx) {
         let top = y;
-        if (!groups.length) drawInfoText(ctx, ["暂无击杀记录"], left, top, { size: 20, color: infoCardColors.muted });
+        if (!groups.length) drawInfoText(ctx, [$t("genshin-world-boss-card.text_b6b5f699a9")], left, top, { size: 20, color: infoCardColors.muted });
         for (const group of groups) {
           summarySection(ctx, group.heading, left, top, width);
           top += group.heading.length * 32 + 12;

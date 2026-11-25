@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { setTimeout as delay } from "node:timers/promises";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
@@ -38,7 +41,7 @@ const panelFields = [
 ] as const;
 const maximumAvatars = 128;
 
-function invalid(message = "官方绝区零面板的角色资料无效。"): never {
+function invalid(message = $t("zzz-panel.text_ebea026f5f")): never {
   throw new HoyoRequestError("response", message);
 }
 
@@ -61,13 +64,13 @@ function identity(data: Json, uid: string, region: string) {
   for (const field of ["uid", "role_id", "game_uid"]) {
     const value = data[field];
     if (value !== undefined && value !== uid && (typeof value !== "number" || String(value) !== uid)) {
-      invalid("官方绝区零面板的 UID 与当前档案不一致。");
+      invalid($t("zzz-panel.text_6d6497248f"));
     }
   }
   for (const field of ["server", "region"]) {
-    if (data[field] !== undefined && data[field] !== region) invalid("官方绝区零面板的区服与当前档案不一致。");
+    if (data[field] !== undefined && data[field] !== region) invalid($t("zzz-panel.text_970b9652e1"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid("官方绝区零面板的游戏与当前档案不一致。");
+  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-panel.text_aa52ab4a54"));
 }
 
 export function normalizeZzzPanelAvatar(input: unknown): ZzzPanelAvatar {
@@ -95,13 +98,13 @@ function ownedIds(data: Json): number[] {
     if (!id) invalid();
     return id;
   });
-  if (new Set(ids).size !== ids.length) invalid("官方绝区零面板的角色列表包含重复角色。");
+  if (new Set(ids).size !== ids.length) invalid($t("zzz-panel.text_57e2e6a94a"));
   return ids;
 }
 
 function explicitIds(ids: readonly number[]) {
   if (!Array.isArray(ids) || !ids.length || ids.length > maximumAvatars || ids.some(id => typeof id !== "number" || !number(id, 999_999))) {
-    throw new HoyoRequestError("invalid-input", "绝区零面板的角色编号无效。");
+    throw new HoyoRequestError("invalid-input", $t("zzz-panel.text_db6735c2a0"));
   }
   return [...new Set(ids)];
 }
@@ -110,7 +113,7 @@ function explicitIds(ids: readonly number[]) {
 export async function readZzzPanel(source: ProfileRequestContext, transport: HoyoTransport,
   { ids, roleInterval = 3000, signal }: ZzzPanelOptions = {}, verifyProfile?: () => Promise<void>): Promise<ZzzPanelSnapshot> {
   if (!Number.isSafeInteger(roleInterval) || roleInterval < 0 || roleInterval > 2_147_483_647) {
-    throw new HoyoRequestError("invalid-input", "绝区零面板的角色刷新间隔无效。");
+    throw new HoyoRequestError("invalid-input", $t("zzz-panel.text_f1a030b56f"));
   }
   const uid = source.role.uid;
   let region = source.role.region;
@@ -133,7 +136,7 @@ export async function readZzzPanel(source: ProfileRequestContext, transport: Hoy
     if (!Array.isArray(list) || list.length > 1) invalid();
     if (!list.length) { missingIds.push(characterId); continue; }
     const avatar = normalizeZzzPanelAvatar(list[0]);
-    if (avatar.id !== characterId) invalid("官方绝区零面板回包的角色与所选角色不一致。");
+    if (avatar.id !== characterId) invalid($t("zzz-panel.text_bdce567f78"));
     avatars.push(avatar);
   }
   return { uid, region, avatars, missingIds };

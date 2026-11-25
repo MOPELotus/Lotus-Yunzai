@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isGitRevision } from "./local-git.ts";
 import { managedDispatchPause } from "./managed-dispatch-pause.ts";
 import { parseStorageSnapshot, storageRevision, type StorageSnapshot } from "./valkey-config.ts";
@@ -43,7 +46,7 @@ type Notice =
   | { type: "lotus-update"; requestId: string; request: ManagedUpdateWireRequest };
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu;
-const failed = () => new Error("受管进程未能完成启动交接。");
+const failed = () => new Error($t("lib.managed-handoff.text_32e066620a"));
 
 function validPausedAt(value: number): boolean {
   return Number.isSafeInteger(value) && value > 0;
@@ -268,7 +271,7 @@ export function createManagedHandoff(): ManagedHandoff {
     },
     verifyStorage(storage) {
       if (expectedStorage !== undefined && expectedStorage !== storageRevision(storage)) {
-        throw new Error("候选宿主的 Valkey 配置与原工作进程不一致。");
+        throw new Error($t("lib.managed-handoff.text_01b5e74b37"));
       }
     },
     restart(pausedAt, sent) {

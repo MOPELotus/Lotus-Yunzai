@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { withMiyousheCaptcha } from "./captcha-business.ts";
 import type { CaptchaEvent } from "./captcha.ts";
 import type { HoyoTransport } from "./credentials.ts";
@@ -56,7 +59,7 @@ function decimal(value: unknown, pattern: RegExp): string | undefined {
 }
 
 function invalidResponse(subject: string): never {
-  throw new HoyoRequestError("response", `官方${subject}响应无效。`);
+  throw new HoyoRequestError("response", $t("hoyolab-checkin-transport.text_691992adbc", { "subject": subject }));
 }
 
 function validateSource(source: HoYoLabCheckinAccount, credential: Credential) {
@@ -72,7 +75,7 @@ function validateSource(source: HoYoLabCheckinAccount, credential: Credential) {
   const aid = current?.[1] ?? legacy?.[1];
   if (!aid || aid !== accountId || legacy?.[2]?.toLowerCase().startsWith("v2_") ||
       (realm !== "SG" && realm !== "US" && realm !== "EU") || !/^[a-z]{2}-[a-z]{2}$/u.test(language)) {
-    throw new HoyoRequestError("invalid-input", "国际服请求需要同档案已核验的 HoYoLAB 登录凭据和有效语言。");
+    throw new HoyoRequestError("invalid-input", $t("hoyolab-checkin-transport.text_87fa9438da"));
   }
   return { cookie, accountId, realm, language, mid: current?.[2] };
 }
@@ -104,17 +107,17 @@ export function openHoYoLabCheckinTransport(source: HoYoLabCheckinAccount, trans
 export function openHoYoLabZzzRecordTransport(source: HoYoLabCheckinAccount, transport: HoyoTransport, options: HoYoLabCheckinOptions) {
   const client = openHoYoLabTransport(source, transport, options, "ltoken", true);
   return {
-    roleList: () => client.roleList("nap_global", "绝区零国际服角色目录"),
+    roleList: () => client.roleList("nap_global", $t("hoyolab-checkin-transport.text_98c954c02f")),
     read(part: ZzzRecordPart, uid: string, region: string) {
       const url = new URL(zzzRecordPath + zzzRecordParts[part], activityOrigin);
       const note = part === "note";
       url.search = new URLSearchParams({ ...(!note && { lang: client.language }), role_id: uid, server: region }).toString();
-      return client.request(url, { "x-rpc-language": client.language }, note ? "绝区零国际服便笺" : "绝区零国际服战绩");
+      return client.request(url, { "x-rpc-language": client.language }, note ? $t("hoyolab-checkin-transport.text_3529a2f6a7") : $t("hoyolab-checkin-transport.text_e8a41fe783"));
     },
     readMonthly(uid: string, region: string, month: string) {
       const url = new URL(zzzMonthlyPath, ledgerOrigin);
       url.search = new URLSearchParams({ uid, region, month }).toString();
-      return client.request(url, { "x-rpc-language": client.language }, "绝区零国际服月报");
+      return client.request(url, { "x-rpc-language": client.language }, $t("hoyolab-checkin-transport.text_fddc744949"));
     },
   };
 }
@@ -123,7 +126,7 @@ function openHoYoLabTransport(source: HoYoLabCheckinAccount, transport: HoyoTran
   { signal, verifyProfile, deviceId, captchaContext, notifyCaptcha, allowManualCaptcha }: HoYoLabCheckinOptions, credential: Credential, zzzRecord: boolean) {
   const auth = validateSource(source, credential);
   if (deviceId !== undefined && (typeof deviceId !== "string" || !browserUuid.test(deviceId))) {
-    throw new HoyoRequestError("invalid-input", "国际服浏览器会话 ID 无效。");
+    throw new HoyoRequestError("invalid-input", $t("hoyolab-checkin-transport.text_b0adb2f5a6"));
   }
   const commonHeaders = { Accept: "application/json, text/plain, */*", Cookie: auth.cookie,
     Origin: officialOrigin, Referer: `${officialOrigin}/` };
@@ -137,14 +140,14 @@ function openHoYoLabTransport(source: HoYoLabCheckinAccount, transport: HoyoTran
   async function requestRaw(url: URL, headers: HeadersInit, subject: string, body: string | undefined, active: HoyoTransport): Promise<Json> {
     const writing = body !== undefined;
     if (url.username || url.password || url.hash || !officialRoute(url, writing, credential, zzzRecord)) {
-      throw new HoyoRequestError("invalid-input", "HoYoLAB 请求地址无效。");
+      throw new HoyoRequestError("invalid-input", $t("hoyolab-checkin-transport.text_f1d3816702"));
     }
     const signedHeaders = new Headers(headers);
     for (const [key, value] of Object.entries(commonHeaders)) signedHeaders.set(key, value);
     const timeout = AbortSignal.timeout(10_000);
     const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const transportError = () => new HoyoRequestError("transport", writing
-      ? `官方${subject}结果未确认。` : `官方${subject}查询未完成。`);
+      ? $t("hoyolab-checkin-transport.text_be525019c4", { "subject": subject }) : $t("hoyolab-checkin-transport.text_cbe06a21d0", { "subject": subject }));
     async function guard() {
       if (deadline.aborted) throw transportError();
       await verifyProfile();
@@ -170,11 +173,11 @@ function openHoYoLabTransport(source: HoYoLabCheckinAccount, transport: HoyoTran
       void response.body?.cancel().catch(() => undefined);
       await guard();
       if (response.redirected || (response.url && response.url !== url.href)) {
-        throw new HoyoRequestError(writing ? "response" : "http", `官方${subject}返回了意外的地址。`, status);
+        throw new HoyoRequestError(writing ? "response" : "http", $t("hoyolab-checkin-transport.text_c8da6cdd22", { "subject": subject }), status);
       }
       if (status === 429) throw new GameRecordRequestError(subject, "rate-limited", "http", status);
       if (challenge && challenge !== "{}") throw new GameRecordRequestError(subject, "risk", code, status);
-      throw new HoyoRequestError("http", `官方${subject}返回 HTTP 错误。`, status);
+      throw new HoyoRequestError("http", $t("hoyolab-checkin-transport.text_3d0f75c29c", { "subject": subject }), status);
     }
 
     const payload = await readGameRecordPayload(response, (zzzRecord && url.origin === activityOrigin ? 512 : 128) * 1024, deadline);
@@ -190,9 +193,9 @@ function openHoYoLabTransport(source: HoYoLabCheckinAccount, transport: HoyoTran
       throw new GameRecordRequestError(subject, "risk", code, status, typeof retcode === "number" ? retcode : undefined);
     }
     if (retcode === -100) throw new GameRecordRequestError(subject, "expired", code, status, retcode);
-    if (status === 401) throw new HoyoRequestError("http", `官方${subject}拒绝请求。`, status);
+    if (status === 401) throw new HoyoRequestError("http", $t("hoyolab-checkin-transport.text_e9d7dda1a2", { "subject": subject }), status);
     if (typeof retcode !== "number" || !Number.isSafeInteger(retcode)) invalidResponse(subject);
-    if (retcode !== 0) throw new HoyoRequestError("api", `官方${subject}拒绝请求。`, status, retcode);
+    if (retcode !== 0) throw new HoyoRequestError("api", $t("hoyolab-checkin-transport.text_e9d7dda1a2", { "subject": subject }), status, retcode);
     if (!data) {
       if (url.origin === ledgerOrigin && payload?.data === null) return {};
       invalidResponse(subject);
@@ -207,7 +210,7 @@ function openHoYoLabTransport(source: HoYoLabCheckinAccount, transport: HoyoTran
     request,
     async roleList(gameBiz: string, subject: string): Promise<readonly unknown[]> {
       if (!roleGames[credential].some(game => game === gameBiz)) {
-        throw new HoyoRequestError("invalid-input", "国际服角色目录不支持当前游戏。");
+        throw new HoyoRequestError("invalid-input", $t("hoyolab-checkin-transport.text_f110be184c"));
       }
       const url = new URL(cookiePaths[credential], roleOrigin);
       url.searchParams.set("game_biz", gameBiz);

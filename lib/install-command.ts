@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { MessageEvent } from "./messages.ts";
 import { canManagePackages } from "./command-permissions.ts";
 
@@ -13,15 +16,15 @@ const controls = /[\u0000-\u001f\u007f-\u009f]/u;
 const shortName = /^[\p{L}\p{N}][\p{L}\p{N}._-]{0,63}$/u;
 const suffix = /-[Pp]lugin$/u;
 const replies: Readonly<Record<InstallProgress, string>> = {
-  checking: "开始安装，正在检查插件目录。",
-  building: "正在准备插件和依赖。",
-  switching: "正在切换到安装后的宿主。",
-  busy: "正在安装。",
-  exists: "该插件已安装。",
-  unavailable: "暂无可用的安装目标，请用 #安装插件 查看列表。",
-  rejected: "插件候选未通过检查，安装未执行。",
-  "storage-changed": "Valkey 配置已变更或无法读取，当前宿主继续运行。要启用新配置，请先正常停机再启动。",
-  failed: "插件安装失败，请检查宿主日志。",
+  checking: $t("lib.install-command.text_2ac36b053b"),
+  building: $t("lib.install-command.text_734b0a5168"),
+  switching: $t("lib.install-command.text_2318ab0853"),
+  busy: $t("lib.install-command.text_a90cda2154"),
+  exists: $t("lib.install-command.text_5b1b96ed7f"),
+  unavailable: $t("lib.install-command.text_3b5964a868"),
+  rejected: $t("lib.install-command.text_d2bb72d2c7"),
+  "storage-changed": $t("lib.install-command.text_642562fa39"),
+  failed: $t("lib.install-command.text_5f7a9cfb7f"),
 };
 
 export function isInstallName(name: unknown): name is string {
@@ -49,13 +52,13 @@ export function createInstallCommand(callbacks: InstallCallbacks) {
     const message = event.msg.trimStart();
     if (!message.startsWith(command)) return;
     if (!canManagePackages(event)) {
-      await event.reply("暂无权限，只有主人才能操作");
+      await event.reply($t("lib.install-command.text_ee7b348d1b"));
       return;
     }
 
     const name = parseInstallName(message.slice(command.length));
     if (!name) {
-      await event.reply("请发送 #安装插件 查看可安装插件，再用 #安装插件名 进行安装。");
+      await event.reply($t("lib.install-command.text_b0139d7788"));
       return;
     }
     if (name === "插件") {
@@ -67,12 +70,12 @@ export function createInstallCommand(callbacks: InstallCallbacks) {
           return parsed !== undefined && parsed !== "插件" && label.trim() === label;
         }))];
       } catch {
-        await event.reply("读取可安装插件列表失败，请稍后重试。");
+        await event.reply($t("lib.install-command.text_8c47777101"));
         return;
       }
       await event.reply(names.length
-        ? ["可安装插件列表：", ...names, "发送 #安装+插件名 进行安装"].join("\n")
-        : "暂无可安装插件");
+        ? [$t("lib.install-command.text_3caf6da31c"), ...names, $t("lib.install-command.text_9d7b70483a")].join("\n")
+        : $t("lib.install-command.text_d6853b0c3e"));
       return;
     }
 
@@ -84,11 +87,11 @@ export function createInstallCommand(callbacks: InstallCallbacks) {
     try {
       sent = await callbacks.install(event, name, report);
     } catch {
-      await event.reply("发送安装请求失败，请稍后重试。");
+      await event.reply($t("lib.install-command.text_86310754ea"));
       return;
     }
     if (!sent) {
-      await event.reply("当前未启用受管安装。请在宿主目录运行 bun run start 后重试。");
+      await event.reply($t("lib.install-command.text_548e4416ec"));
       return;
     }
     await pending;

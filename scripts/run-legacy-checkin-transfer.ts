@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { lstat, mkdtemp, open, readdir, readFile, realpath, rename } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -25,14 +29,14 @@ function safeFailure(message: string): never {
 async function localDirectory(path: string, privateMode = false) {
   const state = await lstat(path);
   if (!state.isDirectory() || state.uid !== process.getuid?.() || (privateMode && (state.mode & 0o077) !== 0) ||
-      path !== await realpath(path)) safeFailure("副本须是当前用户拥有的实体目录，演练根目录权限须为 0700。");
+      path !== await realpath(path)) safeFailure($t("scripts.run-legacy-checkin-transfer.text_7c1947625e"));
 }
 
 async function verifyStateTree(path: string): Promise<void> {
   const state = await lstat(path);
-  if (state.uid !== process.getuid?.()) safeFailure("签到副本包含其他用户拥有的文件。");
+  if (state.uid !== process.getuid?.()) safeFailure($t("scripts.run-legacy-checkin-transfer.text_02fe74cb23"));
   if (state.isFile() && state.nlink === 1) return;
-  if (!state.isDirectory() || path !== await realpath(path)) safeFailure("签到副本只允许实体目录和普通文件。");
+  if (!state.isDirectory() || path !== await realpath(path)) safeFailure($t("scripts.run-legacy-checkin-transfer.text_f4c5454473"));
   for (const child of await readdir(path)) await verifyStateTree(join(path, child));
 }
 
@@ -42,7 +46,7 @@ async function git(path: string, ...args: string[]) {
     stdout: "pipe", stderr: "ignore",
   });
   const [exit, value] = await Promise.all([child.exited, new Response(child.stdout).text()]);
-  if (exit !== 0) safeFailure("无法核验独立旧版 Git 副本。");
+  if (exit !== 0) safeFailure($t("scripts.run-legacy-checkin-transfer.text_d375e8e06f"));
   return value;
 }
 
@@ -50,20 +54,20 @@ async function verifyReceiver(root: string) {
   const gitDir = join(root, ".git");
   await localDirectory(gitDir);
   const [topLevel, metadata] = (await git(root, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir")).trimEnd().split("\n");
-  if (topLevel !== root || metadata !== gitDir) safeFailure("旧版 Git 根目录或元数据不属于这个副本。");
-  if ((await git(root, "rev-parse", "HEAD^{commit}")).trim() !== guardedCheckinLegacyVersion) safeFailure("旧版副本的 HEAD 与固定版本不符。");
+  if (topLevel !== root || metadata !== gitDir) safeFailure($t("scripts.run-legacy-checkin-transfer.text_9f078b87b3"));
+  if ((await git(root, "rev-parse", "HEAD^{commit}")).trim() !== guardedCheckinLegacyVersion) safeFailure($t("scripts.run-legacy-checkin-transfer.text_10fbddc726"));
   const changes = (await git(root, "diff", "--no-ext-diff", "--ignore-submodules=none", "--name-status", "-z", "HEAD", "--")).split("\0");
   const allowed = Object.keys(receiver).sort();
   if (changes.length !== allowed.length * 2 + 1 || allowed.some((file, i) => changes[i * 2] !== "M" || changes[i * 2 + 1] !== file) ||
       (await git(root, "ls-files", "--others", "--exclude-standard", "-z")) ||
       (await git(root, "ls-files", "-v", "-z")).split("\0").some(file => file && !file.startsWith("H "))) {
-    safeFailure("旧版改动与受审接收方不一致。");
+    safeFailure($t("scripts.run-legacy-checkin-transfer.text_56e9441aff"));
   }
   for (const [file, digest] of Object.entries(receiver)) {
     const path = join(root, file);
     const state = await lstat(path);
     if (!state.isFile() || state.nlink !== 1 || await realpath(path) !== path ||
-        createHash("sha256").update(await readFile(path)).digest("hex") !== digest) safeFailure("旧版接收方文件摘要不符。");
+        createHash("sha256").update(await readFile(path)).digest("hex") !== digest) safeFailure($t("scripts.run-legacy-checkin-transfer.text_52fab7ccfb"));
   }
 }
 
@@ -146,8 +150,8 @@ async function withStoppedCopies<T>(modern: string, legacy: string, run: () => P
   const locks = [];
   try {
     for (const root of [modern, legacy]) {
-      locks.push(await lockFile(managedStartupLockPath(root), "启动操作", 0, "副本正在启动或停止。"));
-      locks.push(await lockFile(managedHostLockPath(root), "托管宿主", 0, "请先停止副本的托管宿主。"));
+      locks.push(await lockFile(managedStartupLockPath(root), $t("scripts.run-legacy-checkin-transfer.text_837c8d2798"), 0, $t("scripts.run-legacy-checkin-transfer.text_2e716e3322")));
+      locks.push(await lockFile(managedHostLockPath(root), $t("scripts.run-legacy-checkin-transfer.text_e533bb7ee6"), 0, $t("scripts.run-legacy-checkin-transfer.text_e854efca82")));
     }
     return await run();
   } finally {
@@ -158,7 +162,7 @@ async function withStoppedCopies<T>(modern: string, legacy: string, run: () => P
 async function main(path: string, date: string, execute: boolean) {
   const workspace = resolve(path);
   const installed = await realpath(fileURLToPath(new URL("../", import.meta.url)));
-  if (containsPath(installed, workspace) || containsPath(workspace, installed)) safeFailure("演练目录须独立于当前安装。");
+  if (containsPath(installed, workspace) || containsPath(workspace, installed)) safeFailure($t("scripts.run-legacy-checkin-transfer.text_80accd8d14"));
   await localDirectory(workspace, true);
   const modern = join(workspace, "modern");
   const legacy = join(workspace, "legacy");
@@ -175,7 +179,7 @@ async function main(path: string, date: string, execute: boolean) {
   if (!execute) {
     await inspect();
     const [source, history] = await Promise.all([sourceStore.read(date), legacyStore.read(date)]);
-    if (!source) safeFailure("新版副本缺少这一天的签到计划。");
+    if (!source) safeFailure($t("scripts.run-legacy-checkin-transfer.text_b29031fb26"));
     const counts = await previewGuardedLegacyCheckinTransfer(source, history, { loadAccount });
     return { mode: "dry-run", date, version: guardedCheckinLegacyVersion, ...counts, executed: 0 };
   }
@@ -184,10 +188,10 @@ async function main(path: string, date: string, execute: boolean) {
   return withStoppedCopies(modern, legacy, async () => {
     await inspect();
     const history = await legacyStore.read(date);
-    if (!await sourceStore.read(date)) safeFailure("新版副本缺少这一天的签到计划。");
+    if (!await sourceStore.read(date)) safeFailure($t("scripts.run-legacy-checkin-transfer.text_b29031fb26"));
     const runInline = await createReceiver(legacy, workspace);
     const result = await runGuardedLegacyCheckinTransfer(sourceStore, date, { loadAccount, legacy: history, runInline });
-    if (!result.acquired) safeFailure("当前日期的自动签到执行锁已被占用。");
+    if (!result.acquired) safeFailure($t("scripts.run-legacy-checkin-transfer.text_7e91541424"));
     return { mode: "execute", date, version: guardedCheckinLegacyVersion, executed: result.value };
   });
 }
@@ -198,15 +202,15 @@ if (import.meta.main) {
   const execute = args[0] === "--execute";
   const [path, date, ...extra] = execute ? args.slice(1) : args;
   if (!path || path.startsWith("--") || !isCheckinScheduleDate(date) || extra.length) {
-    console.error("用法：bun --no-env-file scripts/run-legacy-checkin-transfer.ts [--execute] <私有演练根目录> <北京时间日期>");
+    console.error($t("scripts.run-legacy-checkin-transfer.text_e3c2b23a4f"));
     process.exitCode = 2;
   } else if (date !== checkinScheduleClock(Date.now()).date) {
-    console.error("此命令只处理北京时间当天的签到计划。");
+    console.error($t("scripts.run-legacy-checkin-transfer.text_b82d1f09d1"));
     process.exitCode = 1;
   } else {
     try { console.log(JSON.stringify(await main(path, date, execute))); }
     catch (error) {
-      console.error(error instanceof Error && !("code" in error) ? error.message : "无法核验副本或执行签到交还。");
+      console.error(error instanceof Error && !("code" in error) ? error.message : $t("scripts.run-legacy-checkin-transfer.text_bb06936170"));
       process.exitCode = 1;
     }
   }

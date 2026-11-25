@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { createHash, randomInt } from "node:crypto";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -26,11 +29,11 @@ interface InternationalCloudGenshinWalletOptions {
 }
 
 export class CloudGenshinWalletError extends HoyoRequestError {
-  constructor(readonly reason: "expired" | "risk" | "rate-limited", status: number, retcode?: number, label = "云原神") {
+  constructor(readonly reason: "expired" | "risk" | "rate-limited", status: number, retcode?: number, label = $t("cloud-genshin-wallet.text_8d17468984")) {
     super(status >= 400 ? "http" : "api", {
-      expired: `${label}凭据已失效，请在官方客户端重新登录后绑定。`,
-      risk: `${label}钱包需要额外验证，请在官方客户端处理。`,
-      "rate-limited": `${label}钱包请求过于频繁，请稍后重试。`,
+      expired: $t("cloud-genshin-wallet.text_fc172384f6", { "label": label }),
+      risk: $t("cloud-genshin-wallet.text_2bcd94a82c", { "label": label }),
+      "rate-limited": $t("cloud-genshin-wallet.text_90aebf1837", { "label": label }),
     }[reason], status, retcode);
   }
 }
@@ -43,7 +46,7 @@ const browserDeviceIdPattern = /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]
 const browserComboFields = new Set(["ai", "ci", "oi", "ct", "si", "bi"]);
 
 function invalidComboToken(): never {
-  throw new HoyoRequestError("invalid-input", "请输入有效的云原神凭据。");
+  throw new HoyoRequestError("invalid-input", $t("cloud-genshin-wallet.text_1170e193b3"));
 }
 
 function readComboToken(input: string, gameBiz = "hk4e_cn"): { token: string; appId?: string } {
@@ -84,9 +87,9 @@ function readQuantity(value: unknown): number | undefined {
   if (typeof count === "number" && Number.isSafeInteger(count) && count >= 0) return count === 0 ? 0 : count;
 }
 
-function readMinutes(value: unknown, label = "云原神"): number {
+function readMinutes(value: unknown, label = $t("cloud-genshin-wallet.text_8d17468984")): number {
   const minutes = readQuantity(value);
-  if (minutes === undefined) throw new HoyoRequestError("response", `${label}钱包返回的剩余免费时长无效。`);
+  if (minutes === undefined) throw new HoyoRequestError("response", $t("cloud-genshin-wallet.text_18590ee0eb", { "label": label }));
   return minutes;
 }
 
@@ -96,7 +99,7 @@ export async function readCloudGenshinWallet(comboToken: string, transport: Hoyo
 ): Promise<CloudGenshinWallet> {
   const { token, appId } = readComboToken(comboToken);
   if (typeof browserDeviceId !== "string" || !browserDeviceIdPattern.test(browserDeviceId)) {
-    throw new HoyoRequestError("invalid-input", "云原神浏览器设备标识无效。");
+    throw new HoyoRequestError("invalid-input", $t("cloud-genshin-wallet.text_6001502d7a"));
   }
   const wallet = await readWallet(walletUrl, transport, {
     Accept: "application/json", Origin: "https://ys.mihoyo.com", Referer: "https://ys.mihoyo.com/cloud/",
@@ -121,10 +124,10 @@ export async function readCloudGenshinWallet(comboToken: string, transport: Hoyo
 export async function readInternationalCloudGenshinWallet(comboToken: string, transport: HoyoTransport,
   { signal, verifyProfile, language, deviceId, deviceModel, androidVersion }: InternationalCloudGenshinWalletOptions,
 ) {
-  const label = "云原神国际服";
+  const label = $t("cloud-genshin-wallet.text_801ae69555");
   const { token } = readComboToken(comboToken, "hk4e_global");
   if (typeof language !== "string" || !/^[A-Za-z]{2,8}(?:[-_][A-Za-z0-9]{2,8}){0,3}$/u.test(language)) {
-    throw new HoyoRequestError("invalid-input", "云原神国际服档案的语言设置无效。");
+    throw new HoyoRequestError("invalid-input", $t("cloud-genshin-wallet.text_70f61ef167"));
   }
   const now = Math.floor(Date.now() / 1000);
   const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -149,10 +152,10 @@ export async function readInternationalCloudGenshinWallet(comboToken: string, tr
 }
 
 async function readWallet(url: string, transport: HoyoTransport, headers: Record<string, string>,
-  { signal, verifyProfile }: Pick<CloudGenshinWalletOptions, "signal" | "verifyProfile">, label = "云原神") {
+  { signal, verifyProfile }: Pick<CloudGenshinWalletOptions, "signal" | "verifyProfile">, label = $t("cloud-genshin-wallet.text_8d17468984")) {
   const timeout = AbortSignal.timeout(10_000);
   const deadline = signal ? AbortSignal.any([timeout, signal]) : timeout;
-  const unavailable = () => new HoyoRequestError("transport", `暂时无法查询${label}钱包。`);
+  const unavailable = () => new HoyoRequestError("transport", $t("cloud-genshin-wallet.text_ec84e20a79", { "label": label }));
   async function guard() {
     signal?.throwIfAborted();
     await verifyProfile?.();
@@ -180,17 +183,17 @@ async function readWallet(url: string, transport: HoyoTransport, headers: Record
     await guard();
     if (!unexpectedUrl && status === 429) throw new CloudGenshinWalletError("rate-limited", status, undefined, label);
     if (!unexpectedUrl && challenge && challenge !== "{}") throw new CloudGenshinWalletError("risk", status, undefined, label);
-    throw new HoyoRequestError("http", `${label}钱包返回异常 HTTP 响应。`, status);
+    throw new HoyoRequestError("http", $t("cloud-genshin-wallet.text_fabe920fc2", { "label": label }), status);
   }
 
   const payload = await readGameRecordPayload(response, 128 * 1024, deadline);
   await guard();
   const retcode = payload?.retcode;
   if (retcode === -100) throw new CloudGenshinWalletError("expired", status, retcode, label);
-  if (status !== 200) throw new HoyoRequestError("http", `${label}钱包拒绝请求。`, status);
+  if (status !== 200) throw new HoyoRequestError("http", $t("cloud-genshin-wallet.text_a43032d39e", { "label": label }), status);
   if (typeof retcode !== "number" || !Number.isSafeInteger(retcode)) {
-    throw new HoyoRequestError("response", `${label}钱包返回了无效响应。`);
+    throw new HoyoRequestError("response", $t("cloud-genshin-wallet.text_2421bc1596", { "label": label }));
   }
-  if (retcode !== 0) throw new HoyoRequestError("api", `${label}钱包拒绝请求。`, status, retcode);
+  if (retcode !== 0) throw new HoyoRequestError("api", $t("cloud-genshin-wallet.text_a43032d39e", { "label": label }), status, retcode);
   return object(payload?.data);
 }

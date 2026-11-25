@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { open } from "node:fs/promises";
 import { constants, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -49,23 +52,23 @@ export function createRemoteControl(root: string) {
   function authorize(token: string) {
     const now = Date.now();
     failures = failures.filter(time => now - time < 30_000);
-    if (failures.length >= 5) return "验证码尝试过多，请稍后重试。";
+    if (failures.length >= 5) return $t("lib.remote-control.text_d15409fa8f");
     if (!consumeRemoteOtp(root, token, now)) {
       failures.push(now);
-      return "验证码无效、已使用或尚未配对。";
+      return $t("lib.remote-control.text_8f75e8e132");
     }
     failures = [];
   }
   async function rememberAuthorization(permission: RemoteScope, event: MessageEvent) {
     const audit = join(root, "data", "remote-auth", "operations.jsonl");
     await using file = await open(audit, constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW, 0o600);
-    if (!(await file.stat()).isFile()) throw new Error("运维审计须为普通文件。");
+    if (!(await file.stat()).isFile()) throw new Error($t("lib.remote-control.text_296be66423"));
     await file.writeFile(JSON.stringify({
       at: new Date().toISOString(), action: permission, adapter: event.adapter ?? "onebot",
       bot: event.self_id, owner: event.user_id,
     }) + "\n");
   }
-  const guide = "请在私人本机终端运行 bun scripts/remote-otp.ts setup 配对，更换验证器使用 reset。";
+  const guide = $t("lib.remote-control.text_b1a584871b");
   return async function handle(event: MessageEvent, scope: Scope) {
     const reply = (body: string) => scope.current() ? event.reply(body) : undefined;
     if (!scope.current()) return;
@@ -82,25 +85,25 @@ export function createRemoteControl(root: string) {
         paired = remoteOtpPaired(root);
         enabled = readRemoteSettings(root).enabled;
       } catch {
-        await reply("无法读取远程身份验证状态，请到本机核对。");
+        await reply($t("lib.remote-control.text_733410d9d6"));
         return;
       }
       const image = await import("./remote-status-card.ts")
         .then(({ renderRemoteStatusCard }) => renderRemoteStatusCard(paired, enabled)).catch(() => undefined);
       if (!scope.current() || !await scope.allowed("remote.spawn") || !scope.current()) return;
       if (image && await event.reply({ type: "image", file: image.png }) !== false) return;
-      await reply(paired ? "远程身份验证已配对。" : `远程身份验证未配对。${guide}`);
+      await reply(paired ? $t("lib.remote-control.text_87ea3b4a00") : $t("lib.remote-control.text_6a77b2f525", { "guide": guide }));
       return;
     }
 
     const spawn = spawnCommand.exec(event.msg);
     const file = fileCommand.exec(event.msg);
     if ((!spawn && !file) || event.msg.length > 4_096) {
-      await reply("格式无效。远程命令需验证码、Shell 和命令，文件操作需验证码和目标路径。");
+      await reply($t("lib.remote-control.text_9039061ac2"));
       return;
     }
     if (busy) {
-      await reply("已有远程运维操作，请稍后再试。");
+      await reply($t("lib.remote-control.text_3a5f213b48"));
       return;
     }
     busy = true;
@@ -111,22 +114,22 @@ export function createRemoteControl(root: string) {
       const settings = readRemoteSettings(root);
       if (!scope.current()) return;
       if (!settings.enabled) {
-        await reply("远程运维未开启。");
+        await reply($t("lib.remote-control.text_57ba87e430"));
         return;
       }
       if (!isRemotePlatformSupported()) {
-        await reply("当前平台未接入远程运维。");
+        await reply($t("lib.remote-control.text_665a671d49"));
         return;
       }
       if (spawn) {
         const shell = spawn[3]!.toLowerCase() as RemoteShell;
         if (!settings.shells.includes(shell)) {
-          await reply("所选 Shell 未启用。");
+          await reply($t("lib.remote-control.text_3138b0041f"));
           return;
         }
         const admin = /^(?:远程管理员|admin)/iu.test(spawn[1]!);
         if (admin && (!settings.allowAdmin || !isRemoteAdministrator())) {
-          await reply("管理员模式须显式开启，并且宿主已用管理员权限运行。");
+          await reply($t("lib.remote-control.text_c7ce433ba0"));
           return;
         }
         const denied = authorize(spawn[2]!);
@@ -147,7 +150,7 @@ export function createRemoteControl(root: string) {
       const target = file![3]!.trim();
       const download = action === "远程下载";
       if (download ? !event.uploadFile : !event.canReadAttachments || !event.attachment) {
-        await reply(download ? "当前私聊不支持发送文件。" : "请在同一条消息附带可读取的文件。");
+        await reply(download ? $t("lib.remote-control.text_260f3fc164") : $t("lib.remote-control.text_7a78681c92"));
         return;
       }
       const denied = authorize(file![2]!);
@@ -160,12 +163,12 @@ export function createRemoteControl(root: string) {
       if (download) {
         const content = await readRemoteFile(root, target, scope.signal);
         if (!content || !await stillAllowed() || !readRemoteSettings(root).enabled) {
-          await reply("未能读取目标文件。");
+          await reply($t("lib.remote-control.text_daf7c02df1"));
           return;
         }
         const result = await event.uploadFile!(content);
-        await reply(result === "confirmed" ? "远程下载已发送。" : result === "unknown"
-          ? "文件发送结果未确认，请先核对当前私聊。" : "文件未能发送。");
+        await reply(result === "confirmed" ? $t("lib.remote-control.text_b9c433daf5") : result === "unknown"
+          ? $t("lib.remote-control.text_feb07de4c7") : $t("lib.remote-control.text_91d8812648"));
         return;
       }
 
@@ -173,7 +176,7 @@ export function createRemoteControl(root: string) {
       const bytes = await attachment.read(scope.signal);
       if (!bytes || bytes.byteLength > maxChatFileBytes ||
           (attachment.size !== undefined && attachment.size !== bytes.byteLength)) {
-        await reply("未能读取所附文件。");
+        await reply($t("lib.remote-control.text_8d3cefdcc6"));
         return;
       }
       if (!await stillAllowed()) return;
@@ -185,9 +188,9 @@ export function createRemoteControl(root: string) {
         const latest = readRemoteSettings(root);
         return latest.enabled && (!allowOverwrite || action === "远程上传覆盖" || latest.overwrite);
       });
-      await reply(written ? "远程上传已保存。" : "远程上传未能保存。");
+      await reply(written ? $t("lib.remote-control.text_aa4acee215") : $t("lib.remote-control.text_ce3eeec0ef"));
     } catch {
-      await reply("远程运维未能完成，请在本机核对配置、权限或目标。");
+      await reply($t("lib.remote-control.text_2c4147eb01"));
     } finally {
       busy = false;
     }

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { AcquireRoleArchiveLock } from "@lotus-yunzai/storage";
 import type { CommandModule, MessageFallbackContext } from "./commands.ts";
 import type { MessageEvent } from "./messages.ts";
@@ -8,7 +11,7 @@ import {
 
 const waitingTime = 120_000;
 const maxWaitingPerConnection = 128;
-const features = { gs: "[genshin] 角色别名", sr: "[starrail] 角色别名" };
+const features = { gs: $t("lib.legacy-character-alias-command.text_09d85755e1"), sr: $t("lib.legacy-character-alias-command.text_80d2e191e6") };
 const cancel = /^(?:取消|#取消(?:设置)?(?:别名|昵称))$/u;
 const activeId = (id: number | undefined): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0;
 type Conversation = Pick<MessageFallbackContext, "normalizedMessage" | "isDelegated" | "self_id" | "user_id" |
@@ -104,7 +107,7 @@ export function legacyCharacterAliasCommands(lockFile: AcquireRoleArchiveLock, s
       if (command?.type === "list") {
         const result = await store.find(command.game, command.name).catch(() => undefined);
         if (!result || signal.aborted) return;
-        const senderName = `${result.role}别名，${result.aliases.length}个`;
+        const senderName = $t("lib.legacy-character-alias-command.text_3df75a0d0d", { "role": result.role, "length": result.aliases.length });
         return { type: "forward", senderName, nodes: [`${senderName}\n${result.aliases.map((alias, index) => `${index + 1}.${alias}`).join("\n").slice(0, 3_000)}`] };
       }
       const session = scope(context);
@@ -113,7 +116,7 @@ export function legacyCharacterAliasCommands(lockFile: AcquireRoleArchiveLock, s
         const next = matchedWaits.get(context);
         if (!next || next.entry.expiry.aborted || next.waits.get(next.key) !== next.entry) return;
         next.waits.delete(next.key);
-        if (next.input.cancel) return "已取消设置角色别名。";
+        if (next.input.cancel) return $t("lib.legacy-character-alias-command.text_e28e2ef535");
         const { game, role } = next.entry;
         return store.run({ game, type: "legacy-set", role, aliases: next.input.aliases }, context, {
           permitted: () => permitted(context, game, next.entry.expiry),
@@ -127,17 +130,17 @@ export function legacyCharacterAliasCommands(lockFile: AcquireRoleArchiveLock, s
           active: () => !session.connection.aborted,
         });
       }
-      if (!await canWrite()) return "暂无权限修改角色别名。";
+      if (!await canWrite()) return $t("lib.legacy-character-alias-command.text_0462c6f2f5");
       const result = await store.find(command.game, command.name).catch(() => undefined);
-      if (!result) return "未找到该角色。";
+      if (!result) return $t("lib.legacy-character-alias-command.text_c04eb817a5");
       if (session.connection.aborted || signal.aborted) return;
       const waits = pending.get(session.connection) ?? new Map<string, Pending>();
       for (const [key, entry] of waits) if (entry.expiry.aborted) waits.delete(key);
-      if (!waits.has(session.key) && waits.size >= maxWaitingPerConnection) return "当前等待设置的请求过多，请稍后重试。";
+      if (!waits.has(session.key) && waits.size >= maxWaitingPerConnection) return $t("lib.legacy-character-alias-command.text_9f77689760");
       const expiry = AbortSignal.any([session.connection, signal, AbortSignal.timeout(waitingTime)]);
       waits.set(session.key, { game: command.game, role: result.role, expiry });
       pending.set(session.connection, waits);
-      return `请发送${result.role}别名，多个用空格隔开。发送“取消”可退出。`;
+      return $t("lib.legacy-character-alias-command.text_7b91b3293c", { "role": result.role });
     },
   };
 }

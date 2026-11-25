@@ -1,3 +1,4 @@
+import "../lib/i18n-preload.ts";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { CaptchaBusinessRejectedError, getDefaultCaptchaSolver, withoutReadRetries } from "@lotus-yunzai/hoyo-client";
 import { createHash } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
@@ -48,12 +51,12 @@ const targets = {
   genshin: "gs", honkai_sr: "sr", zzz: "zzz", tears_of_themis: "nxx", honkai3rd: "bh3", honkai2: "bh2",
 } as const satisfies Readonly<Record<CheckinScheduleGame, CnGameCheckinSource["game"]>>;
 const labels = [
-  ["原神", "genshin", "2"], ["崩坏2", "honkai2", "3"], ["崩坏3", "honkai3rd", "1"],
-  ["未定事件簿", "tears_of_themis", "4"], ["大别野", "", "5"], ["星铁", "honkai_sr", "6"],
-  ["绝区零", "zzz", "8"], ["因缘精灵", "hna", "9"], ["星布谷地", "", "10"],
+  [$t("lib.game-checkin-commands.text_d1597c51ed"), "genshin", "2"], [$t("lib.game-checkin-commands.text_7deeae4b7e"), "honkai2", "3"], [$t("lib.game-checkin-commands.text_6d3d8653d7"), "honkai3rd", "1"],
+  [$t("lib.game-checkin-commands.text_a6e4fbed57"), "tears_of_themis", "4"], [$t("lib.game-checkin-commands.text_102f77a733"), "", "5"], [$t("lib.game-checkin-commands.text_a2927891f0"), "honkai_sr", "6"],
+  [$t("lib.game-checkin-commands.text_b1110352c9"), "zzz", "8"], [$t("lib.game-checkin-commands.text_467c7ad0b9"), "hna", "9"], [$t("lib.game-checkin-commands.text_6f70b509e8"), "", "10"],
 ] as const;
 const gameDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" });
-const changed = "档案已变更，请重新发起签到。";
+const changed = $t("lib.game-checkin-commands.text_0f8bfc9c7b");
 type Settings = Awaited<ReturnType<ReturnType<typeof createProfileStore>["checkinSettings"]>>;
 type CheckinCount = keyof NonNullable<CheckinAuditEntry["counts"]>;
 type ManualRelay = Pick<ReturnType<typeof createManualCaptchaRelay>, "register" | "readResult">;
@@ -68,18 +71,28 @@ function completedRun(stage: CheckinAuditEntry["stage"], ok: boolean, reply?: Me
 }
 
 function rowsFor(settings: Settings) {
-  return labels.map(([label, key, forum]) => ({
-    label, key, forum,
-    game: key ? (settings.games[key]?.enabled ? "未执行" : "关闭") : "无",
-    community: settings.communityForums.includes(forum) ? "未执行" : "关闭",
-  }));
+  return labels.map(([label, key, forum]) => {
+    let gamePending = Boolean(key && settings.games[key]?.enabled);
+    let communityPending = settings.communityForums.includes(forum);
+    let game = key ? (gamePending ? $t("lib.game-checkin-commands.text_231fe22042") : $t("lib.game-checkin-commands.text_3fd47edce4")) : $t("lib.game-checkin-commands.text_484d556139");
+    let community = communityPending ? $t("lib.game-checkin-commands.text_231fe22042") : $t("lib.game-checkin-commands.text_3fd47edce4");
+    return {
+      label, key, forum,
+      get gamePending() { return gamePending; },
+      get communityPending() { return communityPending; },
+      get game() { return game; },
+      set game(value: string) { game = value; gamePending = false; },
+      get community() { return community; },
+      set community(value: string) { community = value; communityPending = false; },
+    };
+  });
 }
 
 function bbsIssue(error: unknown) {
   if (error instanceof CaptchaBusinessRejectedError) return error.message;
   if (error instanceof BbsCheckinRequestError) return error.message;
   if (error instanceof HoyoRequestError && error.code === "invalid-input") return error.message;
-  return "米游社社区签到暂未完成，请在官方客户端核对。";
+  return $t("lib.game-checkin-commands.text_7ae7a2707b");
 }
 
 function bbsReadMayRetry(error: unknown) {
@@ -96,16 +109,16 @@ function checkinRoleReadMayRetry(error: unknown): error is HoyoRequestError {
 function bbsPoints(state: BbsMissionState, receivedBefore?: number) {
   const lines: string[] = [];
   if (receivedBefore !== undefined && state.receivedPoints !== undefined && state.receivedPoints >= receivedBefore) {
-    lines.push(`本轮期间新增：${state.receivedPoints - receivedBefore}`);
+    lines.push($t("lib.game-checkin-commands.text_b6f4a0ed1b", { "value1": state.receivedPoints - receivedBefore }));
   }
-  if (state.totalPoints !== undefined) lines.push(`当前余额：${state.totalPoints}`);
+  if (state.totalPoints !== undefined) lines.push($t("lib.game-checkin-commands.text_a38c404360", { "totalPoints": state.totalPoints }));
   if (state.receivedPoints !== undefined) {
-    lines.push(`今日已领取：${state.receivedPoints}${state.todayTotalPoints === undefined ? "" : `/${state.todayTotalPoints}`}`);
+    lines.push($t("lib.game-checkin-commands.text_98b7799b87", { "receivedPoints": state.receivedPoints, "value2": state.todayTotalPoints === undefined ? "" : `/${state.todayTotalPoints}` }));
   }
   return lines.join("\n");
 }
 
-function outcome(rows: readonly GameCheckinResult[], officialClient = "米游社") {
+function outcome(rows: readonly GameCheckinResult[], officialClient = $t("lib.game-checkin-commands.text_6ca05b2485")) {
   const unconfirmed = rows.filter(row => row.status === "unconfirmed").length;
   const failed = rows.filter(row => row.status === "failed").length;
   const firstBind = rows.filter(row => row.status === "first-bind").length;
@@ -113,16 +126,17 @@ function outcome(rows: readonly GameCheckinResult[], officialClient = "米游社
   const reasons = new Set<string>();
   for (const row of rows) {
     if (row.status !== "failed" || !(row.error instanceof GameRecordRequestError)) continue;
-    reasons.add({ risk: `需要在${officialClient}完成验证`, expired: "Cookie 已过期", "rate-limited": "请求频繁",
-      account: "米游社账号异常" }[row.error.reason]);
+    reasons.add({ risk: $t("lib.game-checkin-commands.text_68da06d2ec", { "officialClient": officialClient }), expired: $t("lib.game-checkin-commands.text_18cfa9fd55"), "rate-limited": $t("lib.game-checkin-commands.text_4ca522dfe8"),
+      account: $t("lib.game-checkin-commands.text_0adc48c24f") }[row.error.reason]);
   }
-  const unsent = (firstBind ? [`首次绑定需在${officialClient}签到`] : []).concat([...reasons]);
-  if (unconfirmed) return { label: "未确认", reason: [`提交结果未确认，请在${officialClient}核对`, ...unsent].join("，") };
+  const unsent = (firstBind ? [$t("lib.game-checkin-commands.text_285cb231e6", { "officialClient": officialClient })] : []).concat([...reasons]);
+  if (unconfirmed) return { label: $t("lib.game-checkin-commands.text_c098e854e6"), reason: [$t("lib.game-checkin-commands.text_0e7f6f8bdf", { "officialClient": officialClient }), ...unsent].join("，"), genericFailure: false };
   if (failed || firstBind) return {
-    label: failed ? "失败" : "首次绑定",
-    reason: [...unsent, ...(signed ? [`${signed} 个角色已签到`] : [])].join("，") || "部分角色签到失败",
+    label: failed ? $t("lib.game-checkin-commands.text_28384d7afd") : $t("lib.game-checkin-commands.text_08fcbb5ef4"),
+    reason: [...unsent, ...(signed ? [$t("lib.game-checkin-commands.text_d24d228628", { "signed": signed })] : [])].join("，") || $t("lib.game-checkin-commands.text_83f284063b"),
+    genericFailure: unsent.length === 0 && signed === 0,
   };
-  return { label: signed ? "成功" : "已完成" };
+  return { label: signed ? $t("lib.game-checkin-commands.text_053461ce86") : $t("lib.game-checkin-commands.text_f28461bb49"), genericFailure: false };
 }
 
 export function gameCheckinCommands(directory: string | undefined, lifecycleSignal: AbortSignal,
@@ -159,16 +173,17 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   }
 
   async function receipt(settings: Settings, profileId: number, rows: CheckinReceiptCardModel["rows"],
-    notes: readonly string[], { points, cloud, textOnly }: { readonly points?: string; readonly cloud?: string;
+    notes: readonly string[], { points, cloud, cloudHasZzz = false, textOnly }: { readonly points?: string; readonly cloud?: string;
+      readonly cloudHasZzz?: boolean;
       readonly textOnly?: boolean } = {}) {
     const extras = [points, cloud].filter(Boolean).join("\n");
-    const text = () => [`档案 ${profileId} · 签到结果`, ...rows.map(({ label, game, community }) =>
-      `${label} · 游戏 ${game} · 社区 ${community}`), ...notes, ...(extras ? [extras] : [])].join("\n");
+    const text = () => [$t("lib.game-checkin-commands.text_896112d097", { "profileId": profileId }), ...rows.map(({ label, game, community }) =>
+      $t("lib.game-checkin-commands.text_ab750459d3", { "label": label, "game": game, "community": community })), ...notes, ...(extras ? [extras] : [])].join("\n");
     if (textOnly) return text();
     try {
       const detail: CheckinReceiptCardModel["detail"] = notes.length
-        ? { title: "失败", message: [notes.join("\n").slice(0, 180), cloud].filter(Boolean).join("\n") }
-        : extras ? { title: points ? "米游币" : cloud?.includes("云绝区零") ? "云游戏" : "云原神", message: extras } : undefined;
+        ? { title: $t("lib.game-checkin-commands.text_28384d7afd"), message: [notes.join("\n").slice(0, 180), cloud].filter(Boolean).join("\n") }
+        : extras ? { title: points ? $t("lib.game-checkin-commands.text_3f1ac515d8") : cloudHasZzz ? $t("lib.game-checkin-commands.text_0e1f644c82") : $t("lib.game-checkin-commands.text_8d17468984"), message: extras } : undefined;
       const { png } = await renderReceipt({ displayName: settings.displayName, profileId, rows, detail },
         { resourceDirectory: Bun.env.LOTUS_PASSPORT_QR_RESOURCES?.trim() || undefined });
       if (png.byteLength && png.byteLength <= 16 * 1024 * 1024) return segment.image(png);
@@ -190,9 +205,9 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           signal, verify: verifyCurrent, context: { qq: source.qq, profileId: source.profileId },
           allowManual,
           notify: notify ? event => notify(event.type === "manual"
-            ? `请打开链接完成${label}签到的人工验证。链接只可使用一次。\n${event.link}`
-            : event.type === "automatic" ? `正在自动验证${label}签到。`
-            : event.type === "accepted" ? "验证已通过，继续处理签到。" : "验证未通过，请重新发送原指令。") : undefined,
+            ? $t("lib.game-checkin-commands.text_6f04dd9a3c", { "label": label, "link": event.link })
+            : event.type === "automatic" ? $t("lib.game-checkin-commands.text_3fc0689653", { "label": label })
+            : event.type === "accepted" ? $t("lib.game-checkin-commands.text_1787d8c657") : $t("lib.game-checkin-commands.text_0e80a9f1c5")) : undefined,
           async challenge() {
             if (first) { first = false; return error.challenge; }
             const state = await client.fetchCnGameCheckinInfo(source, { signal, recoverCookie: false });
@@ -235,7 +250,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const registration = await relay.register(error.challenge, signal);
       if (!registration) throw error;
       await verifyCurrent();
-      if (await notify(`请打开链接完成${label}签到的人工验证。链接只可使用一次。\n${registration.link}`) === false) throw error;
+      if (await notify($t("lib.game-checkin-commands.text_6f04dd9a3c", { "label": label, "link": registration.link })) === false) throw error;
       while (Date.now() < registration.expiresAt) {
         await setTimeout(Math.min(1_500, Math.max(1, registration.expiresAt - Date.now())), undefined, { signal });
         await verifyCurrent();
@@ -277,7 +292,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       try {
         await audit?.append({ qq, profileId, stage, ok, source: input.source, counts });
       } catch {
-        console.warn("[签到] 无法保存签到审计。");
+        console.warn($t("lib.game-checkin-commands.text_64198c77ef"));
       }
     };
     const count = (status: keyof typeof counts) => { counts[status] = (counts[status] ?? 0) + 1; };
@@ -301,12 +316,12 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       if (signal.aborted) return { status: "busy" };
       await auditResult("precheck", false);
       if (error instanceof ProfileError && (error.code === "missing" || error.code === "login-required")) {
-        return completedRun("precheck", false, `请先登录档案 ${profileId}。`, knownRevision);
+        return completedRun("precheck", false, $t("lib.game-checkin-commands.text_76720712c8", { "profileId": profileId }), knownRevision);
       }
-      return completedRun("precheck", false, "无法读取签到档案。", knownRevision);
+      return completedRun("precheck", false, $t("lib.game-checkin-commands.text_009b08b3ab"), knownRevision);
     }
     const key = account.account.ltuid || account.account.stuid || `${qq}/${profileId}`;
-    if (active.has(key)) return { status: "busy", reply: "此账号的签到正在执行。" };
+    if (active.has(key)) return { status: "busy", reply: $t("lib.game-checkin-commands.text_475bfb3a5f") };
     active.add(key);
     let revision = account.revision;
     try {
@@ -314,7 +329,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         signal.throwIfAborted();
         input.verifyDay?.();
         if (gameDay.format(Date.now()) !== startedDay) {
-          throw new HoyoRequestError("profile-changed", "签到日期已切换，请重新签到。");
+          throw new HoyoRequestError("profile-changed", $t("lib.game-checkin-commands.text_792d480123"));
         }
       }
       async function verifyCurrent() {
@@ -327,25 +342,25 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const captchaOptions = {
         allowManualCaptcha: input.source === "manual", verifyBinding: verifyCurrent,
         notifyCaptcha: input.notify ? (event: import("@lotus-yunzai/hoyo-client").CaptchaEvent) => input.notify!(
-          event.type === "manual" ? `请打开链接完成签到验证。\n${event.link}` :
-          event.type === "automatic" ? "正在自动验证签到。" :
-          event.type === "accepted" ? "验证已通过，继续处理签到。" : "验证未通过，请重新发送原指令。") : undefined,
+          event.type === "manual" ? $t("lib.game-checkin-commands.text_4d294c8744", { "link": event.link }) :
+          event.type === "automatic" ? $t("lib.game-checkin-commands.text_bc666af15a") :
+          event.type === "accepted" ? $t("lib.game-checkin-commands.text_1787d8c657") : $t("lib.game-checkin-commands.text_0e80a9f1c5")) : undefined,
       };
       const { manualTarget } = input;
       let rows = rowsFor(settings);
       const notes: string[] = [];
       if (manualTarget?.kind === "game") {
         rows = rows.filter(row => row.key === manualTarget.game);
-        for (const row of rows) row.community = "不在本轮";
+        for (const row of rows) row.community = $t("lib.game-checkin-commands.text_ba0071bf1e");
         if (!settings.games[manualTarget.game]?.enabled) {
-          notes.push("此档案未开启所选国服游戏签到。");
+          notes.push($t("lib.game-checkin-commands.text_540de5ee53"));
           count("failed");
         }
       } else if (manualTarget?.kind === "community") {
         rows = rows.filter(row => row.forum === manualTarget.forum);
-        for (const row of rows) row.game = "不在本轮";
+        for (const row of rows) row.game = $t("lib.game-checkin-commands.text_ba0071bf1e");
         if (!settings.communityForums.includes(manualTarget.forum)) {
-          notes.push("此档案未开启所选社区分区签到。");
+          notes.push($t("lib.game-checkin-commands.text_4f0aff19c9"));
           count("failed");
         }
       }
@@ -364,7 +379,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         await verifyCurrent();
         await auditResult("precheck", false);
         await verifyCurrent();
-        return completedRun("precheck", false, "待恢复的签到对应原账号，当前档案已换绑。", revision);
+        return completedRun("precheck", false, $t("lib.game-checkin-commands.text_d667c3be79"), revision);
       }
       const communityAccountKey = input.communityAccountKey ?? accountKey;
       const gameJournal = manualTarget?.kind === "community" ? undefined : input.gameWrites;
@@ -375,7 +390,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         await verifyCurrent();
         await auditResult("precheck", false);
         await verifyCurrent();
-        return completedRun("precheck", false, "游戏签到提交记录对应原账号，当前档案已换绑。", revision);
+        return completedRun("precheck", false, $t("lib.game-checkin-commands.text_8bf8c1c0ba"), revision);
       }
       const previousUnconfirmed = new Set(Object.entries(gameJournal?.previous ?? {})
         .filter(([key, state]) => (state === "pending" || state === "unconfirmed") &&
@@ -413,7 +428,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         }
         return result;
       }
-      const gameRows = rows.filter(row => row.game === "未执行" && Object.hasOwn(targets, row.key) &&
+      const gameRows = rows.filter(row => row.gamePending && Object.hasOwn(targets, row.key) &&
         (!retrying || gameScope?.includes(row.key as CheckinScheduleGame)));
       if (input.announceStart) {
         await verifyCurrent();
@@ -423,33 +438,33 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const retryForums: string[] = [];
       const retryGames: CheckinScheduleGame[] = [];
       const hna = rows.find(row => row.key === "hna");
-      if (includeAllServices && hna?.game === "未执行") {
-        hna.game = "跳过";
+      if (includeAllServices && hna?.gamePending) {
+        hna.game = $t("lib.game-checkin-commands.text_fc50a99caa");
         count("skipped");
       }
       if (retrying) {
         for (const row of rows) {
-          if (row.game === "未执行" && !gameRows.includes(row)) row.game = "首轮已处理";
-          if (row.community === "未执行" && !scoped?.includes(row.forum)) row.community = "不在本轮";
+          if (row.gamePending && !gameRows.includes(row)) row.game = $t("lib.game-checkin-commands.text_d7c6c11ace");
+          if (row.communityPending && !scoped?.includes(row.forum)) row.community = $t("lib.game-checkin-commands.text_ba0071bf1e");
         }
         if (gameScope && gameRows.length !== gameScope.length) {
-          notes.push("当前档案已关闭部分或全部待补跑游戏。");
+          notes.push($t("lib.game-checkin-commands.text_2f183c3384"));
           count("failed");
         }
       }
       async function runCommunity() {
-        const selected = rows.filter(row => row.community === "未执行");
+        const selected = rows.filter(row => row.communityPending);
         if (scoped && selected.length !== scoped.length) {
-          notes.push("当前档案已关闭部分或全部待补跑分区。");
+          notes.push($t("lib.game-checkin-commands.text_5d8bbf9ad0"));
           count("failed");
         }
         if (!selected.length) return;
         const journal = input.communityWrites;
         function deferRemaining() {
-          for (const waiting of selected.filter(item => item.community === "未执行")) {
+          for (const waiting of selected.filter(item => item.communityPending)) {
             const previous = journal?.previous[waiting.forum];
             if (previous && previous !== "retryable") continue;
-            waiting.community = "暂缓";
+            waiting.community = $t("lib.game-checkin-commands.text_91819bb3f1");
             retryForums.push(waiting.forum);
           }
         }
@@ -460,20 +475,20 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           await verifyCurrent();
           const previous = journal?.previous[row.forum];
           if (previous === "already" || previous === "accepted") {
-            row.community = previous === "already" ? "已签到" : "已受理";
+            row.community = previous === "already" ? $t("lib.game-checkin-commands.text_21c05833ab") : $t("lib.game-checkin-commands.text_ecbe5b91b8");
             count(previous === "already" ? "community-already" : "community-accepted");
             continue;
           }
           if (previous === "retryable" && !scoped && input.source !== "manual") {
             deferRemaining();
-            notes.push("上次请求遇到限流，待社区补跑。");
+            notes.push($t("lib.game-checkin-commands.text_931144a60e"));
             break;
           }
           if (previous && previous !== "retryable" && (previous !== "rejected" || input.source !== "manual")) {
             const rejected = previous === "rejected" || previous === "blocked";
-            row.community = rejected ? "失败" : "未确认";
+            row.community = rejected ? $t("lib.game-checkin-commands.text_28384d7afd") : $t("lib.game-checkin-commands.text_c098e854e6");
             count(rejected ? "failed" : "unconfirmed");
-            notes.push(`${row.label}社区：${rejected ? "上次提交已失败。" : "上次提交结果未确认，请在官方客户端核对。"}`);
+            notes.push($t("lib.game-checkin-commands.text_3d916a2386", { "label": row.label, "value2": rejected ? $t("lib.game-checkin-commands.text_290dffbc4d") : $t("lib.game-checkin-commands.text_cfde2cdd92") }));
             if (previous === "pending" || previous === "unconfirmed") {
               if (input.source === "manual") continue;
               deferRemaining();
@@ -503,8 +518,8 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
               if (journal && bbsReadMayRetry(error)) {
                 deferRemaining();
               } else {
-                for (const waiting of selected.filter(item => item.community === "未执行")) {
-                  waiting.community = "失败";
+                for (const waiting of selected.filter(item => item.communityPending)) {
+                  waiting.community = $t("lib.game-checkin-commands.text_28384d7afd");
                   count("failed");
                 }
               }
@@ -522,7 +537,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             if (journal && error instanceof BbsCheckinRequestError && error.status === 429 && error.reason === "rate-limited") {
               await journal.settle(row.forum, "retryable");
               deferRemaining();
-              notes.push(`${row.label}社区：${bbsIssue(error)}`);
+              notes.push($t("lib.game-checkin-commands.text_3d916a2386", { "label": row.label, "value2": bbsIssue(error) }));
               break;
             }
             const explicit = error instanceof BbsCheckinRequestError ||
@@ -530,9 +545,9 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             const blocked = !(error instanceof CaptchaBusinessRejectedError) &&
               (!(error instanceof HoyoRequestError) || error instanceof BbsCheckinRequestError || error.code !== "api");
             await journal?.settle(row.forum, explicit ? (blocked ? "blocked" : "rejected") : "unconfirmed");
-            row.community = explicit ? "失败" : "未确认";
+            row.community = explicit ? $t("lib.game-checkin-commands.text_28384d7afd") : $t("lib.game-checkin-commands.text_c098e854e6");
             count(explicit ? "failed" : "unconfirmed");
-            notes.push(`${row.label}社区：${bbsIssue(error)}`);
+            notes.push($t("lib.game-checkin-commands.text_3d916a2386", { "label": row.label, "value2": bbsIssue(error) }));
             if (blocked) {
               if (journal && !explicit) deferRemaining();
               break;
@@ -541,12 +556,12 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           }
           await verifyCurrent();
           await journal?.settle(row.forum, result);
-          row.community = result === "accepted" ? "已受理" : "已签到";
+          row.community = result === "accepted" ? $t("lib.game-checkin-commands.text_ecbe5b91b8") : $t("lib.game-checkin-commands.text_21c05833ab");
           accepted ||= result === "accepted";
           count(result === "accepted" ? "community-accepted" : "community-already");
         }
         for (const row of selected) {
-          if (row.community === "未执行") row.community = "跳过";
+          if (row.communityPending) row.community = $t("lib.game-checkin-commands.text_fc50a99caa");
         }
         let receivedBefore: number | undefined;
         if (accepted) {
@@ -569,7 +584,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         } catch {
           await verifyCurrent();
           await auditResult("refresh", false);
-          const reply = await receipt(settings, profileId, rows, ["签到前刷新登录失败，请重新扫码登录对应档案。"],
+          const reply = await receipt(settings, profileId, rows, [$t("lib.game-checkin-commands.text_06fa237571")],
             { textOnly: input.textOnly });
           await verifyCurrent();
           return completedRun("refresh", false, reply, revision);
@@ -593,13 +608,13 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
                 (error instanceof HoyoRequestError && error.code === "profile-changed")) throw error;
             await verifyCurrent();
             if (scheduled && accountIdentity[2] && checkinRoleReadMayRetry(error)) {
-              row.game = "暂缓";
+              row.game = $t("lib.game-checkin-commands.text_91819bb3f1");
               retryGames.push(key);
-              notes.push(`${row.label}：角色查询暂未完成，等待当天签到补跑。`);
+              notes.push($t("lib.game-checkin-commands.text_11b59bee27", { "label": row.label }));
             } else {
-              row.game = "失败";
+              row.game = $t("lib.game-checkin-commands.text_28384d7afd");
               count("failed");
-              notes.push(`${row.label}：米游社角色查询未完成。`);
+              notes.push($t("lib.game-checkin-commands.text_048e977ee4", { "label": row.label }));
             }
             continue;
           }
@@ -607,7 +622,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           const blacklist = new Set(settings.games[row.key]?.blacklist);
           const eligible = roles.filter(role => !blacklist.has(role.uid));
           if (!eligible.length) {
-            row.game = "跳过";
+            row.game = $t("lib.game-checkin-commands.text_fc50a99caa");
             count("skipped");
             continue;
           }
@@ -640,17 +655,17 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
           if (overseas.status === "disabled") continue;
           const row = rows.find(item => item.key === game)!;
           if (overseas.status === "unverified") {
-            row.game += " · 国际服待绑定";
+            row.game += $t("lib.game-checkin-commands.text_3c02aa9cbe");
             count("failed");
-            const credential = game === "genshin" ? "HoYoLAB Cookie" : "包含活动登录凭据的 HoYoLAB Cookie";
-            notes.push(`${row.label}国际服：请先在私聊核验并绑定${credential}。`);
+            const credential = game === "genshin" ? "HoYoLAB Cookie" : $t("lib.game-checkin-commands.text_2d591e285a");
+            notes.push($t("lib.game-checkin-commands.text_ca9afbbf97", { "label": row.label, "credential": credential }));
             continue;
           }
           const overseasKey = `${overseas.realm}/${overseas.accountId}/${game}`;
           if (activeOverseas.has(overseasKey)) {
-            row.game += " · 国际服处理中";
+            row.game += $t("lib.game-checkin-commands.text_8ddb49e744");
             count("failed");
-            notes.push(`${row.label}国际服：同账号签到正在执行。`);
+            notes.push($t("lib.game-checkin-commands.text_7b55292bc1", { "label": row.label }));
             continue;
           }
           activeOverseas.add(overseasKey);
@@ -659,9 +674,9 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
               allowManualCaptcha: input.source === "manual",
               captchaContext: { qq, profileId },
               notifyCaptcha: input.notify ? (event: import("@lotus-yunzai/hoyo-client").CaptchaEvent) => input.notify!(
-                event.type === "manual" ? `请打开链接完成国际服签到验证。\n${event.link}` :
-                event.type === "automatic" ? "正在自动验证国际服签到。" :
-                event.type === "accepted" ? "验证已通过，继续处理签到。" : "验证未通过，请重新发送原指令。") : undefined,
+                event.type === "manual" ? $t("lib.game-checkin-commands.text_6366fc626c", { "link": event.link }) :
+                event.type === "automatic" ? $t("lib.game-checkin-commands.text_91ca20f28e") :
+                event.type === "accepted" ? $t("lib.game-checkin-commands.text_1787d8c657") : $t("lib.game-checkin-commands.text_0e80a9f1c5")) : undefined,
             };
             const blocked = new Set(overseas.blacklist);
             const results: GameCheckinResult[] = [];
@@ -688,21 +703,22 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
             }
             await verifyCurrent();
             if (!results.length) {
-              row.game += " · 国际服跳过";
+              row.game += $t("lib.game-checkin-commands.text_ca993efa52");
               count("skipped");
               continue;
             }
             for (const result of results) count(result.status);
             const finished = outcome(results, "HoYoLAB");
-            row.game += ` · 国际服${finished.label}`;
-            if (finished.reason) notes.push(`${row.label}国际服：${finished.reason}`);
+            row.game += $t("lib.game-checkin-commands.text_4ea06d53f2", { "label": finished.label });
+            if (finished.reason) notes.push($t("lib.game-checkin-commands.text_18df483061", { "label": row.label, "reason": finished.reason }));
           } catch (error) {
             if (error instanceof CheckinScheduleWriteError) throw error;
             await verifyCurrent();
-            row.game += " · 国际服失败";
+            row.game += $t("lib.game-checkin-commands.text_c13abbfa86");
             count("failed");
-            const reason = outcome([{ status: "failed", error }], "HoYoLAB").reason;
-            notes.push(`${row.label}国际服：${reason === "部分角色签到失败" ? "无法读取账号角色目录" : reason}`);
+            const failed = outcome([{ status: "failed", error }], "HoYoLAB");
+            const reason = failed.reason;
+            notes.push($t("lib.game-checkin-commands.text_f8fda39995", { "label": row.label, "value2": failed.genericFailure ? $t("lib.game-checkin-commands.text_f6423b8ee8") : reason }));
           } finally {
             activeOverseas.delete(overseasKey);
           }
@@ -710,18 +726,19 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       }
       const points = await runCommunity();
       let cloud: string | undefined;
+      let cloudHasZzz = false;
       if (includeAllServices) {
         const { wallets, revision: walletRevision } = await profiles.cloudCheckin(qq, profileId);
         await verifyCurrent();
         if (walletRevision !== revision) throw new ProfileError("changed", changed);
         const balances: string[] = [];
-        const minutes = (value?: number) => value === undefined ? "未知" : `${value} 分钟`;
+        const minutes = (value?: number) => value === undefined ? $t("lib.game-checkin-commands.text_4d8c1c5b42") : $t("lib.game-checkin-commands.text_e39df381b0", { "value": value });
         for (const wallet of wallets) {
           const { game, token } = wallet;
-          const name = game === "genshin-os" ? "云原神国际服" : game === "genshin" ? "云原神" : "云绝区零";
+          const name = game === "genshin-os" ? $t("lib.game-checkin-commands.text_801ae69555") : game === "genshin" ? $t("lib.game-checkin-commands.text_8d17468984") : $t("lib.game-checkin-commands.text_6e50693925");
           if (!token) {
             count("failed");
-            notes.push(game === "genshin-os" ? "请检查当前档案中的云原神国际服凭据。" : `请先在私聊绑定${name}凭据。`);
+            notes.push(game === "genshin-os" ? $t("lib.game-checkin-commands.text_6352502f5c") : $t("lib.game-checkin-commands.text_9a361d5730", { "name": name }));
             continue;
           }
           try {
@@ -730,23 +747,24 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
               const { language, deviceId, deviceModel, androidVersion } = wallet;
               const state = await client.readInternationalCloudGenshinWallet(token, { ...options, language, deviceId, deviceModel, androidVersion });
               await verifyCurrent();
-              balances.push(`${name}剩余免费时长：${minutes(state.freeTimeMinutes)}，本次赠送：${minutes(state.grantedMinutes)}`);
+              balances.push($t("lib.game-checkin-commands.text_22ffd657be", { "name": name, "value2": minutes(state.freeTimeMinutes), "value3": minutes(state.grantedMinutes) }));
             } else {
               const state = game === "genshin"
                 ? await client.readCloudGenshinWallet(token, { ...options, browserDeviceId: cloudDeviceId })
                 : await client.readCloudZzzWallet(token, options);
               await verifyCurrent();
-              balances.push(`${name}剩余免费时长：${minutes(state.freeTimeMinutes)}，本次赠送：${minutes(state.grantedMinutes)}`);
+              if (game === "zzz") cloudHasZzz = true;
+              balances.push($t("lib.game-checkin-commands.text_22ffd657be", { "name": name, "value2": minutes(state.freeTimeMinutes), "value3": minutes(state.grantedMinutes) }));
             }
           } catch (error) {
             await verifyCurrent();
             count("failed");
             if ((error instanceof CloudGenshinWalletError || error instanceof CloudZzzWalletError) && error.reason === "expired") {
-              notes.push(game === "genshin-os" ? "云原神国际服凭据已失效，请在官方客户端重新登录后更新档案。" : error.message);
+              notes.push(game === "genshin-os" ? $t("lib.game-checkin-commands.text_e340225c62") : error.message);
             } else if (error instanceof HoyoRequestError && error.code === "invalid-input") {
-              notes.push(game === "genshin-os" ? error.message : `请在私聊重新绑定${name}凭据。`);
+              notes.push(game === "genshin-os" ? error.message : $t("lib.game-checkin-commands.text_90247ab1b7", { "name": name }));
             } else {
-              notes.push(`暂时无法读取${name}剩余免费时长。`);
+              notes.push($t("lib.game-checkin-commands.text_32d6b652e0", { "name": name }));
             }
           }
         }
@@ -754,7 +772,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       }
       await verifyCurrent();
       if (gameJournal?.unknown || previousUnconfirmed.size) {
-        notes.push("还有旧游戏签到提交结果待核对，请在官方客户端查看。");
+        notes.push($t("lib.game-checkin-commands.text_3078faa95c"));
         count("unconfirmed");
       }
       const otherFailure = Boolean(counts.failed || counts["first-bind"] || counts.unconfirmed);
@@ -764,7 +782,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const ok = !otherFailure && !retry;
       await auditResult("checkin", ok);
       await verifyCurrent();
-      const reply = await receipt(settings, profileId, rows, notes, { points, cloud, textOnly: input.textOnly });
+      const reply = await receipt(settings, profileId, rows, notes, { points, cloud, cloudHasZzz, textOnly: input.textOnly });
       await verifyCurrent();
       return completedRun("checkin", ok, reply, revision, retry);
     } catch (error) {
@@ -774,7 +792,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       if (error instanceof HoyoRequestError && error.code === "profile-changed") return { status: "busy", reply: error.message };
       input.verifyDay?.();
       await auditResult("runner", false);
-      return completedRun("runner", false, "签到未完成，请核对米游社状态。", revision);
+      return completedRun("runner", false, $t("lib.game-checkin-commands.text_ad027b8bc6"), revision);
     } finally {
       active.delete(key);
     }
@@ -782,14 +800,14 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
 
   async function runManual(qq: string, profileId: number, input: Pick<Parameters<typeof runProfile>[2],
     "signal" | "verifySession" | "announceStart" | "notify" | "textOnly" | "manualTarget">): Promise<CheckinRun> {
-    if (!scheduleStore) return completedRun("precheck", false, "签到记录暂不可用。");
+    if (!scheduleStore) return completedRun("precheck", false, $t("lib.game-checkin-commands.text_d3fff0e390"));
     try {
       const run = await withManualCheckinJournals(scheduleStore, qq, profileId, input.signal,
         scope => runProfile(qq, profileId, { ...input, ...scope, source: "manual" }));
-      return run.acquired ? run.value : { status: "busy", reply: "有签到正在执行。" };
+      return run.acquired ? run.value : { status: "busy", reply: $t("lib.game-checkin-commands.text_3a56a978d2") };
     } catch (error) {
       if (input.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return { status: "busy" };
-      return completedRun("precheck", false, error instanceof CheckinScheduleWriteError ? error.message : "无法核对当天签到记录。");
+      return completedRun("precheck", false, error instanceof CheckinScheduleWriteError ? error.message : $t("lib.game-checkin-commands.text_4aacd0bf2d"));
     }
   }
 
@@ -799,12 +817,12 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       const match = manual.exec(context.normalizedMessage);
       if (!match || lifecycleSignal.aborted) return;
       const profileId = Number(match[1] ?? 1);
-      if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
-      if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return "请从 QQ 会话发送签到指令。";
+      if (profileId > MAX_PROFILE_ID) return $t("lib.game-checkin-commands.text_3dd62228d2");
+      if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return $t("lib.game-checkin-commands.text_299c3dbb1f");
       const connection = context.privateCredentialSignal;
       const result = await runManual(String(context.user_id), profileId, {
         signal: connection ? AbortSignal.any([lifecycleSignal, connection]) : lifecycleSignal,
-        announceStart: () => context.reply(`开始执行档案 ${profileId} 签到。`),
+        announceStart: () => context.reply($t("lib.game-checkin-commands.text_df8610f26e", { "profileId": profileId })),
         notify: context.message_type === "private" ? message => context.reply(message) : undefined,
       });
       return result.reply;
@@ -817,7 +835,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       readonly signal: AbortSignal; readonly verifySession: () => Promise<void>;
       readonly notify?: (message: string) => unknown;
     }) {
-      if (command.profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
+      if (command.profileId > MAX_PROFILE_ID) return $t("lib.game-checkin-commands.text_3dd62228d2");
       const result = await runManual(qq, command.profileId, {
         signal: AbortSignal.any([lifecycleSignal, signal]), verifySession, notify, manualTarget: command.target,
       });

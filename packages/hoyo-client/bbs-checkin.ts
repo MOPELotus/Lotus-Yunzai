@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { withMiyousheCaptcha } from "./captcha-business.ts";
 import type { CaptchaEvent } from "./captcha.ts";
 import { createHash, randomInt } from "node:crypto";
@@ -7,8 +10,8 @@ import { HoyoRequestError } from "./errors.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 
 export const bbsCheckinForums = Object.freeze({
-  "1": "崩坏3", "2": "原神", "3": "崩坏2", "4": "未定事件簿", "5": "大别野",
-  "6": "星铁", "8": "绝区零", "9": "因缘精灵", "10": "星布谷地",
+  "1": $t("bbs-checkin.text_6d3d8653d7"), "2": $t("bbs-checkin.text_d1597c51ed"), "3": $t("bbs-checkin.text_7deeae4b7e"), "4": $t("bbs-checkin.text_a6e4fbed57"), "5": $t("bbs-checkin.text_102f77a733"),
+  "6": $t("bbs-checkin.text_a2927891f0"), "8": $t("bbs-checkin.text_b1110352c9"), "9": $t("bbs-checkin.text_467c7ad0b9"), "10": $t("bbs-checkin.text_6f70b509e8"),
 } as const);
 
 export type BbsCheckinForum = keyof typeof bbsCheckinForums;
@@ -46,10 +49,10 @@ type CheckinReason = "cookie-expired" | "login-expired" | "risk" | "rate-limited
 export class BbsCheckinRequestError extends HoyoRequestError {
   constructor(readonly reason: CheckinReason, status: number, retcode?: number) {
     super(status >= 400 ? "http" : "api", {
-      "cookie-expired": "社区任务 Cookie 已失效。",
-      "login-expired": "社区签到登录凭据已失效，请重新登录当前档案。",
-      risk: "社区请求需要在米游社官方客户端处理。",
-      "rate-limited": "社区请求过于频繁，请稍后重试。",
+      "cookie-expired": $t("bbs-checkin.text_45d2c60d6a"),
+      "login-expired": $t("bbs-checkin.text_4bcf485973"),
+      risk: $t("bbs-checkin.text_1a05b73370"),
+      "rate-limited": $t("bbs-checkin.text_6aa3df09b8"),
     }[reason], status, retcode);
   }
 }
@@ -67,11 +70,11 @@ const riskCodes = [1034, 10035, 10041];
 type Json = Record<string, unknown>;
 
 function invalidCredentials(): never {
-  throw new HoyoRequestError("invalid-input", "社区签到需要归属一致的档案登录凭据。");
+  throw new HoyoRequestError("invalid-input", $t("bbs-checkin.text_ce007da6aa"));
 }
 
 function invalidResponse(writing: boolean): never {
-  throw new HoyoRequestError("response", writing ? "社区签到提交结果未确认。" : "官方社区任务状态响应无效。");
+  throw new HoyoRequestError("response", writing ? $t("bbs-checkin.text_a361440f2b") : $t("bbs-checkin.text_c309ee4cda"));
 }
 
 function cookieFields(raw: string): Map<string, string> {
@@ -131,7 +134,7 @@ function headersFor({ device }: ProfileAccountContext, cookie: string, body: str
   const writing = body !== undefined;
   const validDevice = (value: string) => /^[A-Za-z0-9_-]{1,128}$/u.test(value);
   if (writing && (!validDevice(device.id) || !validDevice(device.fp))) {
-    throw new HoyoRequestError("invalid-input", "社区签到需要配对的设备 ID 与已签发的 FP。");
+    throw new HoyoRequestError("invalid-input", $t("bbs-checkin.text_848515a190"));
   }
   const time = Math.floor(Date.now() / 1000);
   const nonce = writing ? randomInt(100001, 200000) :
@@ -234,9 +237,9 @@ async function request(source: ProfileAccountContext, transport: HoyoTransport, 
   const login = credentials(source, writing);
   const headers = headersFor(source, login.cookie, body);
   async function guard() {
-    if (signal?.aborted) throw new HoyoRequestError("transport", "社区请求已取消。");
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("bbs-checkin.text_6b273becc9"));
     await verifyProfile?.();
-    if (signal?.aborted) throw new HoyoRequestError("transport", "社区请求已取消。");
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("bbs-checkin.text_6b273becc9"));
   }
   await guard();
   const timeout = AbortSignal.timeout(15_000);
@@ -249,7 +252,7 @@ async function request(source: ProfileAccountContext, transport: HoyoTransport, 
     });
   } catch {
     await guard();
-    throw new HoyoRequestError("transport", writing ? "社区签到提交结果未确认。" : "社区任务状态暂时无法读取。");
+    throw new HoyoRequestError("transport", writing ? $t("bbs-checkin.text_a361440f2b") : $t("bbs-checkin.text_976c972591"));
   }
 
   const status = response.status;
@@ -283,7 +286,7 @@ async function request(source: ProfileAccountContext, transport: HoyoTransport, 
     throw new BbsCheckinRequestError(writing ? "login-expired" : "cookie-expired", status, retcode);
   }
   if (!response.ok) {
-    throw new HoyoRequestError("http", writing ? "社区签到提交结果未确认。" : "官方社区任务状态返回 HTTP 错误。", status, retcode);
+    throw new HoyoRequestError("http", writing ? $t("bbs-checkin.text_a361440f2b") : $t("bbs-checkin.text_14e683c3f2"), status, retcode);
   }
   if (retcode === undefined) invalidResponse(writing);
   if ((retcode === 0 || retcode === 1008) && payload?.data != null && !data) invalidResponse(writing);
@@ -292,7 +295,7 @@ async function request(source: ProfileAccountContext, transport: HoyoTransport, 
     if (writing && data.gids != null && data.gids !== forum && data.gids !== Number(forum)) invalidResponse(true);
   }
   if (writing && retcode === 1008) return { already: true };
-  if (retcode !== 0) throw new HoyoRequestError("api", "官方社区接口拒绝请求。", status, retcode);
+  if (retcode !== 0) throw new HoyoRequestError("api", $t("bbs-checkin.text_c8412f7c1d"), status, retcode);
   return { data };
 }
 
@@ -308,7 +311,7 @@ export async function readBbsMissionState(source: ProfileAccountContext, transpo
 export async function submitBbsCheckin(source: ProfileAccountContext, transport: HoyoTransport, forum: BbsCheckinForum,
   options: BbsCheckinOptions = {}, verifyProfile?: () => Promise<void>): Promise<"accepted" | "already"> {
   if (typeof forum !== "string" || !Object.hasOwn(bbsCheckinForums, forum)) {
-    throw new HoyoRequestError("invalid-input", "请选择支持的社区签到分区。");
+    throw new HoyoRequestError("invalid-input", $t("bbs-checkin.text_f73b03d812"));
   }
   const result = await withMiyousheCaptcha(transport, active => request(source, active, forum, options, verifyProfile), {
     signal: options.signal, verify: async () => { await options.verifyBinding?.(); await verifyProfile?.(); }, context: { qq: source.qq, profileId: source.profileId },

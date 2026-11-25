@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { createHash } from "node:crypto";
@@ -46,7 +49,7 @@ async function loadTheme(directory: string) {
     [miSans, "fonts/MiSans-VF.ttf"],
   ] as const) {
     const fontPath = join(directory, file);
-    if (!await Bun.file(fontPath).exists()) throw new Error(`登录卡原字体不可用：${file}`);
+    if (!await Bun.file(fontPath).exists()) throw new Error($t("passport-qr-card.text_a1ba9d524f", { "file": file }));
     FontLibrary.use(name, [fontPath]);
   }
 
@@ -78,7 +81,7 @@ function pngBytes(value: Uint8Array): Buffer {
   if (png.length < 33 || !png.subarray(0, pngSignature.length).equals(pngSignature) ||
       png.readUInt32BE(8) !== 13 || png.toString("ascii", 12, 16) !== "IHDR" ||
       png.readUInt32BE(16) === 0 || png.readUInt32BE(20) === 0) {
-    throw new Error("登录二维码须为有效 PNG 图片。");
+    throw new Error($t("passport-qr-card.text_90e820a519"));
   }
   return png;
 }
@@ -145,16 +148,16 @@ function paintImage(ctx: Context, img: Image, x: number, y: number, w: number, h
 
 export async function renderPassportQrCard(model: PassportQrCardModel,
   { mode = "auto", scale = 4, resourceDirectory = Bun.env.LOTUS_PASSPORT_QR_RESOURCES?.trim() || defaultResources }: PassportQrCardOptions = {}): Promise<PngRender> {
-  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("登录卡缩放比例须在 1 至 4 之间。");
+  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError($t("passport-qr-card.text_568c413254"));
 
   const png = pngBytes(model.qrPng);
   const { background, foreground, textFont, titleFont } = await themeAt(await realpath(resourceDirectory));
   const qr = await loadImage(png);
   const metrics = new Canvas(1, 1).getContext("2d");
-  const title = lines(metrics, model.title || "扫码登录", textWidth, 50, titleFont);
-  const subtitle = lines(metrics, model.subtitle || `profile ${model.profileId || 1}`, textWidth, 16, textFont);
-  const notice = lines(metrics, model.notice || "请使用对应 App 扫码确认。", textWidth, 16, textFont);
-  const footer = lines(metrics, `Lotus-Yunzai${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, width - 30, 12, textFont);
+  const title = lines(metrics, model.title || $t("passport-qr-card.text_378eaca774"), textWidth, 50, titleFont);
+  const subtitle = lines(metrics, model.subtitle || $t("passport-qr-card.profile_label", { profileId: model.profileId || 1 }), textWidth, 16, textFont);
+  const notice = lines(metrics, model.notice || $t("passport-qr-card.text_87b1b53e9a"), textWidth, 16, textFont);
+  const footer = lines(metrics, $t("passport-qr-card.text_33d658749e", { "value1": model.generatedAt ? ` · ${model.generatedAt}` : "" }), width - 30, 12, textFont);
 
   const headerHeight = title.length * 60 + subtitle.length * 24 + 41;
   const panelTop = 38 + headerHeight;
@@ -179,7 +182,7 @@ export async function renderPassportQrCard(model: PassportQrCardModel,
     textAt(ctx, subtitle, 35, 59 + title.length * 60, textFont, 16, 24, { shadow: true });
     rect(ctx, 15, panelTop, cardWidth, panelHeight, "rgba(0,0,0,.50)");
     rect(ctx, 15, panelTop, cardWidth, 48, "rgba(0,0,0,.40)");
-    textAt(ctx, ["扫码确认"], 35, panelTop + 15, textFont, 18, 27, { color: "#d3bc8e" });
+    textAt(ctx, [$t("passport-qr-card.text_2409e8f9f6")], 35, panelTop + 15, textFont, 18, 27, { color: "#d3bc8e" });
     rect(ctx, (width - qrSize) / 2 - 12, panelTop + 60, qrSize + 24, qrSize + 24, white, 5);
     paintImage(ctx, qr, (width - qrSize) / 2, panelTop + 72, qrSize, qrSize);
     textAt(ctx, notice, 35, panelTop + qrSize + 90, textFont, 16, 24);

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { resolve } from "node:path";
@@ -108,7 +111,7 @@ function releaseRef(directory: string, ref: string): () => Promise<void> {
       const git = createLocalGit();
       if (!git || !await isGitCheckout(git, directory) ||
           await git(directory, ["update-ref", "--no-deref", "-d", ref]) === undefined) {
-        throw new Error("无法清除临时更新引用。");
+        throw new Error($t("lib.update-candidate-git.text_1cea5436f6"));
       }
       released = true;
     })().finally(() => { removing = undefined; });
@@ -154,7 +157,7 @@ export async function readUpdateAvailability(directory: string, signal: AbortSig
   ]);
   signal.throwIfAborted();
   if (branchRef === undefined || current === undefined || dirty === undefined) return;
-  const branch = branchRef.trimEnd().replace(/^refs\/heads\//u, "") || "游离 HEAD";
+  const branch = branchRef.trimEnd().replace(/^refs\/heads\//u, "") || $t("lib.update-candidate-git.text_05a248eaec");
   const local = { branch, current, dirty };
   if (!upstream) return local;
   if (upstream.branch !== branchRef.trimEnd()) return;

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 const expiresAt = Date.parse("2027-01-03T10:00:00+08:00");
 
 export function planetLaunchMessages(now: number) {
@@ -5,16 +8,16 @@ export function planetLaunchMessages(now: number) {
   return {
     expired,
     messages: [
-      "《星布谷地》公测前瞻兑换码",
-      ...(expired ? ["本次公测兑换码已过期。"] : [
+      $t("redeem-preview.planet-launch.text_3220c0ee9b"),
+      ...(expired ? [$t("redeem-preview.planet-launch.text_538aa1829d")] : [
         "XBGD1204",
-        "奇物海哨×10",
-        "公测开服后可兑换，公测日期：2026年12月4日。",
-        "兑换方式：游戏内【设置】—【账号】—【兑换码】，奖励在飞件箱领取。",
+        $t("redeem-preview.planet-launch.text_7d4c901997"),
+        $t("redeem-preview.planet-launch.text_777be4e7d1"),
+        $t("redeem-preview.planet-launch.text_49bbfc5d10"),
       ]),
-      "有效期至：2027-01-03 10:00:00 前（北京时间）",
-      "官方页面：https://www.miyoushe.com/planet/article/79270201",
-      "有效期来源：https://www.miyoushe.com/planet/article/79269582",
+      $t("redeem-preview.planet-launch.text_6470d3adae"),
+      $t("redeem-preview.planet-launch.text_774a7bbaca"),
+      $t("redeem-preview.planet-launch.text_fe2d59990d"),
     ],
   };
 }

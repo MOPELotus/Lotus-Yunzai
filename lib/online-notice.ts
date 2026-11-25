@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 interface OnlineNoticeOptions {
   readonly signal?: AbortSignal;
   readonly version?: string;
@@ -10,15 +13,15 @@ const defaultMinutes = 1_440;
 const maxSeconds = Math.floor(Number.MAX_SAFE_INTEGER / 1_000);
 const decimal = /^(?:\d+(?:\.\d*)?|\.\d+)$/u;
 const help = [
-  "【#帮助】查看指令说明",
-  "【#状态】查看运行状态",
-  "【#日志】查看运行日志",
-  "【#重启】重新启动",
-  "【#更新】检查宿主更新",
-  "【#全部更新】更新宿主和插件",
-  "【#更新日志】查看更新日志",
-  "【#设置主人】设置主人账号",
-  "【#安装插件】查看安装名录",
+  $t("lib.online-notice.text_6b32aec4ae"),
+  $t("lib.online-notice.text_f7ca78b573"),
+  $t("lib.online-notice.text_3d495cefdd"),
+  $t("lib.online-notice.text_ac37618b87"),
+  $t("lib.online-notice.text_a41ec89f1f"),
+  $t("lib.online-notice.text_f3cecbf587"),
+  $t("lib.online-notice.text_18d5648094"),
+  $t("lib.online-notice.text_aac4f2b766"),
+  $t("lib.online-notice.text_0e15cc26ff"),
 ].join("\n");
 
 function positiveInteger(value: unknown): value is number {
@@ -46,7 +49,7 @@ export async function notifyOnlineMasters(
     return;
   }
 
-  const welcome = `欢迎使用【Lotus-Yunzai${version ? ` v${version}` : ""}】\n${help}`;
+  const welcome = $t("lib.online-notice.text_94c850185d", { "value1": version ? ` v${version}` : "", "help": help });
   for (const userId of current) {
     if (signal?.aborted) return;
     try {

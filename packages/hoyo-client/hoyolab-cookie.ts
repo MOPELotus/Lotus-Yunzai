@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { readGameRecordPayload } from "./game-record.ts";
@@ -17,15 +20,15 @@ const midFields = ["account_mid_v2", "ltmid_v2", "stmid_v2", "mid"];
 const tokenPattern = /^[A-Za-z0-9._~+/%=-]{1,4096}$/u;
 
 function invalidInput(): never {
-  throw new HoyoRequestError("invalid-input", "请输入账号归属一致的国际服 Cookie。");
+  throw new HoyoRequestError("invalid-input", $t("hoyolab-cookie.text_5ead776a60"));
 }
 
 function invalidProof(): never {
-  throw new HoyoRequestError("response", "官方通行证返回的国际服 Cookie 归属证明无效。");
+  throw new HoyoRequestError("response", $t("hoyolab-cookie.text_0a50e54fa2"));
 }
 
 function transportError() {
-  return new HoyoRequestError("transport", "国际服 Cookie 归属验证请求未完成。");
+  return new HoyoRequestError("transport", $t("hoyolab-cookie.text_ff0ec0ee90"));
 }
 
 function accountIdOf(value: unknown) {
@@ -126,20 +129,20 @@ export async function verifyHoYoLabCookie(input: string, transport: HoyoTranspor
     if (deadline.aborted || response.status !== 200 || response.redirected || (response.url && response.url !== endpoint.href)) {
       void response.body?.cancel().catch(() => undefined);
       await guard();
-      throw new HoyoRequestError("http", "官方通行证国际服 Cookie 验证返回 HTTP 错误。", response.status);
+      throw new HoyoRequestError("http", $t("hoyolab-cookie.text_b4daa24f80"), response.status);
     }
     const challenge = response.headers.get("x-rpc-aigis")?.trim();
     if (challenge && challenge !== "{}") {
       void response.body?.cancel().catch(() => undefined);
       await guard();
-      throw new HoyoRequestError("api", "官方通行证需要额外验证，请在 HoYoLAB 处理。");
+      throw new HoyoRequestError("api", $t("hoyolab-cookie.text_3680405b29"));
     }
 
     const payload = await readGameRecordPayload(response, 32 * 1024, deadline);
     await guard();
     const retcode = payload?.retcode;
     if (typeof retcode !== "number" || !Number.isSafeInteger(retcode)) invalidProof();
-    if (retcode !== 0) throw new HoyoRequestError("api", "官方通行证未接受该国际服 Cookie。", response.status, retcode);
+    if (retcode !== 0) throw new HoyoRequestError("api", $t("hoyolab-cookie.text_58cea26160"), response.status, retcode);
     const data = record(payload?.data);
     const user = record(data?.user_info);
     if (!data || !user || accountIdOf(user.aid) !== accountId) invalidProof();

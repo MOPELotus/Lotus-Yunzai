@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { link, open, realpath, unlink } from "node:fs/promises";
@@ -22,7 +26,7 @@ async function readSnapshot(path: string): Promise<string> {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await file.stat();
-    if (!stat.isFile() || stat.size > maxBytes) throw new Error("交还副本须为大小受限的普通文件。");
+    if (!stat.isFile() || stat.size > maxBytes) throw new Error($t("scripts.prepare-legacy-activity-notices.text_82c586164c"));
     const bytes = Buffer.alloc(stat.size + 1);
     let offset = 0;
     while (offset < bytes.length) {
@@ -30,7 +34,7 @@ async function readSnapshot(path: string): Promise<string> {
       if (!bytesRead) break;
       offset += bytesRead;
     }
-    if (offset !== stat.size) throw new Error("交还副本读取期间已变更。");
+    if (offset !== stat.size) throw new Error($t("scripts.prepare-legacy-activity-notices.text_b3d41656d4"));
     return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, offset));
   } finally {
     await file.close();
@@ -39,11 +43,11 @@ async function readSnapshot(path: string): Promise<string> {
 
 function hashSnapshot(text: string): Record<string, string> {
   const data: unknown = JSON.parse(text);
-  if (!mapping(data)) throw new Error("活动推送开关副本须为 HGETALL 的 JSON 对象。");
+  if (!mapping(data)) throw new Error($t("scripts.prepare-legacy-activity-notices.text_e2ed523e39"));
   for (const [key, state] of Object.entries(data)) {
     const [bot, group, extra] = key.split(":");
     if (!numberId(bot) || !numberId(group) || extra !== undefined || (state !== "on" && state !== "off")) {
-      throw new Error("活动推送开关副本包含无效的账号、群号或状态。");
+      throw new Error($t("scripts.prepare-legacy-activity-notices.text_d0c38f2155"));
     }
   }
   return data as Record<string, string>;
@@ -85,7 +89,7 @@ function editRoutes(document: ReturnType<typeof YAML.parseDocument>, key: string
 
 async function prepareActivityNotices(yaml: string, overrides: Record<Game, Record<string, string>>) {
   const document = YAML.parseDocument(yaml);
-  if (document.errors.length || !isMap(document.contents)) throw new Error("旧推送配置副本须为有效 YAML 映射。");
+  if (document.errors.length || !isMap(document.contents)) throw new Error($t("scripts.prepare-legacy-activity-notices.text_4d866b1e5b"));
   const original: Record<string, unknown> = document.toJS();
   const oldRoutes = Object.fromEntries(games.map(game => [game, original[yamlKey(game)] ?? {}])) as Record<Game, Routes>;
   const defaults = { gs: configuredTargets(oldRoutes.gs), sr: configuredTargets(oldRoutes.sr) };
@@ -107,7 +111,7 @@ async function prepareActivityNotices(yaml: string, overrides: Record<Game, Reco
   for (const [bot, groups] of Object.entries(effective.gs)) {
     const starRail = effective.sr[bot];
     if (starRail && groups.some(group => !starRail.includes(group))) {
-      throw new Error(`旧版共用到期队列无法保留账号 ${bot} 的两款游戏群范围或群号类型。`);
+      throw new Error($t("scripts.prepare-legacy-activity-notices.text_96e49a7140", { "bot": bot }));
     }
   }
 
@@ -115,7 +119,7 @@ async function prepareActivityNotices(yaml: string, overrides: Record<Game, Reco
   if (!changed.length) return { content: yaml, counts, changed };
   for (const game of changed) editRoutes(document, yamlKey(game), oldRoutes[game], effective[game]);
   const content = document.toString();
-  if (Buffer.byteLength(content) > maxBytes) throw new Error("导出配置超出大小上限。");
+  if (Buffer.byteLength(content) > maxBytes) throw new Error($t("scripts.prepare-legacy-activity-notices.text_eb69b61ec2"));
   const rest = (obj: Record<string, unknown>) => Object.fromEntries(Object.entries(obj).filter(([key]) =>
     !games.some(game => key === yamlKey(game))));
   try {
@@ -123,7 +127,7 @@ async function prepareActivityNotices(yaml: string, overrides: Record<Game, Reco
     if (isDeepStrictEqual(rest(original), rest(exported)) && games.every(game =>
       isDeepStrictEqual(exported[yamlKey(game)] ?? {}, effective[game]))) return { content, counts, changed };
   } catch {}
-  throw new Error("旧 YAML 中的引用或其它配置无法安全保留。");
+  throw new Error($t("scripts.prepare-legacy-activity-notices.text_58fc358b09"));
 }
 
 async function exportConfig(parent: string, content: string) {
@@ -141,7 +145,7 @@ async function exportConfig(parent: string, content: string) {
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       if (!Buffer.from(await readSnapshot(path)).equals(Buffer.from(content))) {
-        throw new Error("已有导出文件内容不一致，请选另一个导出父目录。");
+        throw new Error($t("scripts.prepare-legacy-activity-notices.text_7247a7951f"));
       }
       return { path, written: false };
     }
@@ -156,7 +160,7 @@ const exporting = args[0] === "--export";
 const [parent, yaml, gs, sr] = exporting ? args.slice(1) : [undefined, ...args];
 if (!yaml || !gs || !sr || args.length !== (exporting ? 5 : 3) ||
     [yaml, gs, sr, parent].some(arg => arg?.startsWith("--")) || (exporting && !parent)) {
-  console.error("用法：bun scripts/prepare-legacy-activity-notices.ts [--export <独立导出父目录>] <旧 YAML 副本> <原神 HGETALL JSON> <星铁 HGETALL JSON>");
+  console.error($t("scripts.prepare-legacy-activity-notices.text_87ba1f0ef6"));
   process.exit(2);
 }
 
@@ -166,7 +170,7 @@ try {
   const output = parent ? await exportConfig(parent, content) : { written: false };
   console.log(JSON.stringify({ mode: exporting ? "export" : "dry-run", counts, changed, ...output }));
 } catch (error) {
-  console.error(error instanceof SyntaxError ? "活动推送开关副本不是有效的 JSON。"
-    : error instanceof Error && !("code" in error) ? error.message : "无法读取活动推送副本或写入独立导出文件。");
+  console.error(error instanceof SyntaxError ? $t("scripts.prepare-legacy-activity-notices.text_530038e2aa")
+    : error instanceof Error && !("code" in error) ? error.message : $t("scripts.prepare-legacy-activity-notices.text_c3682a82db"));
   process.exitCode = 1;
 }

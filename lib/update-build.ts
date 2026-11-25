@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, readFile } from "node:fs/promises";
 import { devNull } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
@@ -54,7 +57,7 @@ async function buildEnvironment(cacheDirectory: string): Promise<NodeJS.ProcessE
   try {
     await mkdir(config, { recursive: true, mode: 0o700 });
   } catch {
-    throw new Error("无法准备更新候选的构建缓存。");
+    throw new Error($t("lib.update-build.text_9ed01485eb"));
   }
 
   const path = (process.env.PATH ?? "").split(delimiter).filter(isAbsolute);
@@ -83,7 +86,7 @@ export async function initializeUpdateSubmodules(
   directory: string, cacheDirectory: string, signal?: AbortSignal,
 ): Promise<void> {
   signal?.throwIfAborted();
-  const failure = "更新候选子模块初始化失败。";
+  const failure = $t("lib.update-build.text_a09adc2561");
   try {
     if (!(await lstat(join(directory, ".gitmodules"))).isFile()) throw new Error(failure);
   } catch (error) {
@@ -104,11 +107,11 @@ export async function buildUpdateCheckout(
   signal?.throwIfAborted();
   const env = await buildEnvironment(cacheDirectory);
   const command = [process.execPath, "run", "--no-env-file", "--no-orphans"];
-  await run(directory, env, [...command, "scripts/bootstrap.ts", "--build-only"], 15 * 60_000, "更新候选初始化失败。", signal);
+  await run(directory, env, [...command, "scripts/bootstrap.ts", "--build-only"], 15 * 60_000, $t("lib.update-build.text_a8f50a0fa8"), signal);
   signal?.throwIfAborted();
   await preparePlugins?.();
   signal?.throwIfAborted();
-  await run(directory, env, [...command, "typecheck"], 3 * 60_000, "更新候选类型检查失败。", signal);
+  await run(directory, env, [...command, "typecheck"], 3 * 60_000, $t("lib.update-build.text_2e6459b265"), signal);
 }
 
 async function optionalPhysicalFile(path: string, failure: string): Promise<boolean> {
@@ -121,7 +124,7 @@ async function optionalPhysicalFile(path: string, failure: string): Promise<bool
 }
 
 async function hasRuntimeDependencies(path: string): Promise<boolean> {
-  const failure = "外部插件依赖清单无效。";
+  const failure = $t("lib.update-build.text_349138106a");
   let metadata: unknown;
   try {
     metadata = JSON.parse((await readFile(path, "utf8")).replace(/^\uFEFF/u, ""));
@@ -145,20 +148,20 @@ export async function buildExternalPluginCheckout(
 ): Promise<void> {
   signal?.throwIfAborted();
   const locks = await Promise.all(["bun.lock", "bun.lockb"].map((file) =>
-    optionalPhysicalFile(join(directory, file), "外部插件锁文件须为普通文件。")));
+    optionalPhysicalFile(join(directory, file), $t("lib.update-build.text_dbc00fe1c7"))));
   signal?.throwIfAborted();
   const locked = locks.some(Boolean);
   if (!locked && !requireLock) return;
 
   const manifest = join(directory, "package.json");
-  if (!await optionalPhysicalFile(manifest, "外部插件依赖清单须为普通文件。")) return;
+  if (!await optionalPhysicalFile(manifest, $t("lib.update-build.text_9ffb8ae118"))) return;
   if (!locked) {
-    if (await hasRuntimeDependencies(manifest)) throw new Error("外部插件声明了运行时依赖，须提供 bun.lock 或 bun.lockb。");
+    if (await hasRuntimeDependencies(manifest)) throw new Error($t("lib.update-build.text_4f4c8a4341"));
     signal?.throwIfAborted();
     return;
   }
 
   const env = await buildEnvironment(cacheDirectory);
   await run(directory, env, [process.execPath, "install", "--frozen-lockfile", "--ignore-scripts", "--no-env-file",
-    "--backend=copyfile"], 3 * 60_000, "无法按外部插件的 Bun 锁文件安装依赖。", signal);
+    "--backend=copyfile"], 3 * 60_000, $t("lib.update-build.text_d0575d163b"), signal);
 }

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import {
   hostIngressKeys, hostIngressListKeys, hostIngressSettings, HostIngressSettingsError, saveHostIngressSettings,
   type HostIngressSettings,
@@ -6,30 +9,30 @@ import { readPanelJson } from "./panel.ts";
 import { readRequestOtherPolicyFiles } from "./request-other-policies.ts";
 
 const ingressFields = [
-  { key: "whiteUser", label: "用户白名单", type: "list", hint: "每行一个 QQ 号。留空时允许名单外的用户。" },
-  { key: "blackUser", label: "用户黑名单", type: "list" },
-  { key: "whiteGroup", label: "群白名单", type: "list", hint: "每行一个群号。留空时允许名单外的群。" },
-  { key: "blackGroup", label: "群黑名单", type: "list" },
-  { key: "disablePrivate", label: "限制普通用户私聊", type: "boolean" },
-  { key: "disableMsg", label: "私聊限制提示", type: "text", hint: "留空时不回复限制提示。" },
+  { key: "whiteUser", label: $t("lib.panel-ingress-settings.text_8c4715253c"), type: "list", hint: $t("lib.panel-ingress-settings.text_e9d8fe87ae") },
+  { key: "blackUser", label: $t("lib.panel-ingress-settings.text_6ae2ab05a0"), type: "list" },
+  { key: "whiteGroup", label: $t("lib.panel-ingress-settings.text_f1578eca20"), type: "list", hint: $t("lib.panel-ingress-settings.text_2db4bda5f9") },
+  { key: "blackGroup", label: $t("lib.panel-ingress-settings.text_cd309a726c"), type: "list" },
+  { key: "disablePrivate", label: $t("lib.panel-ingress-settings.text_c5b0f52de1"), type: "boolean" },
+  { key: "disableMsg", label: $t("lib.panel-ingress-settings.text_60288b7c3c"), type: "text", hint: $t("lib.panel-ingress-settings.text_32d04ce9b0") },
 ] as const;
 
 const automationFields = [
-  { key: "autoFriend", label: "自动同意好友申请", type: "boolean" },
-  { key: "autoQuit", label: "新入群自动退出人数阈值", type: "number", min: 0,
-    hint: "填 0 关闭。实际成员数不超过阈值时检查退出条件，主人所在的群仍受保护。" },
+  { key: "autoFriend", label: $t("lib.panel-ingress-settings.text_c99ae88b0e"), type: "boolean" },
+  { key: "autoQuit", label: $t("lib.panel-ingress-settings.text_b98db3af7f"), type: "number", min: 0,
+    hint: $t("lib.panel-ingress-settings.text_97f4be1e9e") },
 ] as const;
 
 function fieldsFor(legacy: boolean, patterns: string[]) {
   const multilinePattern = patterns.some(pattern => /[\r\n]/u.test(pattern));
-  const custom = { key: "disableAdopt", label: "私聊自定义放行规则",
-    ...(multilinePattern ? { type: "json", hint: "该配置含跨行规则，请按 JSON 数组编辑。空数组会清除自定义规则。" } :
+  const custom = { key: "disableAdopt", label: $t("lib.panel-ingress-settings.text_196aa4adca"),
+    ...(multilinePattern ? { type: "json", hint: $t("lib.panel-ingress-settings.text_7f34c533e2") } :
       { type: "list", separator: "line", keepWhitespace: true,
-        hint: "每行一个正则表达式。清空只移除自定义规则。内置的登录、帮助等入口仍照常放行。" }),
+        hint: $t("lib.panel-ingress-settings.text_9828694138") }),
   };
-  return [...ingressFields, custom, ...automationFields, { key: "autoGroup", label: "自动同意群邀请", type: "select",
-    options: [...(legacy ? [] : [{ label: "关闭", value: "off" }]),
-      { label: "仅限主人", value: "owners" }, { label: "所有允许的邀请者", value: "all" }] }];
+  return [...ingressFields, custom, ...automationFields, { key: "autoGroup", label: $t("lib.panel-ingress-settings.text_5339188b86"), type: "select",
+    options: [...(legacy ? [] : [{ label: $t("lib.panel-ingress-settings.text_3fd47edce4"), value: "off" }]),
+      { label: $t("lib.panel-ingress-settings.text_49e0c3bc75"), value: "owners" }, { label: $t("lib.panel-ingress-settings.text_f5aadbb0ad"), value: "all" }] }];
 }
 
 function record(input: unknown): Record<string, unknown> | undefined {
@@ -81,7 +84,7 @@ export function panelIngressSettings(root: URL, onSaved?: () => Promise<unknown>
       const fields = fieldsFor(legacy, values.disableAdopt);
       try { await onSaved?.(); }
       catch {
-        return Response.json({ fields, values, warning: "配置已保存，运行时重载失败，请检查宿主日志或重启。" });
+        return Response.json({ fields, values, warning: $t("lib.panel-ingress-settings.text_f0a01838d1") });
       }
       return Response.json({ fields, values });
     } catch (error) {

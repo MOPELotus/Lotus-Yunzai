@@ -75,6 +75,25 @@ export function createI18n() {
     }
   }
 
+  /** Replace one loaded language atomically so removed file entries cannot remain in memory. */
+  function replaceLanguage(locale: string, messages: LanguageCatalog): void {
+    const tag = languageTag(locale);
+    if (!messages || typeof messages !== "object" || Array.isArray(messages)) throw new TypeError("Invalid language catalog");
+    const checked = new Map<string, Map<string, string>>();
+    for (const [namespace, catalog] of Object.entries(messages)) {
+      if (!namespace) throw new TypeError("Invalid message namespace");
+      checked.set(namespace, checkedMessages(catalog));
+    }
+    languages.set(tag, checked);
+  }
+
+  function removeLanguage(locale: string): void {
+    const tag = languageTag(locale);
+    if (tag === defaultLanguage) languages.set(tag, new Map());
+    else languages.delete(tag);
+    if (selected === tag && tag !== defaultLanguage) setLanguage(defaultLanguage);
+  }
+
   function setLanguage(locale: string): string {
     const tag = languageTag(locale);
     if (!languages.has(tag)) throw new RangeError(`Language is not registered: ${tag}`);
@@ -118,7 +137,7 @@ export function createI18n() {
   }
 
   return {
-    createTranslator, registerLanguage, registerCatalog, getLanguage, setLanguage, listLanguages, getCatalog,
+    createTranslator, registerLanguage, registerCatalog, replaceLanguage, removeLanguage, getLanguage, setLanguage, listLanguages, getCatalog,
     /** The server may provide an AsyncLocalStorage getter; browser users need no Node polyfill. */
     setLanguageResolver(resolver?: () => string | undefined) { resolveLanguage = resolver; },
     subscribeLanguageChange(listener: (language: string) => void): () => void {
@@ -130,6 +149,6 @@ export function createI18n() {
 
 const shared = createI18n();
 export const {
-  createTranslator, registerLanguage, registerCatalog, getLanguage, setLanguage, listLanguages, getCatalog,
+  createTranslator, registerLanguage, registerCatalog, replaceLanguage, removeLanguage, getLanguage, setLanguage, listLanguages, getCatalog,
   setLanguageResolver, subscribeLanguageChange,
 } = shared;

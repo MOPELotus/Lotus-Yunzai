@@ -1,0 +1,551 @@
+{
+  "language": "zh-CN",
+  "name": "简体中文",
+  "namespace": "skia",
+  "description": "图片渲染",
+  "sections": {
+    "banded-png": {
+      "description": "图片渲染",
+      "source": "packages/skia/banded-png.ts"
+    },
+    "checkin-receipt-card": {
+      "description": "图片渲染：签到 · 图片卡片",
+      "source": "packages/skia/checkin-receipt-card.ts"
+    },
+    "daily-note-card": {
+      "description": "图片渲染：每日便笺 · 图片卡片",
+      "source": "packages/skia/daily-note-card.ts"
+    },
+    "daily-note-reminder-card": {
+      "description": "图片渲染：每日便笺 · 图片卡片",
+      "source": "packages/skia/daily-note-reminder-card.ts"
+    },
+    "donation-card": {
+      "description": "图片渲染：捐赠 · 图片卡片",
+      "source": "packages/skia/donation-card.ts"
+    },
+    "forward-images": {
+      "description": "图片渲染",
+      "source": "packages/skia/forward-images.ts"
+    },
+    "gacha-detail-card": {
+      "description": "图片渲染：抽卡记录 · 图片卡片",
+      "source": "packages/skia/gacha-detail-card.ts"
+    },
+    "gacha-pool-card": {
+      "description": "图片渲染：抽卡记录 · 图片卡片",
+      "source": "packages/skia/gacha-pool-card.ts"
+    },
+    "gacha-version-card": {
+      "description": "图片渲染：抽卡记录 · 图片卡片",
+      "source": "packages/skia/gacha-version-card.ts"
+    },
+    "genshin-backpack-card": {
+      "description": "图片渲染：原神 · 背包 · 图片卡片",
+      "source": "packages/skia/genshin-backpack-card.ts"
+    },
+    "genshin-gacha-special-card": {
+      "description": "图片渲染：原神 · 抽卡记录 · 图片卡片",
+      "source": "packages/skia/genshin-gacha-special-card.ts"
+    },
+    "genshin-world-boss-card": {
+      "description": "图片渲染：原神 · 图片卡片",
+      "source": "packages/skia/genshin-world-boss-card.ts"
+    },
+    "genshin-world-boss-ranking-card": {
+      "description": "图片渲染：原神 · 图片卡片",
+      "source": "packages/skia/genshin-world-boss-ranking-card.ts"
+    },
+    "index": {
+      "description": "图片渲染",
+      "source": "packages/skia/index.ts"
+    },
+    "info-card": {
+      "description": "图片渲染：图片卡片",
+      "source": "packages/skia/info-card.ts"
+    },
+    "passport-qr-card": {
+      "description": "图片渲染：通行证 · 二维码 · 图片卡片",
+      "source": "packages/skia/passport-qr-card.ts"
+    },
+    "profile-card": {
+      "description": "图片渲染：档案 · 图片卡片",
+      "source": "packages/skia/profile-card.ts"
+    },
+    "rank-stats-card": {
+      "description": "图片渲染：图片卡片",
+      "source": "packages/skia/rank-stats-card.ts"
+    },
+    "status-card": {
+      "description": "图片渲染：运行状态 · 图片卡片",
+      "source": "packages/skia/status-card.ts"
+    }
+  },
+  "messages": {
+    "banded-png.text_588387e089": "图像分带的像素尺寸不匹配。",
+    "banded-png.text_82c11fc05a": "图像分带没有覆盖全部画布。",
+    "banded-png.text_c7d41ac028": "超长图片编码大小超过 128 MiB。",
+    "checkin-receipt-card.text_0207473a6d": "签到结果",
+    "checkin-receipt-card.text_0f0f41f0a7": "游戏签到",
+    "checkin-receipt-card.text_231fe22042": "未执行",
+    "checkin-receipt-card.text_458830452d": "签到回执原字体不可用：{file}",
+    "checkin-receipt-card.text_8997e1e17e": "社区签到",
+    "checkin-receipt-card.text_beade28661": "签到回执缩放比例须在 1 至 4 之间。",
+    "checkin-receipt-card.text_f75cf8f3c7": "游戏 / 社区",
+    "daily-note-card.text_1c69b1aa72": "电量",
+    "daily-note-card.text_24a88328e5": "体力卡原字体不可用：{file}",
+    "daily-note-card.text_2740613721": "洞天宝钱",
+    "daily-note-card.text_28384d7afd": "失败",
+    "daily-note-card.text_30fe63cf43": "委托明细暂未返回",
+    "daily-note-card.text_414b0e609f": "体力卡超过当前会话的单图大小上限。",
+    "daily-note-card.text_7450cc5b16": "未记录",
+    "daily-note-card.text_86cb4427a0": "今日米游社 {checkin}",
+    "daily-note-card.text_9a964fbc3d": "未同步",
+    "daily-note-card.text_9d03b22813": "查询成功",
+    "daily-note-card.text_b3bfdadd9a": "原粹树脂",
+    "daily-note-card.text_b6efd1dff8": "委托状态",
+    "daily-note-card.text_bf4cedf76a": "查询失败",
+    "daily-note-card.text_c0bf846944": "体力卡缩放比例须在 1 至 4 之间。",
+    "daily-note-card.text_d6d2aa99fd": "体力",
+    "daily-note-card.text_de78a76579": "开拓力",
+    "daily-note-reminder-card.text_1c69b1aa72": "电量",
+    "daily-note-reminder-card.text_4548f2ad35": "星穹铁道",
+    "daily-note-reminder-card.text_b1110352c9": "绝区零",
+    "daily-note-reminder-card.text_b3bfdadd9a": "原粹树脂",
+    "daily-note-reminder-card.text_d1597c51ed": "原神",
+    "daily-note-reminder-card.text_de78a76579": "开拓力",
+    "daily-note-reminder-card.text_e908fa5c1b": "群体力原素材路径无效。",
+    "daily-note-reminder-card.text_ea314a2900": "群体力原素材不是 PNG。",
+    "donation-card.text_0211bfd25a": "捐赠图片尺寸无效。",
+    "donation-card.text_064464bf64": "微信支付",
+    "donation-card.text_276a8bc458": "支付宝",
+    "donation-card.text_5d653b2d82": "捐赠图片不可用。",
+    "donation-card.text_9d4d19609f": "如果你觉得 MOPELotus 的项目或机器人对你有帮助，可以通过以下方式自愿支持。",
+    "donation-card.text_a506b9d728": "使用支付宝扫一扫",
+    "donation-card.text_c16d780c58": "捐赠支持",
+    "donation-card.text_c20cd157ad": "使用微信扫一扫",
+    "forward-images.text_2922d95437": "第 {index} 段合并转发未发送，其余段落已停止。",
+    "forward-images.text_822ee89ef3": "第 {index} 段合并转发结果未确认，请在聊天中核对。",
+    "forward-images.text_c7d417d962": "当前会话无法分段合并转发图片。",
+    "forward-images.text_f079e2df40": "会话或档案已变更，余下图片已停止发送。",
+    "gacha-detail-card.text_008afb0b63": "查看六池",
+    "gacha-detail-card.text_088e2a01e8": "超过{winPercent}%",
+    "gacha-detail-card.text_0b144d7fda": "可查看按卡池分析结果",
+    "gacha-detail-card.text_12723f0f0f": "{name}抽卡记录的原主题目录不可用。",
+    "gacha-detail-card.text_1a19bda7c7": "{value1}理论期望",
+    "gacha-detail-card.text_1d83963661": "紫卡数",
+    "gacha-detail-card.text_2a53e47907": "本地逐抽档案 · ",
+    "gacha-detail-card.text_2b0a4e937a": "第 {page}/{total} 张 · 第 {from}~{to} 条，共 {count} 条五星记录",
+    "gacha-detail-card.text_2b9189b4f7": "更新抽卡信息，",
+    "gacha-detail-card.text_322a3033cc": "出金慢于",
+    "gacha-detail-card.text_35de1616a1": "大保底",
+    "gacha-detail-card.text_4bf6868aa0": "旅行者",
+    "gacha-detail-card.text_4d8c1c5b42": "未知",
+    "gacha-detail-card.text_4dbd45ce46": "逐抽",
+    "gacha-detail-card.text_642b8132be": "最多连歪",
+    "gacha-detail-card.text_64a1a00d6e": "{prefix}抽卡统计",
+    "gacha-detail-card.text_664bea2328": "{unclassified} 抽星级未辨认",
+    "gacha-detail-card.text_6b0c8e3331": "{prefix}抽卡帮助",
+    "gacha-detail-card.text_6cc5e43b1b": "卡芙卡",
+    "gacha-detail-card.text_70e5aa24fd": "UP平均 ",
+    "gacha-detail-card.text_74729256f3": "仅显示最近 {shownNum} 条记录，更早的 {hiddenNum} 条未显示（顶部统计包含全部记录），发送 {prefix}{value4}{poolName}全部记录 查看全部",
+    "gacha-detail-card.text_7511bffc0d": "抽卡记录缩放比例须在 1 至 4 之间。",
+    "gacha-detail-card.text_761ab59423": "原石",
+    "gacha-detail-card.text_7a2d791667": "*逐抽版本统计",
+    "gacha-detail-card.text_8167384877": "*逐抽全部记录",
+    "gacha-detail-card.text_865ee04ffd": "开拓者",
+    "gacha-detail-card.text_8eb7ac45a0": "平均出金",
+    "gacha-detail-card.text_90a3bc4523": "歪 T.T",
+    "gacha-detail-card.text_90bb620f2c": "超过{fivePercent}%",
+    "gacha-detail-card.text_928818bfad": "样本较少，仅供参考",
+    "gacha-detail-card.text_93101dd3ce": "查看分期，",
+    "gacha-detail-card.text_95b727161e": "已抽",
+    "gacha-detail-card.text_969df75329": "平均出金 · 期望{fiveExpect}",
+    "gacha-detail-card.text_98191bc336": "{prefix}更新抽卡记录",
+    "gacha-detail-card.text_a1bc5d6980": "小保底不歪 {smallWin}/{smallNum} · 期望{upRate}%",
+    "gacha-detail-card.text_a1f691506f": "{name}抽卡记录的原主题图片不可用。",
+    "gacha-detail-card.text_a2927891f0": "星铁",
+    "gacha-detail-card.text_a4737129f2": "查看用法，",
+    "gacha-detail-card.text_a59471d368": "欧皇度",
+    "gacha-detail-card.text_ae25247f75": "星琼",
+    "gacha-detail-card.text_b09dd6b6e3": " 抽",
+    "gacha-detail-card.text_b11c206e2f": "期望 {upExpect} 抽（含歪）",
+    "gacha-detail-card.text_b14cd0fa54": "平均出金 ",
+    "gacha-detail-card.text_b5d6147b30": "金卡数",
+    "gacha-detail-card.text_c47b54e84e": "角色",
+    "gacha-detail-card.text_c854387137": "出金快于",
+    "gacha-detail-card.text_c85754f76f": "运气超过 ",
+    "gacha-detail-card.text_cd446fb586": "最新卡池数据暂未收录，新卡池中的UP判定可能不准，待卡池数据更新后即可恢复",
+    "gacha-detail-card.text_d1597c51ed": "原神",
+    "gacha-detail-card.text_d83656d5cb": "期望 {fiveExpect} 抽",
+    "gacha-detail-card.text_dbef80175a": "{name}抽卡记录超出可渲染高度。",
+    "gacha-detail-card.text_dc8941f893": "第 {page}/{total} 张",
+    "gacha-detail-card.text_e21fca08eb": " 的{player}",
+    "gacha-detail-card.text_e4f468b9b3": "#{uid} · {poolName}池抽卡记录",
+    "gacha-detail-card.text_eb8d491b40": "{prefix}角色统计",
+    "gacha-detail-card.text_ef09301bf5": "芭芭拉",
+    "gacha-detail-card.text_f24e9795ef": "{name}抽卡记录的原主题字体不可用。",
+    "gacha-detail-card.text_f6d4a0bff0": "最多连UP",
+    "gacha-detail-card.text_fe61382ff1": "抽卡总数",
+    "gacha-pool-card.text_4d8c1c5b42": "未知",
+    "gacha-pool-card.text_a2318030b9": "旧卡池主题目录不可用。",
+    "gacha-pool-card.text_b6031ff5ab": "旧卡池图卡主题不完整。",
+    "gacha-pool-card.text_d590ded8bf": "卡池图卡数据无效。",
+    "gacha-version-card.text_07a28178b3": "紫卡",
+    "gacha-version-card.text_0b72e021d2": "{label}版本统计的原主题字体不可用。",
+    "gacha-version-card.text_0eb5dc0d75": "*角色统计/*武器统计",
+    "gacha-version-card.text_10ab28c5db": "{label}版本统计的原主题目录不可用。",
+    "gacha-version-card.text_1a6ad19554": "累计 {totalNum} 抽 · 分期可确认 {value2} 抽 · {unassignedDraws} 抽未能归至期次",
+    "gacha-version-card.text_1bff9db816": " 常驻池统计，  ",
+    "gacha-version-card.text_2a53e47907": "本地逐抽档案 · ",
+    "gacha-version-card.text_3397e42ea1": " 全部抽卡统计，  ",
+    "gacha-version-card.text_3ac360ee98": "版本统计缩放比例须在 1 至 4 之间。",
+    "gacha-version-card.text_44316c25aa": "*逐抽常驻统计",
+    "gacha-version-card.text_4c69a80f18": "UP角色",
+    "gacha-version-card.text_4d8c1c5b42": "未知",
+    "gacha-version-card.text_4dbd45ce46": "逐抽",
+    "gacha-version-card.text_55d4a18530": "总抽卡",
+    "gacha-version-card.text_6b407943c9": "紫角色",
+    "gacha-version-card.text_6cc5e43b1b": "卡芙卡",
+    "gacha-version-card.text_7978eaa374": "本地逐抽档案 · 统计角色、光锥与常驻池，",
+    "gacha-version-card.text_7ccceb76c3": " 获取帮助",
+    "gacha-version-card.text_8167384877": "*逐抽全部记录",
+    "gacha-version-card.text_83a8704549": "仅显示最近 {shownNum} 期卡池，更早的 {hiddenNum} 期未显示（顶部统计包含全部数据），发送 {prefix}{value4}{poolName}全部统计 查看全部",
+    "gacha-version-card.text_84c666ec41": "第 {page}/{total} 张 · 第 {from}~{to} 期，共 {count} 期卡池",
+    "gacha-version-card.text_90d84ceb1d": "金卡",
+    "gacha-version-card.text_94f7b3e1d4": "平均UP抽",
+    "gacha-version-card.text_965472f277": "{label}版本统计的原主题图片不可用。",
+    "gacha-version-card.text_9a455954b1": "紫武器",
+    "gacha-version-card.text_9bad52ad6f": " 查看六池",
+    "gacha-version-card.text_a2927891f0": "星铁",
+    "gacha-version-card.text_a4a1d95560": "UP武器",
+    "gacha-version-card.text_a5e40e2d62": "*逐抽光锥统计",
+    "gacha-version-card.text_a74acdd089": "*逐抽角色统计",
+    "gacha-version-card.text_aa4a459a6b": "UP金卡",
+    "gacha-version-card.text_b557a2e1db": " 角色/武器池统计，  ",
+    "gacha-version-card.text_bdb4b2fc9d": "#{uid} · {poolName}统计",
+    "gacha-version-card.text_c82087af4d": "收录抽数",
+    "gacha-version-card.text_d1597c51ed": "原神",
+    "gacha-version-card.text_da78aac178": "*抽卡帮助",
+    "gacha-version-card.text_dba78395fa": "可确认抽数",
+    "gacha-version-card.text_dc8941f893": "第 {page}/{total} 张",
+    "gacha-version-card.text_e1a9a10145": "{unclassifiedDraws} 抽星级未辨认",
+    "gacha-version-card.text_e9555fcf84": "*逐抽全部统计",
+    "gacha-version-card.text_ea0fa7c627": "*全部统计",
+    "gacha-version-card.text_ee0ed776e0": "{label}版本统计超出可渲染高度。",
+    "gacha-version-card.text_ef09301bf5": "芭芭拉",
+    "gacha-version-card.text_f8193439ad": " 常驻/集录池统计",
+    "gacha-version-card.text_f93b41cd84": "*常驻统计",
+    "gacha-version-card.text_fe61382ff1": "抽卡总数",
+    "genshin-backpack-card.text_229673db70": "暂无素材记录",
+    "genshin-backpack-card.text_2a3c6b8bff": "原神背包",
+    "genshin-backpack-card.text_5b0e9d1429": "米游社养成计算器 · ≥ 表示至少拥有该数量",
+    "genshin-backpack-card.text_9af69965f1": "素材",
+    "genshin-gacha-special-card.text_0cbbaa970a": "{label}特殊池记录的原版字体不可用。",
+    "genshin-gacha-special-card.text_18353d32c9": "{allNum}抽",
+    "genshin-gacha-special-card.text_370e796ce4": "{label}特殊池记录超出可渲染高度。",
+    "genshin-gacha-special-card.text_3c5118f194": "数据总览",
+    "genshin-gacha-special-card.text_482155d2f0": "仅显示最近 {shownNum} 条五星记录，另有 {hiddenNum} 条",
+    "genshin-gacha-special-card.text_6836e61613": "五星历史 · 日期未记录",
+    "genshin-gacha-special-card.text_6a8bacf43f": "{label}特殊池记录的原版角色资源目录不可用。",
+    "genshin-gacha-special-card.text_7511bffc0d": "抽卡记录缩放比例须在 1 至 4 之间。",
+    "genshin-gacha-special-card.text_8b48ec6ac7": "暂无五星记录",
+    "genshin-gacha-special-card.text_8f64a19805": "五星历史 {firstTime} ~ {lastTime}",
+    "genshin-gacha-special-card.text_a28305483d": "各池",
+    "genshin-gacha-special-card.text_a2927891f0": "星铁",
+    "genshin-gacha-special-card.text_a310596486": "五星历史 · 暂无记录",
+    "genshin-gacha-special-card.text_a6743dc8ab": "第 {page}/{total} 张 · {value3}第 {from}~{to} 条五星记录",
+    "genshin-gacha-special-card.text_abf65ef355": "{typeName}池",
+    "genshin-gacha-special-card.text_d1597c51ed": "原神",
+    "genshin-gacha-special-card.text_d974a78661": "本页无五星记录",
+    "genshin-gacha-special-card.text_f8a3c21dfd": "{label}特殊池记录的原版图片不可用。",
+    "genshin-gacha-special-card.text_fa30358a73": "{label}特殊池记录的原 Genshin 资源目录不可用。",
+    "genshin-world-boss-card.text_7fc5fcb98d": "原神世界 BOSS 击杀",
+    "genshin-world-boss-card.text_b0a2fe264f": "击杀 ",
+    "genshin-world-boss-card.text_b6b5f699a9": "暂无击杀记录",
+    "genshin-world-boss-card.text_f81526efce": " 次",
+    "genshin-world-boss-ranking-card.text_486a874965": "击杀次数",
+    "genshin-world-boss-ranking-card.text_c864250a93": "原神 BOSS 击杀排行",
+    "genshin-world-boss-ranking-card.text_d2db835805": "暂无排行记录",
+    "index.text_03494cc773": "[渲染] {message} 改用 Skia CPU 后端。",
+    "index.text_121da2c6b1": "Skia {value1} 分带导出失败。",
+    "index.text_2f7faeefc0": "Skia 未启用 CPU 后端。",
+    "index.text_588387e089": "图像分带的像素尺寸不匹配。",
+    "index.text_722e85b72f": "无法初始化 Skia {value1} 后端。",
+    "index.text_8520a16020": "Skia {value1} 编码 PNG 失败。",
+    "index.text_87b1797b93": "Skia 未启用物理 GPU。",
+    "index.text_8ddca93a07": "画布尺寸须为正整数。",
+    "index.text_d0d3691df5": "RGBA 帧单边须在 8,192 像素内，总像素须在 2,400 万内。",
+    "index.text_d4b5f4ba17": "画布单边超过 1,048,576 像素，或总像素超过 2.56 亿。",
+    "index.text_f6bae4175a": "Skia {value1} 导出 RGBA 帧失败。",
+    "index.text_fccec90d21": "RGBA 帧像素尺寸不匹配。",
+    "index.text_fd927083c4": "画布缩放比例须在 1 至 4 之间。",
+    "info-card.text_28bf43cf12": "信息卡逻辑宽度最小为 300px。",
+    "info-card.text_65a627fa1f": "信息卡分页高度须至少为 1px。",
+    "info-card.text_9a5c3b0f9a": "信息卡缩放比例须在 1 至 4 之间。",
+    "passport-qr-card.text_2409e8f9f6": "扫码确认",
+    "passport-qr-card.text_378eaca774": "扫码登录",
+    "passport-qr-card.text_568c413254": "登录卡缩放比例须在 1 至 4 之间。",
+    "passport-qr-card.text_87b1b53e9a": "请使用对应 App 扫码确认。",
+    "passport-qr-card.text_90e820a519": "登录二维码须为有效 PNG 图片。",
+    "passport-qr-card.text_a1ba9d524f": "登录卡原字体不可用：{file}",
+    "profile-card.text_0ae1c81d69": "账号资料卡原字体不可用：{file}",
+    "profile-card.text_272ec10384": "资料卡缩放比例须在 1 至 4 之间。",
+    "profile-card.text_3e2354a0f3": "当前 UID",
+    "profile-card.text_449636a1fe": "账号状态",
+    "profile-card.text_46a9096ed6": "账号资料卡",
+    "profile-card.text_63514a39f5": "使用 {command} 切换",
+    "profile-card.text_662fc174b9": "未同步游戏角色",
+    "profile-card.text_6c2ca351be": "签到设置",
+    "profile-card.text_f56c6c8220": "提示",
+    "rank-stats-card.text_27fde30335": "统计样本 {value1} 个 UID  ·  生成时间 {value2}",
+    "rank-stats-card.text_30e1196888": "伤害",
+    "rank-stats-card.text_7a12fd90d1": "排名百分比",
+    "rank-stats-card.text_b2e8dfa288": "{value1}万",
+    "rank-stats-card.text_ba837c6601": "排名趋势 · {title}",
+    "status-card.text_8eb70bb0a9": "抽卡卡片缩放比例须在 1 至 4 之间。",
+    "checkin-receipt-card.profile_label": "档案 {profileId}",
+    "passport-qr-card.profile_label": "档案 {profileId}",
+    "checkin-receipt-card.text_33d658749e": "Lotus-Yunzai{value1}",
+    "daily-note-card.text_33d658749e": "Lotus-Yunzai{value1}",
+    "daily-note-reminder-card.text_3867834e77": "Lotus-Yunzai",
+    "donation-card.text_c657691343": "Lotus-Yunzai · {value1}",
+    "gacha-detail-card.text_3867834e77": "Lotus-Yunzai",
+    "gacha-pool-card.text_d41c915582": "Created By Lotus-Yunzai",
+    "gacha-version-card.text_3867834e77": "Lotus-Yunzai",
+    "genshin-gacha-special-card.text_d41c915582": "Created By Lotus-Yunzai",
+    "info-card.text_3867834e77": "Lotus-Yunzai",
+    "passport-qr-card.text_33d658749e": "Lotus-Yunzai{value1}",
+    "profile-card.text_33d658749e": "Lotus-Yunzai{value1}",
+    "rank-stats-card.text_3867834e77": "Lotus-Yunzai",
+    "status-card.text_c657691343": "Lotus-Yunzai · {value1}"
+  },
+  "parameters": {
+    "checkin-receipt-card.text_458830452d": {
+      "file": "file"
+    },
+    "daily-note-card.text_24a88328e5": {
+      "file": "file"
+    },
+    "daily-note-card.text_86cb4427a0": {
+      "checkin": "checkin"
+    },
+    "forward-images.text_2922d95437": {
+      "index": "index"
+    },
+    "forward-images.text_822ee89ef3": {
+      "index": "index"
+    },
+    "gacha-detail-card.text_f24e9795ef": {
+      "name": "config.name"
+    },
+    "gacha-detail-card.text_a1f691506f": {
+      "name": "config.name"
+    },
+    "gacha-detail-card.text_e21fca08eb": {
+      "player": "games[game].player"
+    },
+    "gacha-detail-card.text_b11c206e2f": {
+      "upExpect": "luck.upExpect"
+    },
+    "gacha-detail-card.text_d83656d5cb": {
+      "fiveExpect": "luck.fiveExpect"
+    },
+    "gacha-detail-card.text_969df75329": {
+      "fiveExpect": "luck.fiveExpect"
+    },
+    "gacha-detail-card.text_90bb620f2c": {
+      "fivePercent": "luck.fivePercent"
+    },
+    "gacha-detail-card.text_a1bc5d6980": {
+      "smallWin": "luck.smallWin",
+      "smallNum": "luck.smallNum",
+      "upRate": "luck.upRate"
+    },
+    "gacha-detail-card.text_088e2a01e8": {
+      "winPercent": "luck.winPercent"
+    },
+    "gacha-detail-card.text_1a19bda7c7": {
+      "value1": "Number(luck.fiveAvg) <= Number(luck.fiveExpect) ? \"出金快于\" : \"出金慢于\""
+    },
+    "gacha-detail-card.text_6b0c8e3331": {
+      "prefix": "prefix"
+    },
+    "gacha-detail-card.text_98191bc336": {
+      "prefix": "prefix"
+    },
+    "gacha-detail-card.text_64a1a00d6e": {
+      "prefix": "prefix"
+    },
+    "gacha-detail-card.text_eb8d491b40": {
+      "prefix": "prefix"
+    },
+    "gacha-detail-card.text_e4f468b9b3": {
+      "uid": "model.uid",
+      "poolName": "model.poolName"
+    },
+    "gacha-detail-card.text_dc8941f893": {
+      "page": "page.page",
+      "total": "page.total"
+    },
+    "gacha-detail-card.text_2b0a4e937a": {
+      "page": "pageInfo.page",
+      "total": "pageInfo.total",
+      "from": "pageInfo.from",
+      "to": "pageInfo.to",
+      "count": "pageInfo.count"
+    },
+    "gacha-detail-card.text_74729256f3": {
+      "shownNum": "gacha.shownNum",
+      "hiddenNum": "gacha.hiddenNum",
+      "prefix": "games[game].prefix",
+      "value4": "model.recordArchive ? \"逐抽\" : \"\"",
+      "poolName": "poolName"
+    },
+    "gacha-detail-card.text_12723f0f0f": {
+      "name": "games[game].name"
+    },
+    "gacha-detail-card.text_664bea2328": {
+      "unclassified": "model.gacha.unclassified"
+    },
+    "gacha-detail-card.text_dbef80175a": {
+      "name": "games[game].name"
+    },
+    "gacha-version-card.text_0b72e021d2": {
+      "label": "config.label"
+    },
+    "gacha-version-card.text_965472f277": {
+      "label": "config.label"
+    },
+    "gacha-version-card.text_bdb4b2fc9d": {
+      "uid": "model.uid",
+      "poolName": "model.poolName"
+    },
+    "gacha-version-card.text_dc8941f893": {
+      "page": "page.page",
+      "total": "page.total"
+    },
+    "gacha-version-card.text_1a6ad19554": {
+      "totalNum": "totalNum",
+      "value2": "totalNum - unassignedDraws",
+      "unassignedDraws": "unassignedDraws"
+    },
+    "gacha-version-card.text_e1a9a10145": {
+      "unclassifiedDraws": "unclassifiedDraws"
+    },
+    "gacha-version-card.text_84c666ec41": {
+      "page": "pageInfo.page",
+      "total": "pageInfo.total",
+      "from": "pageInfo.from",
+      "to": "pageInfo.to",
+      "count": "pageInfo.count"
+    },
+    "gacha-version-card.text_83a8704549": {
+      "shownNum": "gacha.shownNum",
+      "hiddenNum": "gacha.hiddenNum",
+      "prefix": "games[game].prefix",
+      "value4": "model.recordArchive ? \"逐抽\" : \"\"",
+      "poolName": "poolName"
+    },
+    "gacha-version-card.text_ee0ed776e0": {
+      "label": "config.label"
+    },
+    "gacha-version-card.text_10ab28c5db": {
+      "label": "config.label"
+    },
+    "genshin-gacha-special-card.text_0cbbaa970a": {
+      "label": "config.label"
+    },
+    "genshin-gacha-special-card.text_f8a3c21dfd": {
+      "label": "config.label"
+    },
+    "genshin-gacha-special-card.text_18353d32c9": {
+      "allNum": "pool.allNum"
+    },
+    "genshin-gacha-special-card.text_abf65ef355": {
+      "typeName": "pool.typeName"
+    },
+    "genshin-gacha-special-card.text_8f64a19805": {
+      "firstTime": "pool.firstTime",
+      "lastTime": "pool.lastTime"
+    },
+    "genshin-gacha-special-card.text_482155d2f0": {
+      "shownNum": "pool.shownNum",
+      "hiddenNum": "pool.hiddenNum"
+    },
+    "genshin-gacha-special-card.text_370e796ce4": {
+      "label": "games[game].label"
+    },
+    "genshin-gacha-special-card.text_fa30358a73": {
+      "label": "games[game].label"
+    },
+    "genshin-gacha-special-card.text_6a8bacf43f": {
+      "label": "games[game].label"
+    },
+    "genshin-gacha-special-card.text_a6743dc8ab": {
+      "page": "page.page",
+      "total": "page.total",
+      "value3": "crossPool ? \"各池\" : \"\"",
+      "from": "page.from",
+      "to": "page.to"
+    },
+    "index.text_121da2c6b1": {
+      "value1": "mode.toUpperCase()"
+    },
+    "index.text_722e85b72f": {
+      "value1": "mode.toUpperCase()"
+    },
+    "index.text_8520a16020": {
+      "value1": "mode.toUpperCase()"
+    },
+    "index.text_03494cc773": {
+      "message": "error.message"
+    },
+    "index.text_f6bae4175a": {
+      "value1": "backend.toUpperCase()"
+    },
+    "passport-qr-card.text_a1ba9d524f": {
+      "file": "file"
+    },
+    "profile-card.text_0ae1c81d69": {
+      "file": "file"
+    },
+    "profile-card.text_63514a39f5": {
+      "command": "group.command"
+    },
+    "rank-stats-card.text_ba837c6601": {
+      "title": "stats.title"
+    },
+    "rank-stats-card.text_27fde30335": {
+      "value1": "format.format(stats.total)",
+      "value2": "date.format(now)"
+    },
+    "rank-stats-card.text_b2e8dfa288": {
+      "value1": "(value / 10_000).toFixed(1)"
+    },
+    "checkin-receipt-card.profile_label": {
+      "profileId": "当前档案编号"
+    },
+    "passport-qr-card.profile_label": {
+      "profileId": "当前档案编号"
+    },
+    "checkin-receipt-card.text_33d658749e": {
+      "value1": "model.generatedAt ? ` · ${model.generatedAt}` : \"\""
+    },
+    "daily-note-card.text_33d658749e": {
+      "value1": "model.generatedAt ? ` · ${model.generatedAt}` : \"\""
+    },
+    "donation-card.text_c657691343": {
+      "value1": "shanghaiTime.format(at)"
+    },
+    "passport-qr-card.text_33d658749e": {
+      "value1": "model.generatedAt ? ` · ${model.generatedAt}` : \"\""
+    },
+    "profile-card.text_33d658749e": {
+      "value1": "model.generatedAt ? ` · ${model.generatedAt}` : \"\""
+    },
+    "status-card.text_c657691343": {
+      "value1": "localTime(at, timeZone)"
+    }
+  }
+}

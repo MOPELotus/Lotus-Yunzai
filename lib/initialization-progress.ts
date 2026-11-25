@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { interactiveTerminalInputActive } from "./terminal-output.ts";
 import { formatTerminalLog, terminalColorsEnabled } from "./terminal-log-format.ts";
 export interface InitializationProgress {
@@ -20,7 +23,7 @@ const clean = (value: string) => value.replace(/\x1b\[[0-?]*[ -/]*[@-~]/gu, "").
 const valid = (value: number | undefined): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
 function elapsed(ms: number) {
   const seconds = Math.max(0, Math.floor(ms / 1000));
-  return seconds < 60 ? `${seconds}秒` : `${Math.floor(seconds / 60)}分${seconds % 60}秒`;
+  return seconds < 60 ? $t("lib.initialization-progress.text_651573f06f", { "seconds": seconds }) : $t("lib.initialization-progress.text_b330f86837", { "value1": Math.floor(seconds / 60), "value2": seconds % 60 });
 }
 function bytes(value: number) {
   if (value < 1024) return `${Math.floor(value)} B`;
@@ -29,7 +32,7 @@ function bytes(value: number) {
   return `${(value / 1024 ** 3).toFixed(2)} GiB`;
 }
 /** Terminal redraws are throttled; redirected logs use periodic complete lines. */
-export function createInitializationProgress(label = "初始化", options: Options = {}) {
+export function createInitializationProgress(label = $t("lib.initialization-progress.text_65622e8ee9"), options: Options = {}) {
   const tty = options.isTTY ?? process.stderr.isTTY === true;
   const write = options.write ?? ((text: string) => process.stderr.write(text));
   const now = options.now ?? Date.now;
@@ -56,8 +59,8 @@ export function createInitializationProgress(label = "初始化", options: Optio
     const bar = tty && percent !== undefined ? `[${"=".repeat(Math.floor(percent / 5))}${" ".repeat(20 - Math.floor(percent / 5))}] ` : "";
     const counts = done === undefined ? "" : event.unit === "bytes"
       ? total === undefined ? bytes(done) : `${bytes(Math.min(done, total))}/${bytes(total)}`
-      : total === undefined ? `${Math.floor(done)}${clean(event.unit ?? "项")}` : `${Math.floor(Math.min(done, total))}/${Math.floor(total)}${clean(event.unit ?? "项")}`;
-    return formatTerminalLog("info", `[${clean(label)}] ${clean(event.message)}${counts ? ` · ${bar}${percent === undefined ? "" : `${percent}% `}${counts}` : ""} · 已耗时${elapsed(now() - startedAt)}`, { now: new Date(now()), color: tty && terminalColorsEnabled() });
+      : total === undefined ? `${Math.floor(done)}${clean(event.unit ?? $t("lib.initialization-progress.text_49ccde43a1"))}` : `${Math.floor(Math.min(done, total))}/${Math.floor(total)}${clean(event.unit ?? $t("lib.initialization-progress.text_49ccde43a1"))}`;
+    return formatTerminalLog("info", $t("lib.initialization-progress.text_66ce07c739", { "value1": clean(label), "value2": clean(event.message), "value3": counts ? ` · ${bar}${percent === undefined ? "" : `${percent}% `}${counts}` : "", "value4": elapsed(now() - startedAt) }), { now: new Date(now()), color: tty && terminalColorsEnabled() });
   }
   function render(force = false, pulse = false) {
     if (closed || !current || options.signal?.aborted) return;
@@ -71,7 +74,7 @@ export function createInitializationProgress(label = "初始化", options: Optio
   }
   const timer = setInterval(() => render(false, true), Math.max(100, Math.min(heartbeat, 1000)));
   timer.unref();
-  const abort = () => finish("已中止", "warn");
+  const abort = () => finish($t("lib.initialization-progress.text_db00f2c9bb"), "warn");
   options.signal?.addEventListener("abort", abort, { once: true });
   function close() {
     if (closed) return;
@@ -83,7 +86,7 @@ export function createInitializationProgress(label = "初始化", options: Optio
   function finish(message: string, level: "info" | "warn" | "error" = "info") {
     if (closed) return;
     if (tty && rendered) output("\r\x1b[2K");
-    output(formatTerminalLog(level, `[${clean(label)}] ${clean(message)} · 耗时${elapsed(now() - startedAt)}`, { now: new Date(now()), color: tty && terminalColorsEnabled(level) }) + "\n");
+    output(formatTerminalLog(level, $t("lib.initialization-progress.text_f4578bef8d", { "value1": clean(label), "value2": clean(message), "value3": elapsed(now() - startedAt) }), { now: new Date(now()), color: tty && terminalColorsEnabled(level) }) + "\n");
     rendered = false;
     close();
   }
@@ -97,8 +100,8 @@ export function createInitializationProgress(label = "初始化", options: Optio
       current = event;
       render(changedStage || newlyReached);
     },
-    complete(message = "准备完成") { finish(options.signal?.aborted ? "已中止" : message); },
-    fail(message = "准备失败") { finish(message, "error"); },
+    complete(message = $t("lib.initialization-progress.text_7a3adc9518")) { finish(options.signal?.aborted ? $t("lib.initialization-progress.text_db00f2c9bb") : message); },
+    fail(message = $t("lib.initialization-progress.text_a1e35e7bb2")) { finish(message, "error"); },
     close,
   };
 }
@@ -111,10 +114,10 @@ export async function runInitializationStage<T>(message: string, task: (progress
     options.signal?.throwIfAborted();
     const result = await task(progress.update);
     options.signal?.throwIfAborted();
-    progress.complete(`${message}完成`);
+    progress.complete($t("lib.initialization-progress.text_3991f69bdf", { "message": message }));
     return result;
   } catch (error) {
-    progress.fail(options.signal?.aborted ? `${message}已中止` : `${message}失败`);
+    progress.fail(options.signal?.aborted ? $t("lib.initialization-progress.text_4e421e7b62", { "message": message }) : $t("lib.initialization-progress.text_4ca0acdae3", { "message": message }));
     throw error;
   } finally { progress.close(); }
 }

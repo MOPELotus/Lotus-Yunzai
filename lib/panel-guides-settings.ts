@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -64,13 +67,13 @@ function includesExactly(values: Values, fields: readonly Field[]) {
   return Object.keys(values).length === fields.length && fields.every(field => Object.hasOwn(values, field.key));
 }
 
-const collectionHint = '作者条目格式为 {"source":"作者名","collection_id":[合集编号]}。';
+const collectionHint = $t("lib.panel-guides-settings.text_ab58d9861f");
 const guideFields = [
-  { key: "forward", label: "攻略合集和配队多图合并转发", type: "boolean", hint: "保存后重启生效，也用于参考面板、复刻表和深渊资料。" },
-  { key: "auto_update", label: "定时同步攻略、配队和参考资料", type: "boolean", hint: "保存后重启生效，手动更新仍可用。" },
-  { key: "gs_collections", label: "原神攻略合集", type: "json", hint: '按 {"news":[],"olds":[]} 分组。' + collectionHint },
-  { key: "sr_collections", label: "星铁攻略合集", type: "json", hint: "填写作者条目数组。" + collectionHint },
-  { key: "zzz_collections", label: "绝区零攻略合集", type: "json", hint: "填写作者条目数组。" + collectionHint },
+  { key: "forward", label: $t("lib.panel-guides-settings.text_d9f92b561c"), type: "boolean", hint: $t("lib.panel-guides-settings.text_8a7df858b1") },
+  { key: "auto_update", label: $t("lib.panel-guides-settings.text_c343df569b"), type: "boolean", hint: $t("lib.panel-guides-settings.text_052ec84604") },
+  { key: "gs_collections", label: $t("lib.panel-guides-settings.text_fb6ae95d5a"), type: "json", hint: $t("lib.panel-guides-settings.text_9a1e983d54") + collectionHint },
+  { key: "sr_collections", label: $t("lib.panel-guides-settings.text_4eea8d106e"), type: "json", hint: $t("lib.panel-guides-settings.text_9b744540a2") + collectionHint },
+  { key: "zzz_collections", label: $t("lib.panel-guides-settings.text_0b30450a32"), type: "json", hint: $t("lib.panel-guides-settings.text_9b744540a2") + collectionHint },
 ] as const satisfies readonly Field[];
 
 export function panelGuidesSettings(root: URL) {
@@ -135,8 +138,8 @@ function roleCache(root: URL) {
 export function panelGenshinGuideSettings(root: URL) {
   return endpoint(async () => {
     const { createGenshinStrategyPreference, genshinStrategySource } = await import("../plugins/guides/genshin-strategy.ts");
-    const fields = [{ key: "defaultSource", type: "select", label: "默认编号来源",
-      hint: "普通角色攻略没有图时使用。",
+    const fields = [{ key: "defaultSource", type: "select", label: $t("lib.panel-guides-settings.text_4a9e2be80b"),
+      hint: $t("lib.panel-guides-settings.text_794dfbfbf7"),
       options: Array.from({ length: 7 }, (_, index) => ({ label: `${index + 1} · ${genshinStrategySource(index + 1)!.source}`, value: index + 1 })),
     }] as const satisfies readonly Field[];
     const strategy = createGenshinStrategyPreference(join(roleCache(root), "genshin-strategy.json"),
@@ -158,8 +161,8 @@ export function panelStarRailGuideSettings(root: URL) {
     const { createStarRailStrategyPreference, starRailStrategyOptions, validStarRailStrategyChoice } =
       await import("../plugins/guides/starrail-strategy.ts");
     const fields = [{
-      key: "defaultSource", type: "select", label: "旧编号攻略默认来源",
-      hint: "仅用于未指定编号的星铁角色攻略。一图流的作者由「攻略来源与推送」设置。保存后即时生效。",
+      key: "defaultSource", type: "select", label: $t("lib.panel-guides-settings.text_d1da93c801"),
+      hint: $t("lib.panel-guides-settings.text_478d4fb7d4"),
       options: starRailStrategyOptions,
     }] as const satisfies readonly Field[];
     const strategy = createStarRailStrategyPreference({ cache: roleCache(root), settingsRoot: root });
@@ -181,8 +184,8 @@ export function panelZzzGuideSettings(root: URL) {
   return endpoint(async () => {
     const { createZzzStrategySettings, zzzStrategyOptions } = await import("../plugins/guides/zzz-strategy.ts");
     const fields = [
-      { key: "default_guide", type: "select", label: "默认编号来源", options: zzzStrategyOptions },
-      { key: "max_forward_guides", type: "number", label: "全部攻略最多转发条数", min: 1, max: 7 },
+      { key: "default_guide", type: "select", label: $t("lib.panel-guides-settings.text_4a9e2be80b"), options: zzzStrategyOptions },
+      { key: "max_forward_guides", type: "number", label: $t("lib.panel-guides-settings.text_22ce32c346"), min: 1, max: 7 },
     ] as const satisfies readonly Field[];
     const legacy = Bun.env.LOTUS_ZZZ_LEGACY_RESOURCES_DIR?.trim() || fileURLToPath(new URL("plugins/ZZZ-Plugin/resources/", root));
     const strategy = createZzzStrategySettings({ cache: roleCache(root), legacyRoot: dirname(legacy) });
@@ -202,10 +205,10 @@ export function panelZzzGuideSettings(root: URL) {
 
 export function panelGuideCalendarSettings(getSchedule: () => CalendarSchedule | undefined) {
   const fields = [
-    { key: "whiteList", label: "推送群白名单", type: "list", itemType: "number" },
-    { key: "blackList", label: "推送群黑名单", type: "list", itemType: "number", hint: "同一群同时出现时按黑名单处理。" },
-    { key: "tasks", label: "日历推送任务", type: "json",
-      hint: '填写任务数组，例如 [{"cron":"0 9 * * *","type":"G"}]。S 为星铁，G 为原神，* 为两者。保存后生效。' },
+    { key: "whiteList", label: $t("lib.panel-guides-settings.text_534e588bf6"), type: "list", itemType: "number" },
+    { key: "blackList", label: $t("lib.panel-guides-settings.text_ed2691435e"), type: "list", itemType: "number", hint: $t("lib.panel-guides-settings.text_0b1f65f1dd") },
+    { key: "tasks", label: $t("lib.panel-guides-settings.text_db97221170"), type: "json",
+      hint: $t("lib.panel-guides-settings.text_7ad38b42ad") },
   ] as const satisfies readonly Field[];
   return endpoint(async () => {
     const schedule = getSchedule();

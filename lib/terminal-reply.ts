@@ -1,11 +1,14 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { FileToUrl } from "./file-to-url.ts";
 import type { MessageReply } from "./messages.ts";
 
 const mediaLabels = new Map([
-  ["image", "图片"],
-  ["record", "音频"],
-  ["video", "视频"],
-  ["file", "文件"],
+  ["image", $t("lib.terminal-reply.text_d24c10d37d")],
+  ["record", $t("lib.terminal-reply.text_296c632ec8")],
+  ["video", $t("lib.terminal-reply.text_c20f7618d3")],
+  ["file", $t("lib.terminal-reply.text_39932f24fe")],
 ]);
 
 function object(value: unknown): Record<string, unknown> | undefined {

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { Job, scheduledJobs } from "node-schedule";
 import type { HandlerScope } from "./handler.ts";
 
@@ -37,7 +40,7 @@ function* definitions(app: Record<string, unknown>): Iterable<TaskDefinition> {
   if (app.task === undefined || app.task === null) return;
   for (const value of Array.isArray(app.task) ? app.task : [app.task]) {
     if (typeof value !== "object" || value === null) {
-      throw new Error(`插件 ${app.name} 的定时任务格式无效。`);
+      throw new Error($t("lib.plugins.tasks.text_768c57158c", { "name": app.name }));
     }
     const task = value as Record<string, unknown>;
     if (!task.cron && !task.fnc) continue;
@@ -47,7 +50,7 @@ function* definitions(app: Record<string, unknown>): Iterable<TaskDefinition> {
     const fields = cron.split(" ").length;
     const callback = typeof task.fnc === "string" ? app[task.fnc] : task.fnc;
     if ((fields !== 5 && fields !== 6) || typeof callback !== "function") {
-      throw new Error(`任务 ${name} 需要五段或六段 cron 及可调用的方法。`);
+      throw new Error($t("lib.plugins.tasks.text_a71a7daf61", { "name": name }));
     }
     yield {
       key: JSON.stringify([name, cron]), name, cron,
@@ -58,7 +61,7 @@ function* definitions(app: Record<string, unknown>): Iterable<TaskDefinition> {
 }
 
 function warnDuplicate({ name, cron }: Pick<TaskDefinition, "name" | "cron">) {
-  console.warn(`[任务] 跳过重复任务 ${name}（${cron}）。`);
+  console.warn($t("lib.plugins.tasks.text_8f877cdeab", { "name": name, "cron": cron }));
 }
 
 export class LegacyTasks {
@@ -141,11 +144,11 @@ export class LegacyTasks {
       const completion = Promise.resolve()
         .then(async () => {
           if (this.#tasks.get(key)?.job !== job || !this.accepting()) return;
-          if (task.log) console.log(`[任务] 开始执行 ${name}。`);
+          if (task.log) console.log($t("lib.plugins.tasks.text_123691cd16", { "name": name }));
           await owner.run(() => task.invoke());
         })
         .catch((error: unknown) => {
-          console.warn(`[任务] ${name} 执行失败：`, error);
+          console.warn($t("lib.plugins.tasks.text_da3faae960", { "name": name }), error);
         })
         .finally(() => { this.#running.delete(key); });
       this.#running.set(key, { owner, completion });
@@ -156,7 +159,7 @@ export class LegacyTasks {
     } finally {
       if (!scheduled) job.cancel();
     }
-    if (!scheduled) throw new Error(`任务 ${name} 的 cron 无效或没有下一次触发时间：${cron}`);
+    if (!scheduled) throw new Error($t("lib.plugins.tasks.text_dc40fec0a8", { "name": name, "cron": cron }));
     return { name, cron, owner, job };
   }
 

@@ -1,9 +1,12 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 const active = new Set(["scheduled", "preparing", "submitting"]);
 const outcomes = new Set(["unknown", "cancelled", "missed", "succeeded", "failed"]);
 const shopId = /^[a-zA-Z0-9_-]{1,100}$/u;
 const accountId = /^[1-9]\d{0,19}$/u;
 const batchId = /^[0-9a-f]{64}$/u;
-const waiting = "交还后兑换结果待核对，请先查米游社兑换记录。";
+const waiting = $t("lib.legacy-write-state.text_aef4a15da9");
 
 type Row = Record<string, unknown>;
 type Plan = Row & { id: string; status: string; attempts: number };
@@ -33,7 +36,7 @@ export function parseWriteStateJson(bytes: Uint8Array): unknown {
     else if (token.endsWith(":")) {
       const field = JSON.parse(token.slice(0, -1)) as string;
       const keys = scopes.at(-1);
-      if (keys?.has(field)) throw new Error("交还副本含重复 JSON 字段。");
+      if (keys?.has(field)) throw new Error($t("lib.legacy-write-state.text_906e799b50"));
       keys?.add(field);
     }
   }
@@ -47,7 +50,7 @@ function actor(row: Row) {
 
 function unique<T extends { id: string }>(records: T[]) {
   const entries = new Map(records.map(row => [row.id, row]));
-  if (entries.size !== records.length) throw new Error("商城账本含重复记录。");
+  if (entries.size !== records.length) throw new Error($t("lib.legacy-write-state.text_af1e7e94c4"));
   return entries;
 }
 
@@ -56,19 +59,19 @@ function ledger(value: unknown) {
   const raw = object(value);
   if (!raw || (raw.version !== 1 && raw.version !== 2) || !Array.isArray(raw.plans) ||
       (raw.version === 2 && !Array.isArray(raw.trackers)) || (raw.trackers !== undefined && !Array.isArray(raw.trackers))) {
-    throw new Error("商城账本格式无效。");
+    throw new Error($t("lib.legacy-write-state.text_a672721417"));
   }
   const plans = unique(raw.plans.map(item => {
     const row = object(item);
     if (!row || !actor(row) || !matches(row.goodsId, accountId) || !nonnegative(row.attempts) ||
         typeof row.status !== "string" || (!active.has(row.status) && !outcomes.has(row.status))) {
-      throw new Error("商城预约缺少可核对的身份或状态。");
+      throw new Error($t("lib.legacy-write-state.text_9d2d1d6705"));
     }
     return row as Plan;
   }));
   const trackers = unique((raw.trackers ?? []).map((item: unknown) => {
     const row = object(item);
-    if (!row || !actor(row) || typeof row.enabled !== "boolean") throw new Error("商城追踪缺少可核对的身份或状态。");
+    if (!row || !actor(row) || typeof row.enabled !== "boolean") throw new Error($t("lib.legacy-write-state.text_850337c31b"));
     return row as Tracker;
   }));
   return { plans, trackers };
@@ -78,7 +81,7 @@ function confirmSameOwner(row: Row, earlier: Row, plan: boolean) {
   if (row.qq !== earlier.qq || row.profileId !== earlier.profileId || row.accountId !== earlier.accountId ||
       (plan && (row.goodsId !== earlier.goodsId || ["createdAt", "type", "gameBiz"].some(field =>
         row[field] !== undefined && earlier[field] !== undefined && row[field] !== earlier[field])))) {
-    throw new Error("商城账本的同一记录对应不同账号或商品。");
+    throw new Error($t("lib.legacy-write-state.text_989e4c2c7c"));
   }
 }
 
@@ -111,7 +114,7 @@ export function prepareLegacyShopWriteState(current: unknown, legacy: unknown) {
     }
     if (active.has(plan.status)) {
       cancelled++;
-      return { ...plan, status: "cancelled", message: "跨版本交还已停止自动预约，请重新核对商品后预约。" };
+      return { ...plan, status: "cancelled", message: $t("lib.legacy-write-state.text_1d413c0664") };
     }
     kept++;
     return plan;
@@ -123,7 +126,7 @@ export function prepareLegacyShopWriteState(current: unknown, legacy: unknown) {
     const tracker = (next ?? previous)!;
     if (!tracker.enabled) return tracker;
     disabled++;
-    return { ...tracker, enabled: false, message: "跨版本交还已暂停追踪，请核对旧版支持的条件后再启用。" };
+    return { ...tracker, enabled: false, message: $t("lib.legacy-write-state.text_d570035b8a") };
   });
   return { data: { version: 2, plans, trackers }, held, cancelled, kept, disabled };
 }
@@ -132,12 +135,12 @@ function readRedeemLedger(value: unknown, modern: boolean) {
   const entries = new Map<string, Redeem>();
   if (value === undefined) return entries;
   const raw = object(value);
-  if (!raw) throw new Error("前瞻兑换账本格式无效。");
+  if (!raw) throw new Error($t("lib.legacy-write-state.text_bca377482c"));
   for (const [key, value] of Object.entries(raw)) {
     if (modern && key === "__lotusPreviewJournalVersion" && value === 1) continue;
     const entry = object(value);
     if (!batchId.test(key) || !entry || !nonnegative(entry.time) ||
-        (entry.status !== "started" && entry.status !== "finished")) throw new Error("前瞻兑换账本含无效批次。");
+        (entry.status !== "started" && entry.status !== "finished")) throw new Error($t("lib.legacy-write-state.text_581a94a14e"));
     entries.set(key, { time: entry.time, status: entry.status });
   }
   return entries;

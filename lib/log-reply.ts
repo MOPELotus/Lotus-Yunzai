@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { MessageEvent } from "./messages.ts";
 
 const nodeBytes = 1200;
@@ -5,7 +8,7 @@ const maxBodyNodes = 98;
 const maxForwardBytes = 96 * 1024;
 const maxChatTextBytes = 3000;
 const maxTerminalTextBytes = 96 * 1024;
-const clippedNotice = "日志内容过长，已截取部分内容。";
+const clippedNotice = $t("lib.log-reply.text_f3679fb34a");
 
 function prefix(text: string, budget: number): string {
   if (Buffer.byteLength(text) <= budget) return text;
@@ -61,7 +64,7 @@ function forwardNodes(lines: readonly string[], limit: number, title: string, se
 export async function replyWithLog(event: MessageEvent, title: string, lines: readonly string[], {
   limit = lines.length,
   separator = "\n",
-  unconfirmed = "日志转发结果未确认，请在聊天中核对。",
+  unconfirmed = $t("lib.log-reply.text_53b4cd9da9"),
 }: { readonly limit?: number; readonly separator?: string; readonly unconfirmed?: string } = {}): Promise<void> {
   const terminal = event.message_type === "terminal";
   if (!terminal && event.forward) {

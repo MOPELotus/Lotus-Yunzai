@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
 export const managedDispatchPauseFile = "host-dispatch-pause";
@@ -5,7 +8,7 @@ export const managedDispatchPauseFile = "host-dispatch-pause";
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu;
 
 export function managedDispatchPause(path: string, attempt: string) {
-  if (!uuid.test(attempt)) throw new Error("后台软关机状态的启动标记无效。");
+  if (!uuid.test(attempt)) throw new Error($t("lib.managed-dispatch-pause.text_e855668ae8"));
   return {
     load(): number | null | undefined {
       let contents: string;
@@ -13,19 +16,19 @@ export function managedDispatchPause(path: string, attempt: string) {
         contents = readFileSync(path, "utf8");
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-        throw new Error("无法读取后台软关机状态。", { cause: error });
+        throw new Error($t("lib.managed-dispatch-pause.text_2095a75e66"), { cause: error });
       }
       try {
         const { attempt: recorded, pausedAt } = JSON.parse(contents) as { attempt: unknown; pausedAt: unknown };
-        if (typeof recorded !== "string" || !uuid.test(recorded)) throw new Error("启动标记无效。");
+        if (typeof recorded !== "string" || !uuid.test(recorded)) throw new Error($t("lib.managed-dispatch-pause.text_45e98bb631"));
         if (recorded !== attempt) return;
         if (pausedAt === null) return null;
         if (typeof pausedAt !== "number" || !Number.isSafeInteger(pausedAt) || pausedAt <= 0) {
-          throw new Error("关机时间无效。");
+          throw new Error($t("lib.managed-dispatch-pause.text_463e35249d"));
         }
         return pausedAt;
       } catch (error) {
-        throw new Error("无法核实后台软关机状态。", { cause: error });
+        throw new Error($t("lib.managed-dispatch-pause.text_6c8fee6eeb"), { cause: error });
       }
     },
     save(pausedAt?: number) {
@@ -35,7 +38,7 @@ export function managedDispatchPause(path: string, attempt: string) {
         renameSync(temporary, path);
       } catch (error) {
         try { rmSync(temporary, { force: true }); } catch {}
-        throw new Error("无法保存后台软关机状态。", { cause: error });
+        throw new Error($t("lib.managed-dispatch-pause.text_fcba8ebee1"), { cause: error });
       }
     },
   };

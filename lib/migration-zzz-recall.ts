@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { readMigrationSourceFile } from "./migration-files.ts";
@@ -48,7 +51,7 @@ export async function stageLegacyZzzRecallConfig(archive: string | undefined, st
     const directory = join(stage, "config");
     await mkdir(directory, { mode: 0o700, recursive: true });
     if (!(await lstat(directory)).isDirectory() || await realpath(directory) !== directory) {
-      throw new Error("绝区零面板配置暂存路径须为实体目录。");
+      throw new Error($t("lib.migration-zzz-recall.text_1008cea440"));
     }
     signal?.throwIfAborted();
     await writeFile(join(directory, "zzz-panel.yaml"), Bun.YAML.stringify({ ...panelDefaults, ...panelConfig, recallMsg }),

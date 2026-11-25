@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isGeneratedImage } from "@lotus-yunzai/skia/generated-image";
 import { chatFileRelaySource, type ChatFile, type ChatFileRelaySource, type ChatFileResult, type IncomingChatFile } from "./chat-files.ts";
 import { sendSessionMedia, type MediaDelivery, type SendSessionMedia } from "./media-delivery.ts";
@@ -177,7 +180,7 @@ export async function notifyOwnReply(callback: NonNullable<ReplyOptions["onOwnRe
   try {
     await callback(() => result ??= Promise.resolve().then(recall).catch(() => "unknown"));
   } catch {
-    console.warn("[消息] 已确认送达，撤回回执记录失败。");
+    console.warn($t("lib.messages.text_dbbf794360"));
   }
 }
 
@@ -190,7 +193,7 @@ export async function notifyReplyDelivery(callback: ReplyOptions["onDelivered"],
   try {
     await callback(messageId);
   } catch {
-    console.warn("[消息] 已确认送达，回执记录失败。");
+    console.warn($t("lib.messages.text_3c7820e346"));
   }
 }
 

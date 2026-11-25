@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { parseDocument } from "yaml";
@@ -55,7 +58,7 @@ const legacySources = [
 const reservedDirectories = new Set(["node_modules", ...builtInDirectories.values()]);
 const entryFields = new Set(["directory", "url", "branch", "revision", "aliases"]);
 const maxConfigBytes = 256 * 1024;
-const invalid = () => new Error("安装名录配置无效或存在重复。");
+const invalid = () => new Error($t("lib.install-catalog.text_470e445d98"));
 
 function fields(value: unknown): ReadonlyMap<unknown, unknown> | undefined {
   if (value instanceof Map) return value;
@@ -172,7 +175,7 @@ export async function readInstallCatalog(root: URL): Promise<InstallCatalog> {
   for (const path of ["config/install.yaml", "config/config/install.yaml"]) {
     const file = await open(new URL(path, root), constants.O_RDONLY | constants.O_NONBLOCK).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return;
-      throw new Error("无法读取 " + path + "。");
+      throw new Error($t("lib.install-catalog.text_337384fa21") + path + "。");
     });
     if (!file) continue;
     try {
@@ -184,7 +187,7 @@ export async function readInstallCatalog(root: URL): Promise<InstallCatalog> {
       if (document.errors.length || document.warnings.length) throw invalid();
       return normalizeInstallCatalog(document.toJS({ mapAsMap: true, maxAliasCount: 0 }));
     } catch {
-      throw new Error("无法读取 " + path + "。");
+      throw new Error($t("lib.install-catalog.text_337384fa21") + path + "。");
     } finally {
       await file.close();
     }

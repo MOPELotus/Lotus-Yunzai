@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, readdir, realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { parseDocument } from "yaml";
@@ -22,7 +25,7 @@ function decode(bytes?: Uint8Array) {
     const result = record(document.toJS({ maxAliasCount: 0 }));
     if (result) return result;
   }
-  throw new TypeError("旧星铁模拟设置 YAML 无效。");
+  throw new TypeError($t("lib.migration-starrail-warp-settings.text_18474d1b46"));
 }
 
 function ticketFields(value: unknown) {
@@ -70,7 +73,7 @@ export async function stageLegacyStarRailWarpSettings(archive: string | undefine
     }
     const output = join(stage, "data/starrail/simulation/settings/1");
     await mkdir(output, { recursive: true, mode: 0o700 });
-    if (!(await lstat(output)).isDirectory() || await realpath(output) !== output) throw new Error("星铁模拟设置暂存路径须为实体目录。");
+    if (!(await lstat(output)).isDirectory() || await realpath(output) !== output) throw new Error($t("lib.migration-starrail-warp-settings.text_49995349c0"));
     signal?.throwIfAborted();
     await writeFile(join(output, "1.json"), JSON.stringify(settings), { flag: "wx", mode: 0o600 });
     return { active: true, deferred: false };
@@ -113,9 +116,9 @@ export async function stageLegacyStarRailPersonalPools(archive: string | undefin
         seen.add(qq);
         const source = new TextDecoder("utf-8", { fatal: true }).decode(file.bytes);
         const yaml = parseDocument(source, { strict: true, uniqueKeys: true });
-        if (yaml.errors.length || yaml.warnings.length) throw new TypeError("个人卡池 YAML 无效。");
+        if (yaml.errors.length || yaml.warnings.length) throw new TypeError($t("lib.migration-starrail-warp-settings.text_111024d931"));
         encoded = JSON.stringify(parseLegacyPersonalPools(yaml.toJS({ maxAliasCount: 0 })));
-        if (Buffer.byteLength(encoded) > personalWarpPoolFileLimit) throw new TypeError("个人卡池过大。");
+        if (Buffer.byteLength(encoded) > personalWarpPoolFileLimit) throw new TypeError($t("lib.migration-starrail-warp-settings.text_e7858c1457"));
       } catch {
         signal?.throwIfAborted();
         seen.add(qq);
@@ -124,7 +127,7 @@ export async function stageLegacyStarRailPersonalPools(archive: string | undefin
       }
       const target = join(stage, "data/starrail/simulation", personalWarpPoolFolder, qq);
       await mkdir(target, { recursive: true, mode: 0o700 });
-      if (!(await lstat(target)).isDirectory() || await realpath(target) !== target) throw new Error("个人卡池暂存路径须为实体目录。");
+      if (!(await lstat(target)).isDirectory() || await realpath(target) !== target) throw new Error($t("lib.migration-starrail-warp-settings.text_e6e6d2a0d6"));
       signal?.throwIfAborted();
       await writeFile(join(target, "1.json"), encoded, { flag: "wx", mode: 0o600 });
       totals.accounts++;

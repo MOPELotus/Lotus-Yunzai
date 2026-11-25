@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -30,7 +31,7 @@ async function prepare(root: string) {
   const destination = join(root, "plugins", "genshin");
   await cp(source, destination, { recursive: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });
   await symlink(join(source, "node_modules"), join(destination, "node_modules"), "dir");
-  await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+  await linkHostPackages(root);
   await mkdir(join(root, "profiles"));
   await writeFile(join(root, "profiles", "42-2.yaml"), Bun.YAML.stringify({ user: { qq: "42" }, profile: { id: 2 }, account: {
     stuid: "99042", stoken: "fixture", cookie: "account_id=99042;cookie_token=fixture", current_uid: { gs: uid },

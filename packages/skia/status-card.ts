@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { dirname, join } from "node:path";
@@ -67,12 +70,12 @@ function lines(ctx: Context, value: string, maxWidth: number, size: number) {
 }
 
 function paintText(ctx: Context, rows: readonly string[], x: number, y: number,
-  size: number, leading: number, color: string) {
+  size: number, leading: number, color: string, footer = false) {
   ctx.font = `${size}px ${font}`;
   ctx.textBaseline = "top";
   ctx.fillStyle = color;
   for (const [index, row] of rows.entries()) {
-    ctx.fillStyle = row.includes("Lotus-Yunzai") ? brandTextColor(ctx, row, x, y + index * leading) : color;
+    ctx.fillStyle = footer ? brandTextColor(ctx, row, x, y + index * leading) : color;
     ctx.fillText(row, x, y + index * leading);
   }
 }
@@ -94,7 +97,7 @@ function localTime(date: Date, timeZone?: string) {
 export async function renderStatusCard(title: string, lead: string, contents: readonly string[], at: Date,
   { mode = "auto", scale = 4, themeDirectory = Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || defaultTheme,
     timeZone }: StatusCardOptions = {}): Promise<PngRender> {
-  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("抽卡卡片缩放比例须在 1 至 4 之间。");
+  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError($t("status-card.text_8eb70bb0a9"));
   const background = await themeImage(themeDirectory);
   const metrics = new Canvas(1, 1);
   metrics.gpu = false;
@@ -137,6 +140,6 @@ export async function renderStatusCard(title: string, lead: string, contents: re
     ctx.shadowBlur = 2;
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
-    paintText(ctx, [`Lotus-Yunzai · ${localTime(at, timeZone)}`], 300, 20 + panelHeight + 25, 12, 18, "#fff");
+    paintText(ctx, [$t("status-card.text_c657691343", { "value1": localTime(at, timeZone) })], 300, 20 + panelHeight + 25, 12, 18, "#fff", true);
   }, mode, { renderScale: scale, allowHalfScale: scale === 4 });
 }

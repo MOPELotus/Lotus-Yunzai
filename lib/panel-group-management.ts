@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -28,47 +31,47 @@ interface Field {
   readonly hint?: string;
 }
 
-const restart = "定时任务在重启宿主后重新载入。";
+const restart = $t("lib.panel-group-management.text_6161b3af76");
 const integerLimit = 1_000_000;
-const recallPermissionLabels = { all: "本群成员", admin: "群管理员及群主", owner: "群主", master: "机器人主人" };
+const recallPermissionLabels = { all: $t("lib.panel-group-management.text_abb17b4835"), admin: $t("lib.panel-group-management.text_121a09eaac"), owner: $t("lib.panel-group-management.text_81d4acd17e"), master: $t("lib.panel-group-management.text_5294ba542d") };
 const recallPermissionOptions = groupRecallPermissionValues.map(value => ({ label: recallPermissionLabels[value], value }));
 const moderationFields = ({ maxGroupVerificationSeconds, groupVoteNumericLimits }: ManagedBlacklistModule): readonly Field[] => [
-  { key: "whiteQQ", label: "群管白名单", type: "list", itemType: "number", path: ["whiteQQ"] },
-  { key: "blackQQ", label: "群管黑名单", type: "list", itemType: "number", path: ["blackQQ"] },
-  { key: "noBan", label: "自动解除白名单成员的禁言", type: "boolean", path: ["noBan"] },
-  { key: "recallBot", label: "谁可以请求撤回机器人消息", type: "select", path: ["recallMsgPer", "bot"], options: recallPermissionOptions },
-  { key: "recallMember", label: "谁可以请求撤回群成员消息", type: "select", path: ["recallMsgPer", "member"], options: recallPermissionOptions },
-  { key: "VoteBan", label: "启用投票禁言", type: "boolean", path: ["VoteBan"] },
-  { key: "VoteKick", label: "启用投票踢出", type: "boolean", path: ["VoteKick"] },
-  { key: "outTime", label: "投票时限（秒）", type: "number", min: 1, max: groupVoteNumericLimits.outTime, path: ["outTime"] },
-  { key: "minNum", label: "投票通过所需的最低赞成票数", type: "number", min: 1, max: groupVoteNumericLimits.minNum, path: ["minNum"] },
-  { key: "BanTime", label: "投票通过后的禁言时长（秒）", type: "number", min: 1, max: groupVoteNumericLimits.BanTime, path: ["BanTime"] },
-  { key: "veto", label: "允许管理员一票决定", type: "boolean", path: ["veto"] },
-  { key: "voteAdmin", label: "允许对管理员发起投票", type: "boolean", path: ["voteAdmin"] },
-  { key: "noticeGroups", label: "向群管理员提醒入群申请的群", type: "list", itemType: "number", path: ["groupAddNotice", "openGroup"] },
-  { key: "noticeMessage", label: "入群申请提醒文案", type: "text", multiline: true, max: 2048, path: ["groupAddNotice", "msg"] },
-  { key: "verifyGroups", label: "启用入群验证的群", type: "list", itemType: "number", path: ["groupVerify", "openGroup"] },
-  { key: "verifyMode", label: "入群验证匹配方式", type: "select", path: ["groupVerify", "mode"],
-    options: ["精确", "模糊"].map(value => ({ label: value, value })) },
-  { key: "verifyAttempts", label: "验证尝试次数", type: "number", min: 1, max: 100, path: ["groupVerify", "times"] },
-  { key: "verifySeconds", label: "验证时限（秒）", type: "number", min: 1, max: maxGroupVerificationSeconds, path: ["groupVerify", "time"] },
-  { key: "verifyDelay", label: "发送题目前等待（秒）", type: "number", min: 0, max: maxGroupVerificationSeconds, path: ["groupVerify", "DelayTime"] },
-  { key: "verifyMin", label: "题目取值下限", type: "number", min: -integerLimit, max: integerLimit, path: ["groupVerify", "range", "min"] },
-  { key: "verifyMax", label: "题目取值上限", type: "number", min: -integerLimit, max: integerLimit, path: ["groupVerify", "range", "max"] },
-  { key: "verifyReminder", label: "最后一分钟提醒", type: "boolean", path: ["groupVerify", "remindAtLastMinute"] },
-  { key: "verifyMessages", label: "验证成功文案", type: "json", path: ["groupVerify", "SuccessMsgs"],
-    hint: '填写群号与文案组成的 JSON 对象。键 "0" 为默认文案。' },
+  { key: "whiteQQ", label: $t("lib.panel-group-management.text_cf08d40568"), type: "list", itemType: "number", path: ["whiteQQ"] },
+  { key: "blackQQ", label: $t("lib.panel-group-management.text_424f55b7fe"), type: "list", itemType: "number", path: ["blackQQ"] },
+  { key: "noBan", label: $t("lib.panel-group-management.text_07e6fb6a64"), type: "boolean", path: ["noBan"] },
+  { key: "recallBot", label: $t("lib.panel-group-management.text_f0d5160b46"), type: "select", path: ["recallMsgPer", "bot"], options: recallPermissionOptions },
+  { key: "recallMember", label: $t("lib.panel-group-management.text_0c7d02dfcb"), type: "select", path: ["recallMsgPer", "member"], options: recallPermissionOptions },
+  { key: "VoteBan", label: $t("lib.panel-group-management.text_6c92684565"), type: "boolean", path: ["VoteBan"] },
+  { key: "VoteKick", label: $t("lib.panel-group-management.text_ac1a819fca"), type: "boolean", path: ["VoteKick"] },
+  { key: "outTime", label: $t("lib.panel-group-management.text_22c66d27ab"), type: "number", min: 1, max: groupVoteNumericLimits.outTime, path: ["outTime"] },
+  { key: "minNum", label: $t("lib.panel-group-management.text_78bdca2d45"), type: "number", min: 1, max: groupVoteNumericLimits.minNum, path: ["minNum"] },
+  { key: "BanTime", label: $t("lib.panel-group-management.text_75c81964d3"), type: "number", min: 1, max: groupVoteNumericLimits.BanTime, path: ["BanTime"] },
+  { key: "veto", label: $t("lib.panel-group-management.text_c1cbb72669"), type: "boolean", path: ["veto"] },
+  { key: "voteAdmin", label: $t("lib.panel-group-management.text_dbb944eed1"), type: "boolean", path: ["voteAdmin"] },
+  { key: "noticeGroups", label: $t("lib.panel-group-management.text_383544d216"), type: "list", itemType: "number", path: ["groupAddNotice", "openGroup"] },
+  { key: "noticeMessage", label: $t("lib.panel-group-management.text_7f1f0a3f11"), type: "text", multiline: true, max: 2048, path: ["groupAddNotice", "msg"] },
+  { key: "verifyGroups", label: $t("lib.panel-group-management.text_ebc2706e76"), type: "list", itemType: "number", path: ["groupVerify", "openGroup"] },
+  { key: "verifyMode", label: $t("lib.panel-group-management.text_7d8cfbca9a"), type: "select", path: ["groupVerify", "mode"],
+    options: [$t("lib.panel-group-management.text_235532a9c1"), $t("lib.panel-group-management.text_36bab7a3de")].map(value => ({ label: value, value })) },
+  { key: "verifyAttempts", label: $t("lib.panel-group-management.text_7a9f7546b5"), type: "number", min: 1, max: 100, path: ["groupVerify", "times"] },
+  { key: "verifySeconds", label: $t("lib.panel-group-management.text_a74e13ad58"), type: "number", min: 1, max: maxGroupVerificationSeconds, path: ["groupVerify", "time"] },
+  { key: "verifyDelay", label: $t("lib.panel-group-management.text_25482fe40f"), type: "number", min: 0, max: maxGroupVerificationSeconds, path: ["groupVerify", "DelayTime"] },
+  { key: "verifyMin", label: $t("lib.panel-group-management.text_6adf7acc70"), type: "number", min: -integerLimit, max: integerLimit, path: ["groupVerify", "range", "min"] },
+  { key: "verifyMax", label: $t("lib.panel-group-management.text_25bcdfac35"), type: "number", min: -integerLimit, max: integerLimit, path: ["groupVerify", "range", "max"] },
+  { key: "verifyReminder", label: $t("lib.panel-group-management.text_630e2336cc"), type: "boolean", path: ["groupVerify", "remindAtLastMinute"] },
+  { key: "verifyMessages", label: $t("lib.panel-group-management.text_8098a53895"), type: "json", path: ["groupVerify", "SuccessMsgs"],
+    hint: $t("lib.panel-group-management.text_f8628cc347") },
 ];
 const cardFields: readonly Field[] = [
-  { key: "enable", label: "启用自动群名片", type: "boolean", path: ["enable"], hint: restart },
-  { key: "cron", label: "更新群名片计划（Cron）", type: "text", max: 180, path: ["cron"], hint: restart },
-  { key: "nickname", label: "机器人群名片昵称", type: "text", max: 256, path: ["nickname"], hint: "留空使用各机器人当前昵称。" },
-  { key: "notGroup", label: "不自动更新的群", type: "list", itemType: "number", path: ["notGroup"] },
-  { key: "suffixes", label: "群名片候选文案", type: "list", itemType: "string", separator: "line", path: ["suffixes"], hint: restart },
+  { key: "enable", label: $t("lib.panel-group-management.text_7c0935386b"), type: "boolean", path: ["enable"], hint: restart },
+  { key: "cron", label: $t("lib.panel-group-management.text_9fcd9f5b7c"), type: "text", max: 180, path: ["cron"], hint: restart },
+  { key: "nickname", label: $t("lib.panel-group-management.text_d10cbcdd29"), type: "text", max: 256, path: ["nickname"], hint: $t("lib.panel-group-management.text_d775c83c8f") },
+  { key: "notGroup", label: $t("lib.panel-group-management.text_f40e328127"), type: "list", itemType: "number", path: ["notGroup"] },
+  { key: "suffixes", label: $t("lib.panel-group-management.text_f27e9bc90e"), type: "list", itemType: "string", separator: "line", path: ["suffixes"], hint: restart },
 ];
 const leaveFields: readonly Field[] = [
-  { key: "enable", label: "启用退群拉黑", type: "boolean", path: ["enable"] },
-  { key: "groups", label: "启用退群拉黑的群", type: "list", itemType: "number", path: ["groups"] },
+  { key: "enable", label: $t("lib.panel-group-management.text_c4808f4fed"), type: "boolean", path: ["enable"] },
+  { key: "groups", label: $t("lib.panel-group-management.text_51b5ab5f17"), type: "list", itemType: "number", path: ["groups"] },
 ];
 
 function record(value: unknown): value is Values {
@@ -140,14 +143,14 @@ export function panelGroupManagement(root: URL, directories: PluginLoadReport["d
           Response.json({ fields: publicFields, values });
       }
       const body = await readPanelJson(request).catch(() => undefined);
-      if (!record(body) || !record(body.previous) || !validValues(fields, body.values)) return invalid("群管设置格式有误。");
+      if (!record(body) || !record(body.previous) || !validValues(fields, body.values)) return invalid($t("lib.panel-group-management.text_f937ebd00d"));
       const { previous, values } = body;
-      if (name === "groupAdmin" && Number(values.verifyMin) >= Number(values.verifyMax)) return invalid("题目取值下限须小于上限。");
+      if (name === "groupAdmin" && Number(values.verifyMin) >= Number(values.verifyMax)) return invalid($t("lib.panel-group-management.text_27a6c3d920"));
       if (cards) {
         try {
           const card = cards.parseAutoGroupCardSettings(values);
-          if (typeof values.cron !== "string" || !values.cron.trim() || !validateCron(card.cron)) return invalid("群名片 Cron 表达式无效。");
-        } catch { return invalid("群名片昵称和候选文案须填写有效的单行文字。"); }
+          if (typeof values.cron !== "string" || !values.cron.trim() || !validateCron(card.cron)) return invalid($t("lib.panel-group-management.text_b2d3ccf9c7"));
+        } catch { return invalid($t("lib.panel-group-management.text_0dc9d7f6e2")); }
       }
 
       await updateLocalConfiguration(root, name, {

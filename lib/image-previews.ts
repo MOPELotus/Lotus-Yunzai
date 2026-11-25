@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
@@ -161,7 +164,7 @@ export async function prepareImagePreviewRelease(
     signal.throwIfAborted();
     const directory = new URL("./", target);
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    lock = await lockFile(fileURLToPath(new URL(".release.sqlite", directory)), "图片预览资源", 0);
+    lock = await lockFile(fileURLToPath(new URL(".release.sqlite", directory)), $t("lib.image-previews.text_24e4e5ab63"), 0);
     database = new URL(".release-body.sqlite", directory);
     await rm(database, { force: true });
     const existing = await cachedLines(target);

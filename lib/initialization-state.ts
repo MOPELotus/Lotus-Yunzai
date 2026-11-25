@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 
@@ -19,5 +22,5 @@ export async function assertInitializationComplete(root: URL): Promise<void> {
   const pending = await lstat(marker(root)).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== "ENOENT") throw error;
   });
-  if (pending) throw new Error("上次完整初始化尚未完成，请重新运行 bun run bootstrap，完成后再启动。");
+  if (pending) throw new Error($t("lib.initialization-state.text_3b4690d422"));
 }

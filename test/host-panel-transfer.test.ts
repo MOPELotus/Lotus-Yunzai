@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -31,7 +32,7 @@ const canary = `
 `;
 
 async function installModules(root: string) {
-  await symlink(join(project, "packages"), join(root, "packages"), "dir");
+  await linkHostPackages(root);
   for (const name of ["genshin", "starrail", "group"]) {
     const source = join(project, "plugins", name);
     const target = join(root, "plugins", name);

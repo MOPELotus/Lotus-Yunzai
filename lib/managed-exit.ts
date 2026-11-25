@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { renameSync, rmSync, writeFileSync } from "node:fs";
 
 export const backgroundStartupFailure = 78;
@@ -28,7 +31,7 @@ export async function managedProcess(start: (ready?: () => Promise<void>) => Pro
     const exit = readyFile && status === backgroundStartupFailure ? 1 : status;
     process.exitCode = started ? exit : backgroundStartupFailure;
   } catch (error) {
-    console.error(error instanceof Error ? error.message : "托管宿主无法启动。");
+    console.error(error instanceof Error ? error.message : $t("lib.managed-exit.text_07741e2b75"));
     process.exitCode = started ? 1 : backgroundStartupFailure;
   }
 }

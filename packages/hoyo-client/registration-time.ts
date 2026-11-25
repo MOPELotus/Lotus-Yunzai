@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -17,7 +20,7 @@ export async function readRegistrationTime(source: ProfileRequestContext, transp
     { gs: ["cn_gf01", "cn_qd01"], sr: ["prod_gf_cn", "prod_qd_cn"], zzz: ["prod_gf_cn"] };
   if (!role.region || !regions[game].includes(role.region) || role.gameBiz && role.gameBiz !== biz ||
       !/^\d{5,12}$/u.test(role.uid) || !source.account.cookie.trim() || /[\r\n\0]/u.test(source.account.cookie)) {
-    throw new HoyoRequestError("invalid-input", "注册时间查询的账号或角色区域无效。");
+    throw new HoyoRequestError("invalid-input", $t("registration-time.text_66bf6927cf"));
   }
   const loginOrigin = global ? "https://sg-public-api.hoyoverse.com" : "https://api-takumi.mihoyo.com";
   const origin = game === "gs" ? global ? "https://sg-hk4e-api.hoyoverse.com" : "https://hk4e-api.mihoyo.com" : loginOrigin;
@@ -29,12 +32,12 @@ export async function readRegistrationTime(source: ProfileRequestContext, transp
     const response = await transport(url, { ...init, signal: active, redirect: "error" });
     if (response.redirected || response.url && response.url !== url.href || !response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new HoyoRequestError("http", "注册时间活动接口请求失败。", response.status);
+      throw new HoyoRequestError("http", $t("registration-time.text_4834eb3f21"), response.status);
     }
     const payload = await readGameRecordPayload(response, 512 * 1024, active);
     active.throwIfAborted();
     if (!payload || payload.retcode !== 0 && payload.retcode !== "0" || !object(payload.data)) {
-      throw new HoyoRequestError("api", "注册时间活动接口未返回有效数据。", response.status,
+      throw new HoyoRequestError("api", $t("registration-time.text_23a16bc4fc"), response.status,
         typeof payload?.retcode === "number" ? payload.retcode : undefined);
     }
     return { response, data: object(payload.data)! };
@@ -45,20 +48,20 @@ export async function readRegistrationTime(source: ProfileRequestContext, transp
   });
   const info = login.data;
   if (String(info.game_uid ?? info.uid) !== role.uid || info.region !== role.region || info.game_biz !== biz) {
-    throw new HoyoRequestError("response", "活动登录返回的角色与当前档案不一致。");
+    throw new HoyoRequestError("response", $t("registration-time.text_891a938545"));
   }
   const cookies = login.response.headers.getSetCookie().map(value => value.split(";", 1)[0]!)
     .filter(value => /^[\w-]+=[^;\r\n\0]*$/u.test(value));
-  if (!cookies.length) throw new HoyoRequestError("response", "注册时间活动登录未返回会话凭据。");
+  if (!cookies.length) throw new HoyoRequestError("response", $t("registration-time.text_20a2a5a123"));
   const endpoint = new URL(`/event/${activity[game]}/data`, origin);
   endpoint.search = new URLSearchParams({ badge_uid: role.uid, badge_region: role.region, game_biz: biz,
     lang: "zh-cn", ...(game === "sr" && { plat: "2" }) }).toString();
   const result = await request(endpoint, { headers: { Cookie: cookies.join("; ") } });
   let data: unknown = game === "gs" ? result.data.data : result.data.raw_data;
   if (typeof data === "string") {
-    try { data = JSON.parse(data); } catch { throw new HoyoRequestError("response", "注册时间活动数据格式无效。"); }
+    try { data = JSON.parse(data); } catch { throw new HoyoRequestError("response", $t("registration-time.text_4e27f9cdde")); }
   }
-  if (!object(data)) throw new HoyoRequestError("response", "注册时间活动数据缺失。");
+  if (!object(data)) throw new HoyoRequestError("response", $t("registration-time.text_e90387a2de"));
   await verify?.();
   active.throwIfAborted();
   return { info_data: { game_uid: role.uid, region: role.region, game_biz: biz }, game_data: data, query_time: Date.now() };

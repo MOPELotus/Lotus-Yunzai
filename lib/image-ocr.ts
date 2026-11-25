@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { readQqMessageImage } from "./chat-files.ts";
 import { delegationSession } from "./command-delegation.ts";
 import { isVerifiedRaster } from "./file-to-url.ts";
@@ -42,12 +45,12 @@ export function createImageOcr() {
     if (!await active()) return true;
     if (!started && cancel.test(input)) {
       current?.delete(scope);
-      await event.reply("已取消图片文字识别。", true);
+      await event.reply($t("lib.image-ocr.text_16effacc91"), true);
       return true;
     }
 
     if (running) {
-      await event.reply("图片文字识别正在处理，请稍后重试。", true);
+      await event.reply($t("lib.image-ocr.text_14c90be245"), true);
       return true;
     }
 
@@ -73,14 +76,14 @@ export function createImageOcr() {
           scopes.set(scope, { expires: now + waitingTime, signal: options.signal });
           pending.set(connection, scopes);
         }
-        await event.reply("请发送图片或取消。", true);
+        await event.reply($t("lib.image-ocr.text_c8907f371c"), true);
         return true;
       }
       if (!started && !current?.delete(scope)) return true;
       if (started) pending.get(connection)?.delete(scope);
       const bytes = await readQqMessageImage(image, transfer, { maxBytes: localOcrImageBytes, fallback: image.file }).catch(() => undefined);
       if (!bytes || !await isVerifiedRaster(bytes, maxOcrPixels, maxOcrSide)) {
-        if (await active()) await event.reply("无法读取这张图片，请重新发送。", true);
+        if (await active()) await event.reply($t("lib.image-ocr.text_281d121795"), true);
         return true;
       }
       if (!await active()) return true;

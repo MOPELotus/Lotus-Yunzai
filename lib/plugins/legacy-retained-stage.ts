@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, mkdtemp, readdir, realpath, rename, rm } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -108,7 +111,7 @@ async function inspectStagedPlugin(
     if (info.isDirectory()) {
       for (const name of await readdir(path)) files.push(join(path, name));
     } else if (info.isFile() && basename(path) === "package.json") {
-      if (info.size > 256 * 1024) throw new Error("迁移插件清单超过预检大小上限。");
+      if (info.size > 256 * 1024) throw new Error($t("lib.plugins.legacy-retained-stage.text_b4cee8857e"));
       const manifest = record(JSON.parse((await Bun.file(path).text()).replace(/^\uFEFF/u, "")));
       if (path === join(root, "package.json")) {
         const declared = record(manifest.lotusYunzai).entry;
@@ -132,7 +135,7 @@ async function inspectStagedPlugin(
       }
       manifests.set(dirname(path), manifestDeps);
     } else if (info.isFile() && scanner) {
-      if (info.size > 8 * 1024 * 1024) throw new Error("迁移插件脚本超过预检大小上限。");
+      if (info.size > 8 * 1024 * 1024) throw new Error($t("lib.plugins.legacy-retained-stage.text_d396fde7ae"));
       for (const { path: specifier, kind } of scanner.scanImports(await Bun.file(path).text())) {
         const pkg = browserName(specifier);
         if (pkg) browser.add(pkg);
@@ -206,32 +209,32 @@ export async function stageRetainedLegacyPlugins(plan: LegacyMigrationPlan, stag
   signal?.throwIfAborted();
   const staging = await realpath(stagingPath);
   const stagingInfo = await lstat(staging);
-  if (!stagingInfo.isDirectory()) throw new Error("兼容插件暂存根须为实体目录。");
+  if (!stagingInfo.isDirectory()) throw new Error($t("lib.plugins.legacy-retained-stage.text_4a8b6660b2"));
   for (const path of [plan.source, plan.target]) {
     const canonical = await realpath(path);
     const info = await lstat(canonical);
     if (withinInstallation(canonical, staging) || withinInstallation(staging, canonical) ||
-        (info.dev === stagingInfo.dev && info.ino === stagingInfo.ino)) throw new Error("兼容插件暂存根须与新旧安装独立。");
+        (info.dev === stagingInfo.dev && info.ino === stagingInfo.ino)) throw new Error($t("lib.plugins.legacy-retained-stage.text_71de6b7ae4"));
   }
 
   const retained: RetainedPlugin[] = [];
   const held: HeldPlugin[] = [];
   const destination = join(staging, "plugins");
   const heldDestination = join(staging, "held-plugins");
-  const lock = await lockFile(join(dirname(staging), `.${basename(staging)}.lotus-plugin-retain.sqlite`), "迁移兼容插件");
+  const lock = await lockFile(join(dirname(staging), `.${basename(staging)}.lotus-plugin-retain.sqlite`), $t("lib.plugins.legacy-retained-stage.text_5923215d85"));
   let temporary: string | undefined;
   try {
     const confirmPlan = async () => {
       signal?.throwIfAborted();
       if (!isDeepStrictEqual(plan, await planMigration(plan.source, plan.target))) {
-        throw new Error("旧插件或目标工作区已变化，请重新预检。");
+        throw new Error($t("lib.plugins.legacy-retained-stage.text_0519b97c0a"));
       }
     };
     await confirmPlan();
     const targetRoot = await optionalStat(join(plan.target, "plugins"));
-    if (targetRoot && !targetRoot.isDirectory()) throw new Error("目标插件根须为实体目录。");
+    if (targetRoot && !targetRoot.isDirectory()) throw new Error($t("lib.plugins.legacy-retained-stage.text_08b3b31ad3"));
     const confirmDestinations = async () => {
-      if (await optionalStat(destination) || await optionalStat(heldDestination)) throw new Error("兼容插件暂存目录已存在。");
+      if (await optionalStat(destination) || await optionalStat(heldDestination)) throw new Error($t("lib.plugins.legacy-retained-stage.text_62678cb634"));
     };
     await confirmDestinations();
 
@@ -244,8 +247,8 @@ export async function stageRetainedLegacyPlugins(plan: LegacyMigrationPlan, stag
       if (entry.status !== "retain") continue;
       signal?.throwIfAborted();
       const [prefix, name, ...rest] = entry.path.split("/");
-      if (prefix !== "plugins" || !isManagedPluginDirectory(name) || rest.length) throw new Error("兼容插件路径无效。");
-      if (await optionalStat(join(plan.target, entry.path))) throw new Error(`目标已有插件路径 ${entry.path}。`);
+      if (prefix !== "plugins" || !isManagedPluginDirectory(name) || rest.length) throw new Error($t("lib.plugins.legacy-retained-stage.text_68e2bcc9a8"));
+      if (await optionalStat(join(plan.target, entry.path))) throw new Error($t("lib.plugins.legacy-retained-stage.text_a80427b584", { "path": entry.path }));
       const exclude = new Set(plan.plugins.flatMap(archived =>
         archived.status === "archive" && archived.kind === "script" && archived.path.startsWith(entry.path + "/")
           ? [archived.path.slice(entry.path.length + 1)] : []));

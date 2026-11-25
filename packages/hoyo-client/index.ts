@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { readRegistrationTime } from "./registration-time.ts";
 export { readRegistrationTime } from "./registration-time.ts";
 import { withMiyousheCaptcha } from "./captcha-business.ts";
@@ -166,7 +169,7 @@ export function createHoyoClient(
 
   async function keyFor({ qq, profileId, revision }: ProfileAccountContext): Promise<string> {
     const scope = await recovery?.scope?.().catch(() => {
-      throw new HoyoRequestError("profile-changed", "游戏档案目录已变更，请重新发起请求。");
+      throw new HoyoRequestError("profile-changed", $t("index.text_3a615b3979"));
     });
     return JSON.stringify([scope, qq, profileId, revision]);
   }
@@ -184,7 +187,7 @@ export function createHoyoClient(
   }
 
   async function recover(context: ProfileAccountContext, requestKey?: string): Promise<RefreshedProfile> {
-    if (!recovery) throw new HoyoRequestError("refresh", "未配置登录凭据刷新服务。");
+    if (!recovery) throw new HoyoRequestError("refresh", $t("index.text_50b01a077d"));
 
     const key = requestKey ?? await keyFor(context);
     const entry = track(key);
@@ -194,7 +197,7 @@ export function createHoyoClient(
     const operation = (async () => {
       const latest = await recovery.profiles.accountContext(context.qq, context.profileId);
       if (latest.revision !== context.revision) {
-        throw new HoyoRequestError("refresh", "档案已变更，请重新发起请求。");
+        throw new HoyoRequestError("refresh", $t("index.text_0b089c48f2"));
       }
       const credentials = await recovery.exchange(latest, { verifyProfile: () => ensureCurrentProfile(latest) });
       const roles = recovery.syncRoles ? await list({ ...latest, account: { ...latest.account, ...credentials } })
@@ -215,12 +218,12 @@ export function createHoyoClient(
   async function list(context: ProfileAccountContext, game?: keyof typeof checkinGameBiz, signal?: AbortSignal,
     verify = () => ensureCurrentProfile(context)): Promise<unknown[]> {
     if (game !== undefined && !Object.hasOwn(checkinGameBiz, game)) {
-      throw new HoyoRequestError("invalid-input", "游戏类型无效。");
+      throw new HoyoRequestError("invalid-input", $t("index.text_eef3f07f3c"));
     }
     verifyCookieIdentity(context);
     const cookie = context.account.cookie;
     if (!cookie.trim() || /[\r\n\0]/u.test(cookie)) {
-      throw new HoyoRequestError("invalid-input", "档案 Cookie 无效。");
+      throw new HoyoRequestError("invalid-input", $t("index.text_97be1ddb31"));
     }
 
     const path = "/binding/api/getUserGameRolesByCookie";
@@ -243,12 +246,12 @@ export function createHoyoClient(
       }));
     } catch (error) {
       if (error instanceof HoyoRequestError && error.code === "profile-changed") throw error;
-      throw new HoyoRequestError("transport", "米游社角色请求未完成。");
+      throw new HoyoRequestError("transport", $t("index.text_5da7db9e85"));
     }
     if (response.redirected || (response.url && response.url !== endpoint.href) ||
         (!response.ok && response.status !== 401)) {
       await response.body?.cancel().catch(() => undefined);
-      throw new HoyoRequestError("http", "米游社返回 HTTP 错误。", response.status);
+      throw new HoyoRequestError("http", $t("index.text_dda40ae7ab"), response.status);
     }
 
     const payload = await readGameRecordPayload(response, 256 * 1024, deadline, error => diagnostics.stream(response, error));
@@ -257,28 +260,28 @@ export function createHoyoClient(
     const retcode = typeof code === "string" && /^-?\d{1,10}$/u.test(code) ? Number(code) : code;
     const risk = requiresServiceVerification(payload ?? {}, response.headers.get("x-rpc-aigis"));
     if (!response.ok && (risk || typeof retcode !== "number" || !expired.has(retcode))) {
-      throw new HoyoRequestError("http", "米游社返回 HTTP 错误。", response.status);
+      throw new HoyoRequestError("http", $t("index.text_dda40ae7ab"), response.status);
     }
     if (!payload || typeof retcode !== "number" || !Number.isSafeInteger(retcode)) {
-      throw new HoyoRequestError("response", "米游社角色响应格式有误。");
+      throw new HoyoRequestError("response", $t("index.text_6e2d2ce564"));
     }
     if (risk || retcode !== 0) {
-      throw new HoyoRequestError("api", "米游社角色查询失败。", response.status, risk && expired.has(retcode) ? undefined : retcode);
+      throw new HoyoRequestError("api", $t("index.text_bc0b12a479"), response.status, risk && expired.has(retcode) ? undefined : retcode);
     }
     if (!isRecord(payload.data) || !Array.isArray(payload.data.list)) {
-      throw new HoyoRequestError("response", "米游社角色列表格式有误。");
+      throw new HoyoRequestError("response", $t("index.text_b88632271e"));
     }
 
     await verify();
     signal?.throwIfAborted();
-    if (deadline.aborted) throw new HoyoRequestError("transport", "米游社角色请求未完成。");
+    if (deadline.aborted) throw new HoyoRequestError("transport", $t("index.text_5da7db9e85"));
     return payload.data.list;
   }
 
   function rolesFor(data: readonly unknown[], game: Game): GameRole[] {
     const matching = data.filter((item) => isRecord(item) && item.game_biz === gameBiz[game]);
     if (matching.some(item => !normalizeGameRoles([item]).length)) {
-      throw new HoyoRequestError("response", "米游社角色资料不完整。");
+      throw new HoyoRequestError("response", $t("index.text_4cd7171655"));
     }
     return normalizeGameRoles(matching);
   }
@@ -305,9 +308,9 @@ export function createHoyoClient(
       try {
         const { profile: saved } = await recover(context, key);
         refreshed = await recovery.profiles.accountContext(context.qq, context.profileId);
-        if (refreshed.revision !== saved.revision) throw new Error("档案在刷新后已变更。");
+        if (refreshed.revision !== saved.revision) throw new Error($t("index.text_3726fda393"));
       } catch (cause) {
-        throw new HoyoRequestError("refresh", "无法刷新当前档案的 Cookie，请确认登录状态后重试。", undefined, undefined, { cause });
+        throw new HoyoRequestError("refresh", $t("index.text_e5f07e242e"), undefined, undefined, { cause });
       }
       signal?.throwIfAborted();
       return { context: refreshed, data: await attempt(refreshed) };
@@ -319,14 +322,14 @@ export function createHoyoClient(
 
   async function ensureCurrentProfile(profile: ProfileAccountContext) {
     if (!recovery) return;
-    const changed = new HoyoRequestError("profile-changed", "游戏档案已变更，请重新发起请求。");
+    const changed = new HoyoRequestError("profile-changed", $t("index.text_819bb9ded1"));
     const latest = await recovery.profiles.accountContext(profile.qq, profile.profileId).catch(() => { throw changed; });
     if (latest.revision !== profile.revision) throw changed;
   }
 
   function verifyCookieIdentity(profile: ProfileAccountContext) {
     if (hasConflictingProfileCookieIdentity(profile.account)) {
-      throw new HoyoRequestError("invalid-input", "档案 Cookie 与当前登录账号不一致，请刷新或重新扫码登录。");
+      throw new HoyoRequestError("invalid-input", $t("index.text_4912ff14dd"));
     }
   }
 
@@ -357,7 +360,7 @@ export function createHoyoClient(
     return readForProfile(source, options, async (current, request, sameOptions, guard) => {
       const profiles = recovery?.profiles;
       if (current.revision !== source.revision && profiles?.requestSelectedContext) {
-        const changed = new HoyoRequestError("profile-changed", "续期后原神档案的角色已变更，请重新发起请求。");
+        const changed = new HoyoRequestError("profile-changed", $t("index.text_9f552559dc"));
         const selected = await profiles.requestSelectedContext(current.qq, current.profileId, "gs").catch(() => { throw changed; });
         if (selected.revision !== current.revision || selected.role.uid !== source.role.uid ||
             (source.role.region && selected.role.region !== source.role.region) ||
@@ -382,7 +385,7 @@ export function createHoyoClient(
     return readForProfile(source, options, async (current, request, sameOptions, guard) => {
       const profiles = recovery?.profiles;
       if (current.revision !== source.revision && profiles?.requestSelectedContext) {
-        const changed = new HoyoRequestError("profile-changed", "绝区零档案角色已变化，请重新发起请求。");
+        const changed = new HoyoRequestError("profile-changed", $t("index.text_a244dc1d4d"));
         const selected = await profiles.requestSelectedContext(current.qq, current.profileId, "zzz").catch(() => { throw changed; });
         if (selected.revision !== current.revision || selected.role.uid !== source.role.uid ||
             !sameTuningRegion(source, selected)) throw changed;
@@ -403,7 +406,7 @@ export function createHoyoClient(
   function roleCatalog(data: readonly unknown[]) {
     // An unidentifiable entry must not clear saved roles from a full catalog.
     if (data.some(item => !isRecord(item) || !item.game_biz)) {
-      throw new HoyoRequestError("response", "米游社角色资料不完整。");
+      throw new HoyoRequestError("response", $t("index.text_4cd7171655"));
     }
     return { gs: rolesFor(data, "gs"), sr: rolesFor(data, "sr"), zzz: rolesFor(data, "zzz") };
   }
@@ -430,7 +433,7 @@ export function createHoyoClient(
   }
 
   async function saveRoles(context: ProfileAccountContext, data: readonly unknown[]) {
-    if (!recovery) throw new HoyoRequestError("invalid-input", "未配置角色档案存储。");
+    if (!recovery) throw new HoyoRequestError("invalid-input", $t("index.text_5a3e83688b"));
     const roles = roleCatalog(data);
     await recovery.profiles.saveRoles(context.qq, context.profileId, context.revision, roles);
     return roles;
@@ -536,14 +539,14 @@ export function createHoyoClient(
       const results: PromiseSettledResult<DailyNoteSnapshot>[] = [];
       if (!first) return results;
       if (sources.some(({ qq, profileId, revision }) => qq !== first.qq || profileId !== first.profileId || revision !== first.revision)) {
-        throw new HoyoRequestError("invalid-input", "体力查询的角色来自不同档案快照。");
+        throw new HoyoRequestError("invalid-input", $t("index.text_15a4e9b61d"));
       }
       let current: ProfileAccountContext = first;
       const verify = options.verifyReadOnly ?? (() => ensureCurrentProfile(current));
       const initialRevision = first.revision;
       const games = [...new Set(sources.map(({ game }) => game))];
       const roleKey = ({ game, role }: ProfileRequestContext) => `${game}:${role.uid}`;
-      const removedRole = () => new HoyoRequestError("invalid-input", "该角色已不在续期后的档案中，请重新查询。");
+      const removedRole = () => new HoyoRequestError("invalid-input", $t("index.text_c4336e65d1"));
       let refreshedRoles: Map<string, ProfileRequestContext> | undefined;
       let refreshAttempted = false;
       function canRefresh(error: unknown) {
@@ -565,7 +568,7 @@ export function createHoyoClient(
         const profiles = recovery?.profiles;
         if (candidate.revision === initialRevision || !profiles?.requestContexts) return candidate;
         if (!refreshedRoles) {
-          const changed = new HoyoRequestError("profile-changed", "换票后的档案角色无法确认，请重新发起请求。");
+          const changed = new HoyoRequestError("profile-changed", $t("index.text_71220a29a5"));
           const bound = await profiles.requestContexts(candidate.qq, candidate.profileId, games).catch(() => { throw changed; });
           if (bound.some(source => source.revision !== candidate.revision)) throw changed;
           await verify();
@@ -611,7 +614,7 @@ export function createHoyoClient(
           options.signal?.throwIfAborted();
           await verify();
           results.push({ status: "rejected", reason: options.verifyReadOnly && isDailyNoteCookieExpired(reason)
-            ? new HoyoRequestError("refresh", "旧 Cookie 已失效，无法自动续期，请扫码登录。") : reason });
+            ? new HoyoRequestError("refresh", $t("index.text_2a97f36b30")) : reason });
         }
       }
       await verify();
@@ -753,7 +756,7 @@ export function createHoyoClient(
         if (current.revision === source.revision || !profiles?.requestSelectedContext) {
           return readStarRailChallenge(current, request, attempt, guard);
         }
-        const changed = new HoyoRequestError("profile-changed", "续期后星铁档案角色已变更，请重新查询。");
+        const changed = new HoyoRequestError("profile-changed", $t("index.text_b459dd4576"));
         const selected = await profiles.requestSelectedContext(current.qq, current.profileId, "sr").catch(() => { throw changed; });
         if (selected.revision !== current.revision || selected.role.uid !== source.role.uid ||
             starRailChallengeRegion(selected.role) !== starRailChallengeRegion(source.role)) throw changed;
@@ -785,7 +788,7 @@ export function createHoyoClient(
         if (current.revision === source.revision || !profiles?.requestContexts) {
           return readStarRailGacha(current, request, sameOptions, guard);
         }
-        const changed = new HoyoRequestError("profile-changed", "续期后星铁档案的角色已变更，请重新更新抽卡记录。");
+        const changed = new HoyoRequestError("profile-changed", $t("index.text_0cbed241c8"));
         const roles = await profiles.requestContexts(current.qq, current.profileId, ["sr"]).catch(() => { throw changed; });
         const role = roles.find(candidate => candidate.role.uid === source.role.uid);
         if (!role || role.revision !== current.revision ||
@@ -802,7 +805,7 @@ export function createHoyoClient(
         if (current.revision === source.revision || !profiles?.requestSelectedContext) {
           return readZzzGachaAuthKey(current, request, sameOptions, guard);
         }
-        const changed = new HoyoRequestError("profile-changed", "续期后绝区零档案的角色已变更，请重新获取抽卡链接。");
+        const changed = new HoyoRequestError("profile-changed", $t("index.text_96aeb69a7e"));
         const selected = await profiles.requestSelectedContext(current.qq, current.profileId, "zzz").catch(() => { throw changed; });
         const before = resolveZzzGachaLinkRole(source.role);
         const after = resolveZzzGachaLinkRole(selected.role);

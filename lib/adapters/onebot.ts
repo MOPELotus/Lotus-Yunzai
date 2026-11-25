@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { authorizedProtocolRequest } from "../network-access.ts";
 import { sanitizeRuntimeLog } from "../runtime-logs.ts";
 import { createHash } from "node:crypto";
@@ -122,7 +125,7 @@ function decideOneBotRequest(claim: NonNullable<OwnerNoticeOptions["friendReques
 
 async function confirmedOneBotRequest(outcome: Promise<RequestDecisionOutcome>) {
   const status = await outcome;
-  if (status === "unknown") throw new Error("OneBot 请求审核结果未确认。");
+  if (status === "unknown") throw new Error($t("lib.adapters.onebot.text_002e965afe"));
   return status === "confirmed";
 }
 
@@ -325,7 +328,7 @@ async function dispatchRequest(
     signal: session,
     joinRequestOrigin: { ...reviewKey, groupId: group_id, userId: user_id, nickname: request.nickname },
     canModerate: active => canModerateGroupSubject(id => calls.getGroupRole(send, group_id, id, true, active), self_id),
-    async act(signal, reason = "主动退群被拉黑") {
+    async act(signal, reason = $t("lib.adapters.onebot.text_73c30fd793")) {
       if (!joinReview) return calls.declineGroupApplication(send, flag, signal, reason);
       const status = await joinReview.once(reviewKey, () => calls.declineGroupApplication(send, flag, signal, reason));
       return status === "unavailable" ? "rejected" : status;
@@ -573,7 +576,7 @@ async function dispatchGroupCompatibilityNotice(
   } else if (notice_type === "notify" && sub_type === "title") {
     if (!isId(user_id) || typeof event.title !== "string" || event.title.length > 256) return;
     refreshMember(user_id);
-    console.info(`[${self_id}] 群 ${group_id} 成员 ${user_id} 的头衔：${sanitizeRuntimeLog(event.title, 256)}`);
+    console.info($t("lib.adapters.onebot.text_84119783f4", { "self_id": self_id, "group_id": group_id, "user_id": user_id, "value4": sanitizeRuntimeLog(event.title, 256) }));
     await dispatch({ ...base, notice_type: "group", sub_type, user_id, title: event.title });
   } else if (notice_type === "notify" && sub_type === "honor") {
     const { honor_type } = event;
@@ -706,7 +709,7 @@ async function dispatchProfileLike(
       typeof operator_nick !== "string" || operator_nick.length > 256) return;
   const signal = groupActionSignal(connection, self_id);
   if (!signal) return;
-  console.info(`[${self_id}] 收到 ${operator_id} 的资料卡点赞 ${times} 次。`);
+  console.info($t("lib.adapters.onebot.text_765c441714", { "self_id": self_id, "operator_id": operator_id, "times": times }));
   await dispatch({
     post_type: "notice", notice_type: "friend", sub_type: "profile_like", adapter: "onebot",
     self_id, user_id: operator_id, operator_id, operator_nick, times, time,
@@ -1113,7 +1116,7 @@ async function dispatchMessage(
       const recall = replyRecallSeconds(options?.recallMsg);
       if (senderName === undefined && recall === undefined) return calls.sendForward(send, target, messages);
       const result = await calls.sendForwardConfirmed(send, target, messages, attachmentSession?.signal, recall);
-      if (result === "unknown") throw new Error("OneBot 合并转发结果未确认。");
+      if (result === "unknown") throw new Error($t("lib.adapters.onebot.text_aab853954b"));
       return result === "confirmed";
     },
     uploadFile: boundAccount && attachmentSession && display?.closed === false
@@ -1306,7 +1309,7 @@ export function startOneBot(
           (event.tag !== undefined && (typeof event.tag !== "string" || event.tag.length > 256)) ||
           event.message.length > 2_000 || connection.receivedOffline) return;
       connection.receivedOffline = true;
-      const tag = sanitizeRuntimeLog(event.tag || "账号下线", 256);
+      const tag = sanitizeRuntimeLog(event.tag || $t("lib.adapters.onebot.text_fd29c62b2a"), 256);
       const message = sanitizeRuntimeLog(event.message);
       options.onLegacySignal?.({ post_type: "system", notice_type: "offline", self_id, user_id, time, tag, message,
         reply: () => false }, signal);
@@ -1318,7 +1321,7 @@ export function startOneBot(
       if (group_id !== 0 || typeof event_type !== "number" || !Number.isSafeInteger(event_type) || event_type < 0 ||
           typeof status_text !== "string" || status_text.length > 512) return;
       const end = event_type !== 1;
-      const message = status_text || (end ? "对方结束输入..." : "对方正在输入...");
+      const message = status_text || (end ? $t("lib.adapters.onebot.text_1f4135f5b7") : $t("lib.adapters.onebot.text_bbb270c66e"));
       options.onLegacySignal?.({ post_type: "internal", notice_type: "input", sub_type: "input_status",
         self_id, user_id, time, group_id, event_type, status_text, end, message, reply }, signal);
     }
@@ -1387,7 +1390,7 @@ export function startOneBot(
         return new Response(null, { status: 401 });
       }
       if (request.headers.get("X-Client-Role")?.toLowerCase() !== "universal") {
-        return new Response("需要 OneBot 11 Universal 连接。", { status: 400 });
+        return new Response($t("lib.adapters.onebot.text_d503d53eed"), { status: 400 });
       }
       const header = request.headers.get("X-Self-ID");
       const id = header !== null && /^[1-9]\d*$/u.test(header) ? Number(header) : undefined;
@@ -1430,11 +1433,11 @@ export function startOneBot(
             if (isId(message.group_id) && isId(message.self_id)) mutes.observe(message.group_id, message.self_id, message);
             if (message.notice_type === "group_recall" || message.notice_type === "friend_recall") {
               void dispatchMessageRecallNotice(dispatch, send, message, socket.data, options.isMaster)
-                .catch(() => console.error("处理 OneBot 撤回通知失败。"));
+                .catch(() => console.error($t("lib.adapters.onebot.text_1fb2b0b74a")));
             }
             if (message.notice_type === "group_admin" || message.notice_type === "group_ban") {
               void dispatchGroupCompatibilityNotice(dispatch, send, message, socket.data, options.isMaster)
-                .catch(() => console.error("处理 OneBot 群管理通知失败。"));
+                .catch(() => console.error($t("lib.adapters.onebot.text_d3f8ac2c98")));
             }
             if (message.notice_type === "group_admin") {
               const { self_id, group_id, user_id, sub_type, time } = message;
@@ -1482,7 +1485,7 @@ export function startOneBot(
                     const target = { user_id: owner };
                     if (await calls.sendConfirmed(send, target, message, active) !== "confirmed" || active.aborted || !options.isMaster(self_id, owner)) return;
                     if (await calls.sendForwardConfirmed(send, target, nodes, active) === "rejected" && !active.aborted && options.isMaster(self_id, owner)) {
-                      const fallback = encodeOneBotReply(typeof original === "string" ? `撤回消息：${original}` : ["撤回消息：", ...original]);
+                      const fallback = encodeOneBotReply(typeof original === "string" ? $t("lib.adapters.onebot.text_aa0c2669b6", { "original": original }) : [$t("lib.adapters.onebot.text_f45b01a9e9"), ...original]);
                       if (fallback !== undefined) await calls.sendConfirmed(send, target, fallback, active);
                     }
                   }));
@@ -1516,7 +1519,7 @@ export function startOneBot(
                       action: "send_msg", params: { message_type: "private", user_id, message: content, auto_escape: true },
                     });
                   },
-                }).catch(() => console.error("处理 OneBot 好友新增通知失败。"));
+                }).catch(() => console.error($t("lib.adapters.onebot.text_26a709368a")));
               }
               if (!options.onFriendRelationship || !isId(time)) return;
               let profiles: ReturnType<OneBotCalls["listFriendProfiles"]> | undefined;
@@ -1574,7 +1577,7 @@ export function startOneBot(
                 const reference = attachmentId(message.file.id, attachment.name);
                 await dispatchMessage(dispatch, send, {
                   ...message, post_type: "message", message_type: "group", sub_type: "normal", message_id: undefined,
-                  raw_message: `[文件：${attachment.name}]`,
+                  raw_message: $t("lib.adapters.onebot.text_6245c54af3", { "name": attachment.name }),
                   message: [{ type: "file", data: message.file }],
                 }, calls, options.isMaster, socket.data, attachment, undefined, reference ? {
                   source: { signal: attachmentSession.signal, reference, notice: true }, reserve: options.reserveFileNotice,
@@ -1591,7 +1594,7 @@ export function startOneBot(
                   ? `url:${createHash("sha256").update(message.file.url).digest("hex")}` : undefined));
               await dispatchMessage(dispatch, send, {
                 ...message, post_type: "message", message_type: "private", sub_type: "friend",
-                raw_message: attachment && `[文件：${attachment.name}]`,
+                raw_message: attachment && $t("lib.adapters.onebot.text_6245c54af3", { "name": attachment.name }),
                 message: [{ type: "file", data: message.file }],
               }, calls, options.isMaster, undefined, attachment, undefined, reference && attachmentSession ? {
                 source: { signal: attachmentSession.signal, reference, notice: true }, reserve: options.reserveFileNotice,
@@ -1611,7 +1614,7 @@ export function startOneBot(
             await dispatchMessage(dispatch, send, message, calls, options.isMaster, socket.data, undefined, options);
           }
         } catch {
-          console.error("处理 OneBot 事件失败。");
+          console.error($t("lib.adapters.onebot.text_5249b2e3d1"));
         }
       },
       close(socket) {

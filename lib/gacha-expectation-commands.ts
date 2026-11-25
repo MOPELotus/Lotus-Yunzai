@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { maxGachaExpectationCopies, type GachaExpectationPool, type GachaExpectationRequest,
   type GachaPullStatistics } from "@lotus-yunzai/gacha/expectation";
 import { GachaReturnSimulationBusyError, type GachaCharacterPool, type GachaCharacterReturnRequest,
@@ -9,13 +12,13 @@ export const gachaExpectationModuleName = "@lotus-yunzai/gacha-expectation";
 const commandPattern = /^#(期望计算|期望分布)([^\r\n]*)$/u;
 const helpCommand = "#期望计算帮助";
 const help = [
-  "#期望计算 查看平均抽数。#期望分布 查看抽数分位和预算达成率。",
-  "结果按旧卡池模型估算。",
-  "用空格分隔参数。游戏和卡池必填：原神（角色、武器），星铁（角色、光锥），绝区零（角色、音擎）。",
-  "可加 2个、30垫、大保底。默认抽 1 个，垫 0 抽，小保底。",
-  "原神角色可加 明光2（0–3），原神武器可加 定轨1（0–1）。",
-  "角色池查分布时，可加 四星满命 估算返还。",
-  "示例：#期望分布 绝区零 音擎 2个 30垫 预算160抽",
+  $t("lib.gacha-expectation-commands.text_41df762a17"),
+  $t("lib.gacha-expectation-commands.text_3c40ce8257"),
+  $t("lib.gacha-expectation-commands.text_9f0d70ba8b"),
+  $t("lib.gacha-expectation-commands.text_10220f79be"),
+  $t("lib.gacha-expectation-commands.text_c310fb9b97"),
+  $t("lib.gacha-expectation-commands.text_c316b0b754"),
+  $t("lib.gacha-expectation-commands.text_46cbeaccda"),
 ].join("\n");
 
 const gameAliases = new Map([
@@ -27,15 +30,15 @@ const poolAliases = new Map([
 ]);
 const guaranteeAliases = new Map([["大保底", true], ["必出", true], ["小保底", false], ["不歪", false]]);
 const starsAliases = new Set(["四星满命", "up4满命", "up4c6"]);
-const gameLabels = new Map([["genshin", "原神"], ["hsr", "崩坏：星穹铁道"], ["zzz", "绝区零"]]);
-const poolLabels = new Map([["character", "角色"], ["weapon", "武器或音擎"], ["lightcone", "光锥"]]);
+const gameLabels = new Map([["genshin", $t("lib.gacha-expectation-commands.text_d1597c51ed")], ["hsr", $t("lib.gacha-expectation-commands.text_8cfc959b53")], ["zzz", $t("lib.gacha-expectation-commands.text_b1110352c9")]]);
+const poolLabels = new Map([["character", $t("lib.gacha-expectation-commands.text_c47b54e84e")], ["weapon", $t("lib.gacha-expectation-commands.text_0b55e51f12")], ["lightcone", $t("lib.gacha-expectation-commands.text_e733238b28")]]);
 const pools = {
-  "genshin-character": { name: "限定角色", unit: "个", currency: "原石", hardPity: 90 },
-  "genshin-weapon": { name: "定轨武器", unit: "把", currency: "原石", hardPity: 80 },
-  "hsr-character": { name: "限定角色", unit: "个", currency: "星琼", hardPity: 90 },
-  "hsr-lightcone": { name: "限定光锥", unit: "张", currency: "星琼", hardPity: 80 },
-  "zzz-character": { name: "限定代理人", unit: "位", currency: "菲林", hardPity: 90 },
-  "zzz-weapon": { name: "限定音擎", unit: "个", currency: "菲林", hardPity: 80 },
+  "genshin-character": { name: $t("lib.gacha-expectation-commands.text_f1abedce60"), unit: $t("lib.gacha-expectation-commands.text_3a116815bc"), currency: $t("lib.gacha-expectation-commands.text_761ab59423"), hardPity: 90 },
+  "genshin-weapon": { name: $t("lib.gacha-expectation-commands.text_1cc399d638"), unit: $t("lib.gacha-expectation-commands.text_2442748e41"), currency: $t("lib.gacha-expectation-commands.text_761ab59423"), hardPity: 80 },
+  "hsr-character": { name: $t("lib.gacha-expectation-commands.text_f1abedce60"), unit: $t("lib.gacha-expectation-commands.text_3a116815bc"), currency: $t("lib.gacha-expectation-commands.text_ae25247f75"), hardPity: 90 },
+  "hsr-lightcone": { name: $t("lib.gacha-expectation-commands.text_d443fdfad8"), unit: $t("lib.gacha-expectation-commands.text_f56a049fcc"), currency: $t("lib.gacha-expectation-commands.text_ae25247f75"), hardPity: 80 },
+  "zzz-character": { name: $t("lib.gacha-expectation-commands.text_405912b1b2"), unit: $t("lib.gacha-expectation-commands.text_1aa9c4170b"), currency: $t("lib.gacha-expectation-commands.text_241bb2544c"), hardPity: 90 },
+  "zzz-weapon": { name: $t("lib.gacha-expectation-commands.text_2a4bc64afe"), unit: $t("lib.gacha-expectation-commands.text_3a116815bc"), currency: $t("lib.gacha-expectation-commands.text_241bb2544c"), hardPity: 80 },
 } satisfies Record<GachaExpectationPool, { name: string; unit: string; currency: string; hardPity: number }>;
 
 const numericFields = [
@@ -49,7 +52,7 @@ type Sample = (request: GachaCharacterReturnRequest, options?: { signal?: AbortS
   GachaCharacterReturnStatistics | Promise<GachaCharacterReturnStatistics>;
 
 const returnNames: Record<GachaCharacterPool, string> = {
-  "genshin-character": "星辉", "hsr-character": "星芒", "zzz-character": "信号余波",
+  "genshin-character": $t("lib.gacha-expectation-commands.text_23ea992490"), "hsr-character": $t("lib.gacha-expectation-commands.text_dbcba200bb"), "zzz-character": $t("lib.gacha-expectation-commands.text_eda788307b"),
 };
 
 function isPool(value: string): value is GachaExpectationPool {
@@ -61,7 +64,7 @@ function isCharacterPool(pool: GachaExpectationPool): pool is GachaCharacterPool
 }
 
 function parse(input: string) {
-  if (!input.trim()) return `请填写游戏和卡池。发送 ${helpCommand} 查看用法。`;
+  if (!input.trim()) return $t("lib.gacha-expectation-commands.text_169c45d041", { "helpCommand": helpCommand });
   const values: Partial<Record<(typeof numericFields)[number][0], number>> = {};
   let game: string | undefined;
   let kind: string | undefined;
@@ -79,25 +82,25 @@ function parse(input: string) {
     else {
       const index = numericFields.findIndex(([, pattern]) => pattern.test(alias));
       const field = numericFields[index];
-      if (!field) return `有一个参数无法识别。发送 ${helpCommand} 查看用法。`;
+      if (!field) return $t("lib.gacha-expectation-commands.text_f42b720bff", { "helpCommand": helpCommand });
       const number = Number(field[1].exec(alias)?.[1]);
-      if (!Number.isSafeInteger(number)) return "数值过大，请检查数量、垫抽和预算。";
+      if (!Number.isSafeInteger(number)) return $t("lib.gacha-expectation-commands.text_033c050617");
       values[field[0]] = number;
     }
   }
-  if (!game || !kind) return `请填写游戏和卡池。发送 ${helpCommand} 查看用法。`;
+  if (!game || !kind) return $t("lib.gacha-expectation-commands.text_169c45d041", { "helpCommand": helpCommand });
   const pool = `${game}-${kind}`;
   const gameLabel = gameLabels.get(game);
-  if (!isPool(pool)) return `${gameLabel}没有可计算的${poolLabels.get(kind)}卡池。`;
+  if (!isPool(pool)) return $t("lib.gacha-expectation-commands.text_1e7905c696", { "gameLabel": gameLabel, "value2": poolLabels.get(kind) });
   const { copies = 1, pity = 0, budget, radiance, fate } = values;
   const { hardPity } = pools[pool];
-  if (copies < 1 || copies > maxGachaExpectationCopies) return `目标数量须在 1 到 ${maxGachaExpectationCopies} 之间。`;
-  if (pity >= hardPity) return `该卡池的垫抽须在 0 到 ${hardPity - 1} 之间。`;
-  if (radiance !== undefined && pool !== "genshin-character") return "明光计数仅适用于原神角色池。";
-  if (radiance !== undefined && radiance > 3) return "明光计数须在 0 到 3 之间。";
-  if (fate !== undefined && pool !== "genshin-weapon") return "定轨值仅适用于原神武器池。";
-  if (fate !== undefined && fate > 1) return "定轨值须在 0 到 1 之间。";
-  if (fourStarMax && kind !== "character") return "四星满命仅适用于角色池。";
+  if (copies < 1 || copies > maxGachaExpectationCopies) return $t("lib.gacha-expectation-commands.text_4f169df6c8", { "maxGachaExpectationCopies": maxGachaExpectationCopies });
+  if (pity >= hardPity) return $t("lib.gacha-expectation-commands.text_3fd9b3882e", { "value1": hardPity - 1 });
+  if (radiance !== undefined && pool !== "genshin-character") return $t("lib.gacha-expectation-commands.text_dcf5c0365e");
+  if (radiance !== undefined && radiance > 3) return $t("lib.gacha-expectation-commands.text_64afc7c2ff");
+  if (fate !== undefined && pool !== "genshin-weapon") return $t("lib.gacha-expectation-commands.text_8a9cd9aded");
+  if (fate !== undefined && fate > 1) return $t("lib.gacha-expectation-commands.text_3f837c0958");
+  if (fourStarMax && kind !== "character") return $t("lib.gacha-expectation-commands.text_62843fc38d");
   return { pool, gameLabel, copies, pity, guaranteed, fourStarMax, radiance, fate, budget };
 }
 
@@ -107,33 +110,33 @@ function report(input: Parsed, result: GachaPullStatistics, distribution: boolea
   const pool = pools[input.pool];
   const guaranteed = input.guaranteed || input.fate === 1;
   const lines = [
-    `${input.gameLabel} ${pool.name} · 目标 ${input.copies} ${pool.unit}`,
-    `已垫 ${input.pity} 抽 · ${guaranteed ? "大保底" : "小保底"}`,
+    $t("lib.gacha-expectation-commands.text_7a4de9b8ff", { "gameLabel": input.gameLabel, "name": pool.name, "copies": input.copies, "unit": pool.unit }),
+    $t("lib.gacha-expectation-commands.text_a5f29000bb", { "pity": input.pity, "value2": guaranteed ? $t("lib.gacha-expectation-commands.text_35de1616a1") : $t("lib.gacha-expectation-commands.text_a1d195e67a") }),
   ];
-  if (input.pool === "genshin-character") lines.push(`明光计数 ${input.radiance ?? 0}`);
-  if (input.pool === "genshin-weapon") lines.push(`定轨值 ${input.fate ?? 0}`);
-  lines.push("", `期望抽数 ${result.mean.toFixed(2)} 抽`);
+  if (input.pool === "genshin-character") lines.push($t("lib.gacha-expectation-commands.text_31c1ca9fb2", { "value1": input.radiance ?? 0 }));
+  if (input.pool === "genshin-weapon") lines.push($t("lib.gacha-expectation-commands.text_e875488d1f", { "value1": input.fate ?? 0 }));
+  lines.push("", $t("lib.gacha-expectation-commands.text_6320725393", { "value1": result.mean.toFixed(2) }));
   if (distribution) {
-    lines.push("在以下抽数内达成目标的概率", ...[
+    lines.push($t("lib.gacha-expectation-commands.text_f3d67e1e59"), ...[
       [25, result.p25], [50, result.p50], [75, result.p75], [90, result.p90], [95, result.p95],
-    ].map(([probability, pulls]) => `${probability}% · ${pulls} 抽`));
+    ].map(([probability, pulls]) => $t("lib.gacha-expectation-commands.text_d9898da546", { "probability": probability, "pulls": pulls })));
     if (input.budget !== undefined && result.budgetChance !== undefined) {
-      lines.push(`预算 ${input.budget} 抽 · 达成率 ${(result.budgetChance * 100).toFixed(2)}%`);
+      lines.push($t("lib.gacha-expectation-commands.text_84d48ce3b9", { "budget": input.budget, "value2": (result.budgetChance * 100).toFixed(2) }));
     }
   } else if (input.budget !== undefined) {
-    lines.push("用 #期望分布 查看预算达成率。");
+    lines.push($t("lib.gacha-expectation-commands.text_92606643f4"));
   }
-  lines.push(`按 ${Math.ceil(result.mean)} 抽折算约 ${(Math.ceil(result.mean) * 160).toLocaleString("zh-CN")} ${pool.currency}`);
+  lines.push($t("lib.gacha-expectation-commands.text_87bcaa8f9b", { "value1": Math.ceil(result.mean), "value2": (Math.ceil(result.mean) * 160).toLocaleString("zh-CN"), "currency": pool.currency }));
   if (returns !== undefined) lines.push("", returns);
-  lines.push("", "按旧卡池模型估算");
+  lines.push("", $t("lib.gacha-expectation-commands.text_3389170795"));
   return lines.join("\n");
 }
 
 function returnReport(pool: GachaCharacterPool, fourStarMax: boolean, result: GachaCharacterReturnStatistics): string {
   return [
-    `预计返还${returnNames[pool]}（模拟） · UP 四星${fourStarMax ? "已满命" : "未满命"}`,
-    `平均 ${result.mean.toFixed(2)} 个`,
-    `25% 分位 ${result.p25} 个 · 50% 分位 ${result.p50} 个 · 75% 分位 ${result.p75} 个`,
+    $t("lib.gacha-expectation-commands.text_a51f52340a", { "value1": returnNames[pool], "value2": fourStarMax ? $t("lib.gacha-expectation-commands.text_3f5a51a4b4") : $t("lib.gacha-expectation-commands.text_0e4a2e0679") }),
+    $t("lib.gacha-expectation-commands.text_fa172bf96e", { "value1": result.mean.toFixed(2) }),
+    $t("lib.gacha-expectation-commands.text_fa096062df", { "p25": result.p25, "p50": result.p50, "p75": result.p75 }),
   ].join("\n");
 }
 
@@ -156,7 +159,7 @@ export function gachaExpectationCommands(compute: Compute, sample?: Sample): Com
       if (typeof input === "string") return input;
       const { pool, copies, pity, guaranteed, radiance, fate, budget } = input;
       const distribution = match[1] === "期望分布";
-      await context.reply(distribution ? "正在计算抽数分布…" : "正在计算平均抽数…");
+      await context.reply(distribution ? $t("lib.gacha-expectation-commands.text_c1b7fba1eb") : $t("lib.gacha-expectation-commands.text_5fe555915e"));
       try {
         if (signal?.aborted) return;
         const result = await compute({ pool, copies, pity, guaranteed, radiance, fate, budget: distribution ? budget : undefined });
@@ -164,7 +167,7 @@ export function gachaExpectationCommands(compute: Compute, sample?: Sample): Com
         let returns: string | undefined;
         if (distribution && isCharacterPool(pool)) {
           if (!sample) {
-            returns = "当前结果仅展示抽数，四星满命状态和兑换道具返还尚未纳入计算。";
+            returns = $t("lib.gacha-expectation-commands.text_eef85cc99f");
           } else {
             const up4C6 = input.fourStarMax;
             try {
@@ -172,8 +175,8 @@ export function gachaExpectationCommands(compute: Compute, sample?: Sample): Com
                 pool, copies, pity, guaranteed, radiance, up4C6,
               }, { signal }));
             } catch (error) {
-              returns = error instanceof GachaReturnSimulationBusyError ? "返还估算正在处理另一条请求，请稍后重试。"
-                : "暂时无法估算返还，请稍后重试。";
+              returns = error instanceof GachaReturnSimulationBusyError ? $t("lib.gacha-expectation-commands.text_4ff43e45a0")
+                : $t("lib.gacha-expectation-commands.text_8b8790e5fe");
             }
           }
         }
@@ -181,7 +184,7 @@ export function gachaExpectationCommands(compute: Compute, sample?: Sample): Com
         return { type: "quoted", message: report(input, result, distribution, returns) };
       } catch {
         if (signal?.aborted) return;
-        return { type: "quoted", message: "抽卡计算暂未完成，请稍后重试。" };
+        return { type: "quoted", message: $t("lib.gacha-expectation-commands.text_e85201933a") };
       }
     },
   };

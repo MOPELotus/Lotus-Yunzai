@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants, linkSync, renameSync, type Stats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, realpath, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -45,7 +48,7 @@ function groupConfigLockPath(root: URL) {
 export async function withLocalGroupConfigWrite<T>(root: URL, write: () => Promise<T>): Promise<T> {
   const path = groupConfigLockPath(root);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const lock = await lockFile(path, "群组配置");
+  const lock = await lockFile(path, $t("lib.lotus-global-config-write.text_55885b9011"));
   try { return await write(); }
   finally { lock.close(); }
 }
@@ -161,7 +164,7 @@ export async function updateLocalConfiguration<T>(
   const sidecar = name === "group" ? groupConfigLockPath(root) :
     name === "groupAdmin" ? fileURLToPath(new URL("config/.lotus-group-admin.sqlite", root)) :
       join(dirname(initial.file), `.${basename(initial.file)}.lotus-${name}.sqlite`);
-  const database = await lockFile(sidecar, name === "global" ? "全局配置" : `${name}.yaml`).catch(() => error("conflict"));
+  const database = await lockFile(sidecar, name === "global" ? $t("lib.lotus-global-config-write.text_ee10bf749f") : `${name}.yaml`).catch(() => error("conflict"));
   try {
     assertActive();
     const location = await effectiveFile(root, name, override);

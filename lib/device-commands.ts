@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { DeviceFingerprintError, requestDeviceFingerprint } from "@lotus-yunzai/hoyo-client";
 import type { HoyoTransport } from "@lotus-yunzai/hoyo-client";
 import { MAX_PROFILE_ID, ProfileError, createProfileStore, parseDeviceBinding, parseAndroidDeviceInfo, type ProfileAccountContext } from "@lotus-yunzai/account";
@@ -16,7 +19,7 @@ const apkName = "copy_device_info_1.2.apk";
 const bundledApk = new URL(`../resources/device-binding/${apkName}`, import.meta.url);
 const oldApk = new URL(`../data/passport/resources/apk/${apkName}`, import.meta.url);
 const apkDownload = `https://raw.githubusercontent.com/MOPELotus/Lotus-ReFactor/29f040c9021462eebf6ed74a9bd9a383c61b7039/resources/apk/${apkName}`;
-const apkFallback = `可继续发送设备 JSON。需要工具时，可直接下载：\n${apkDownload}`;
+const apkFallback = $t("lib.device-commands.text_dce8c9281f", { "apkDownload": apkDownload });
 
 const legacyDeviceMetadataFields = ["deviceBoard", "deviceFingerprint", "deviceModel", "deviceName", "deviceProduct"]
   .map(field => new RegExp(`"${field}"\\s*:`, "u"));
@@ -81,21 +84,21 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       if (!opened && !cancelled && !unbound && !help && !payload && !legacyMetadata && text !== "取消") return;
       const { user_id, message_type, self_id, adapter } = context;
       const id = Number((opened ?? cancelled ?? unbound ?? help)?.[1] ?? 1);
-      if (id > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
+      if (id > MAX_PROFILE_ID) return $t("lib.device-commands.text_3dd62228d2");
       if (help) {
         if (context.isDelegated || (message_type !== "private" && message_type !== "group")) return;
         const suffix = id === 1 ? "" : id;
         return [
-          `加机器人好友并登录该档案后，好友私聊发送 #绑定设备${suffix}。`,
-          "按提示在同一条私聊消息中发送该设备的 JSON，或配对的 device_id 和 device_fp。",
-          "APK 只有安卓参数时会自动补齐设备 ID 并申请指纹。等待有效期为两分钟，发送「取消」退出。",
-          `绑定后可用 #设备信息${suffix} 查看。`,
+          $t("lib.device-commands.text_fc98247ef3", { "suffix": suffix }),
+          $t("lib.device-commands.text_4163fc063d"),
+          $t("lib.device-commands.text_3468a4588e"),
+          $t("lib.device-commands.text_c5b7b89c39", { "suffix": suffix }),
         ].join("\n");
       }
       if (message_type !== "private" || !user_id || !Number.isSafeInteger(user_id) || user_id < 1 ||
           !self_id || !Number.isSafeInteger(self_id) || self_id < 1) {
-        if (unbound && !context.isDelegated) return "请在本人私聊中解绑设备。";
-        if (opened || cancelled) return `请先加机器人好友，再在好友私聊发送 #绑定设备${id === 1 ? "" : id}。设备资料请只发在好友私聊。`;
+        if (unbound && !context.isDelegated) return $t("lib.device-commands.text_e99ac1feff");
+        if (opened || cancelled) return $t("lib.device-commands.text_68b51087b3", { "value1": id === 1 ? "" : id });
         return;
       }
       const qq = String(user_id);
@@ -103,7 +106,7 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
       const connection = context.privateCredentialSignal;
       if (context.isDelegated || connection?.aborted) return;
       if (!connection) {
-        if (opened && !opened[2]) return "请先加机器人好友，再在好友私聊发起设备绑定。";
+        if (opened && !opened[2]) return $t("lib.device-commands.text_534d8303ef");
         return;
       }
       const active = AbortSignal.any([signal, connection]);
@@ -114,20 +117,20 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
           const current = await profiles.accountContext(qq, id);
           const removed = await profiles.removeBoundDevice(qq, id, current.revision, active);
           if (active.aborted) return;
-          return removed ? "已解绑该档案的设备。" : "该档案没有已绑定的设备。";
+          return removed ? $t("lib.device-commands.text_a532eb4dc3") : $t("lib.device-commands.text_7186b0924f");
         } catch (error) {
           if (active.aborted) return;
-          if (error instanceof ProfileError && error.code === "changed") return "档案已变化，请重新发送解绑指令。";
-          return "暂时无法解绑该档案的设备，请确认已登录并稍后重试。";
+          if (error instanceof ProfileError && error.code === "changed") return $t("lib.device-commands.text_cedbf8227c");
+          return $t("lib.device-commands.text_7e161ca2dc");
         }
       }
       if (cancelled || text === "取消") {
         const waiting = pending.get(scope);
         if (!waiting || waiting.connection !== connection || (cancelled?.[1] !== undefined && waiting.profileId !== id)) {
-          return cancelled ? "当前私聊没有该档案的设备绑定等待。" : undefined;
+          return cancelled ? $t("lib.device-commands.text_d996b42581") : undefined;
         }
         cancelRequest(scope, waiting);
-        return "已取消绑定设备。";
+        return $t("lib.device-commands.text_82309eac71");
       }
 
       const waiting = pending.get(scope);
@@ -149,19 +152,19 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
           const report = isCurrent();
           cancelRequest(scope, current);
           if (!report) return [];
-          return `请先扫码登录档案 ${id}。`;
+          return $t("lib.device-commands.text_5c992b438d", { "id": id });
         }
         if (!opened[2]?.trim()) {
           setTimeout(() => {
             if (!current.writing) cancelRequest(scope, current);
           }, timeout).unref();
-          const prompt = `请发送 档案 ${id} 的设备 JSON，或同一设备的 device_id 和 device_fp。APK 只有安卓参数时会自动补齐并申请设备指纹。发送「取消」可退出，两分钟内有效。`;
+          const prompt = $t("lib.device-commands.text_8085c78af1", { "id": id });
           if (await context.reply(prompt) === false || active.aborted) {
             if (pending.get(scope) === current) pending.delete(scope);
             return [];
           }
           if (!isCurrent() || current.writing) return [];
-          if (!context.uploadFile) return `当前连接无法发送附件。${apkFallback}`;
+          if (!context.uploadFile) return $t("lib.device-commands.text_174838b9f6", { "apkFallback": apkFallback });
           let bytes: Uint8Array | undefined;
           const override = apk ?? Bun.env.LOTUS_DEVICE_INFO_APK?.trim();
           for (const location of override ? [override] : [bundledApk, oldApk]) {
@@ -177,15 +180,15 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
             }
           }
           if (!isCurrent() || current.writing) return [];
-          if (!bytes?.byteLength || bytes.byteLength > maxChatFileBytes) return `设备信息工具文件暂不可用。${apkFallback}`;
+          if (!bytes?.byteLength || bytes.byteLength > maxChatFileBytes) return $t("lib.device-commands.text_fd690683f9", { "apkFallback": apkFallback });
           const outcome = await context.uploadFile({ name: apkName, bytes }).catch(() => "unknown");
-          return isCurrent() && outcome === "rejected" ? `设备信息工具未能发送。${apkFallback}` : [];
+          return isCurrent() && outcome === "rejected" ? $t("lib.device-commands.text_2c7bf9448a", { "apkFallback": apkFallback }) : [];
         }
       }
-      if (!request?.snapshot || request.writing) return "请先私聊发送 #绑定设备。";
+      if (!request?.snapshot || request.writing) return $t("lib.device-commands.text_28c979db41");
       if (request.snapshot.expires <= performance.now()) {
         cancelRequest(scope, request);
-        return "设备绑定等待已超时，请重新发送 #绑定设备。";
+        return $t("lib.device-commands.text_e4cfc3641a");
       }
       const writeSignal = AbortSignal.any([active, request.operation.signal]);
       try {
@@ -202,22 +205,22 @@ export function deviceCommands(directory: string | undefined, signal: AbortSigna
         if (writeSignal.aborted) return [];
       } catch (error) {
         if (writeSignal.aborted) return [];
-        if (error instanceof ProfileError && error.code === "changed") return "档案已变化，请重新发起设备绑定。";
+        if (error instanceof ProfileError && error.code === "changed") return $t("lib.device-commands.text_d02867269e");
         if (error instanceof ProfileError && error.code === "invalid") return error.message;
         if (error instanceof DeviceFingerprintError || error instanceof TypeError) return error.message;
-        return "设备绑定未完成，请在同一份信息中提供匹配的设备 ID 和 FP。";
+        return $t("lib.device-commands.text_2d056c1e65");
       } finally {
         if ((opened || request.writing) && pending.get(scope) === request) pending.delete(scope);
       }
       try {
-        await context.reply("设备已绑定。设备资料是你发的私聊消息，请在 QQ 中自行撤回刚才那条消息。");
+        await context.reply($t("lib.device-commands.text_25b7a89b0a"));
       } catch {
         // Binding is already saved even if the cleanup reminder cannot be delivered.
       }
       try {
         return await showProfile(request.profileId, context);
       } catch {
-        return `档案 ${request.profileId} 设备已绑定。`;
+        return $t("lib.device-commands.text_8b01dcf8ff", { "profileId": request.profileId });
       }
     },
   };

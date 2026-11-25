@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isMilkyOwnerSession } from "./command-permissions.ts";
 import type { MessageEvent } from "./messages.ts";
 import { replyWithLog } from "./log-reply.ts";
@@ -43,25 +46,25 @@ export function createLogCommand(readLogs: ReadLogs) {
 
     const query = parseQuery(message.slice(match[0].length).trim());
     if (!query) {
-      await event.reply("日志条数须大于 0，最多显示 1000 条。");
+      await event.reply($t("lib.log-command.text_11961a6556"));
       return true;
     }
 
     const error = match[1] === "错误日志";
-    const label = error ? "错误日志" : "运行日志";
+    const label = error ? $t("lib.log-command.text_7918957c16") : $t("lib.log-command.text_fc08fa2609");
     let lines: readonly string[];
     try {
       lines = await readLogs(error ? "error" : "runtime", query);
     } catch {
-      await event.reply("读取日志失败，请稍后重试。");
+      await event.reply($t("lib.log-command.text_005aa9a804"));
       return true;
     }
     if (!lines.length) {
-      await event.reply(`暂无相关${label}。`);
+      await event.reply($t("lib.log-command.text_125add2646", { "label": label }));
       return true;
     }
 
-    const title = `最近 ${Math.min(lines.length, query.limit)} 条${label}`;
+    const title = $t("lib.log-command.text_3018d63fab", { "value1": Math.min(lines.length, query.limit), "label": label });
     await replyWithLog(event, title, lines, { limit: query.limit });
     return true;
   };

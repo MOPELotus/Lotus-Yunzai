@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { HoyoRequestError, withHoyoReadRetries } from "@lotus-yunzai/hoyo-client";
 
 const internationalOrigins = new Set([
@@ -29,11 +32,11 @@ export function hoyoTransportForBot(proxyAddress: unknown) {
     (typeof proxyAddress === "string" && proxyAddress.trim() === "") ? undefined : proxyAddress;
   if (configured === undefined) return withHoyoReadRetries(fetch);
   const proxy = parseProxy(configured);
-  if (!proxy) console.warn("[HoYoLAB] bot.yaml 的 proxyAddress 无效，国际服请求已停用。");
+  if (!proxy) console.warn($t("lib.hoyolab-network.text_ca5400b486"));
 
   return withHoyoReadRetries(async (endpoint: URL, init: RequestInit) => {
     if (!internationalOrigins.has(endpoint.origin)) return fetch(endpoint, init);
-    if (!proxy) throw new HoyoRequestError("transport", "bot.yaml 的国际服代理地址无效。");
+    if (!proxy) throw new HoyoRequestError("transport", $t("lib.hoyolab-network.text_f9821ec8c5"));
     return fetch(endpoint, { ...init, redirect: "error", proxy: { url: proxy, headers: {}, respectNoProxy: false } });
   });
 }

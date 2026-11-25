@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { readFile } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
@@ -16,28 +19,28 @@ type Field = {
   hint?: string;
 };
 
-export const panelMysNoticeGames = { gs: "原神", sr: "星铁", zzz: "绝区零", bbb: "崩坏3", bb: "崩坏学园2", wd: "未定事件簿" } as const;
+export const panelMysNoticeGames = { gs: $t("lib.panel-notice-settings.text_d1597c51ed"), sr: $t("lib.panel-notice-settings.text_a2927891f0"), zzz: $t("lib.panel-notice-settings.text_b1110352c9"), bbb: $t("lib.panel-notice-settings.text_6d3d8653d7"), bb: $t("lib.panel-notice-settings.text_e5b1fba52e"), wd: $t("lib.panel-notice-settings.text_a6e4fbed57") } as const;
 export const panelMysActivityGames = ["gs", "sr"] as const;
 type Game = keyof typeof panelMysNoticeGames;
 const gameKeys = Object.keys(panelMysNoticeGames) as Game[];
-const targetHint = "以机器人 QQ 为键，值为群号数组。群内订阅命令产生的覆盖优先；下一轮生效。";
+const targetHint = $t("lib.panel-notice-settings.text_bde461ecc8");
 const logLevels = ["debug", "info", "warn", "error"];
 const localFields: readonly Field[] = [
-  { key: "enableSchedule", label: "自动投递当前公告", type: "boolean", hint: "保存后重启宿主生效。" },
-  { key: "scheduleTime", label: "自动投递窗口（北京时间）", type: "text", hint: "格式如 08:00-08:30，每天在窗口内选一次。保存后重启宿主生效。" },
-  { key: "logger", label: "独立公告日志级别", type: "select", options: logLevels.map(value => ({ label: value, value })),
-    hint: "保存后重启宿主生效。" },
+  { key: "enableSchedule", label: $t("lib.panel-notice-settings.text_dc39e1599e"), type: "boolean", hint: $t("lib.panel-notice-settings.text_d3d0842647") },
+  { key: "scheduleTime", label: $t("lib.panel-notice-settings.text_a5d29a53a3"), type: "text", hint: $t("lib.panel-notice-settings.text_537deacd42") },
+  { key: "logger", label: $t("lib.panel-notice-settings.text_9d44301f40"), type: "select", options: logLevels.map(value => ({ label: value, value })),
+    hint: $t("lib.panel-notice-settings.text_d3d0842647") },
 ];
 const mysFields: readonly Field[] = [
-  { key: "pushTime", label: "查询与推送 Cron", type: "text", hint: "修改 Cron 后重启宿主生效。" },
-  { key: "maxNum", label: "每轮推送上限", type: "number", min: 0, hint: "每个游戏的公告与资讯共用上限。0 表示不发送；下一轮生效。" },
+  { key: "pushTime", label: $t("lib.panel-notice-settings.text_a3df59d790"), type: "text", hint: $t("lib.panel-notice-settings.text_4fca84cea1") },
+  { key: "maxNum", label: $t("lib.panel-notice-settings.text_189c981ba5"), type: "number", min: 0, hint: $t("lib.panel-notice-settings.text_dd6ca8b86e") },
   ...gameKeys.flatMap((game): Field[] => [
-    { key: `${game}announceGroup`, label: panelMysNoticeGames[game] + "公告目标", type: "json", hint: targetHint },
-    { key: `${game}infoGroup`, label: panelMysNoticeGames[game] + "资讯目标", type: "json", hint: targetHint },
-    { key: `${game}BanWord`, label: panelMysNoticeGames[game] + "标题过滤", type: "text", hint: "正则表达式。留空则不过滤；下一轮生效。" },
+    { key: `${game}announceGroup`, label: panelMysNoticeGames[game] + $t("lib.panel-notice-settings.text_3bbe0639c3"), type: "json", hint: targetHint },
+    { key: `${game}infoGroup`, label: panelMysNoticeGames[game] + $t("lib.panel-notice-settings.text_dd649b3eae"), type: "json", hint: targetHint },
+    { key: `${game}BanWord`, label: panelMysNoticeGames[game] + $t("lib.panel-notice-settings.text_ab04d86a76"), type: "text", hint: $t("lib.panel-notice-settings.text_7d0c91b3cd") },
   ]),
   ...panelMysActivityGames.map((game): Field => ({
-    key: `${game}ActivityPush`, label: panelMysNoticeGames[game] + "活动到期目标", type: "json", hint: targetHint,
+    key: `${game}ActivityPush`, label: panelMysNoticeGames[game] + $t("lib.panel-notice-settings.text_9f78cc0c55"), type: "json", hint: targetHint,
   })),
 ];
 
@@ -176,7 +179,7 @@ function endpoint(root: URL, settings: NoticeSettings) {
       await validate(next).catch(() => { throw new InvalidNoticeSettings(); });
       const values = await snapshot(next);
       const value = { fields, values, ...(restartKeys.some(key => Object.hasOwn(changed, key)) && {
-        warning: "设置已保存。重启宿主后生效。",
+        warning: $t("lib.panel-notice-settings.text_0c39d46c51"),
       }) };
       return Response.json(await updateLocalConfiguration(root, name, {
         override, canWrite: active, canCommit: active, signal: request.signal, resolveEffective: read,

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { readQqMessageImage, type IncomingChatFile } from "./chat-files.ts";
 import { delegationSession } from "./command-delegation.ts";
 import { sendCommandReply } from "./commands.ts";
@@ -37,7 +40,7 @@ export function createChatMediaLinks(publish: FileToUrl, httpReady: () => boolea
     if (!admitted() || activeWorkflow.aborted) return starts;
     if (!starts && (event.msg === "取消" || event.msg === "#取消取直链")) {
       current?.delete(key);
-      await event.reply("✅ 已取消");
+      await event.reply($t("lib.chat-media-links.text_da1a384ab2"));
       return true;
     }
     if (starts && !allowNew) return true;
@@ -49,7 +52,7 @@ export function createChatMediaLinks(publish: FileToUrl, httpReady: () => boolea
     };
     if (!httpReady()) {
       current?.delete(key);
-      await reply("未启用公共 HTTP 服务，无法生成直链。", true);
+      await reply($t("lib.chat-media-links.text_58e387e1ba"), true);
       return true;
     }
 
@@ -60,7 +63,7 @@ export function createChatMediaLinks(publish: FileToUrl, httpReady: () => boolea
       const quote = await event.lookupMediaReply?.(signal).catch(() => undefined);
       if (!active()) return true;
       if (!quote) {
-        await reply("无法读取当前会话的引用消息。", true);
+        await reply($t("lib.chat-media-links.text_8058081a1b"), true);
         return true;
       }
       const quotedImages = imageParts(quote.message);
@@ -79,35 +82,35 @@ export function createChatMediaLinks(publish: FileToUrl, httpReady: () => boolea
       const data = await file?.read(signal).catch(() => undefined);
       if (!active()) return true;
       if (!data?.length || !file) {
-        await reply("无法读取当前会话的附件。", true);
+        await reply($t("lib.chat-media-links.text_3b4d22a31a"), true);
         return true;
       }
       const url = await publish(data, { name: file.name, mime: "application/octet-stream", time: shareTime }).catch(() => undefined);
-      await reply(url ? `下载链接:\n${url}` : "暂时无法生成下载链接。", true);
+      await reply(url ? $t("lib.chat-media-links.text_fd7cdc1f88", { "url": url }) : $t("lib.chat-media-links.text_a5073a0dda"), true);
       return true;
     }
 
     if (!images.length) {
       if (!starts) {
-        if (event.msg) await reply("⚠ 请发送图片或取消");
+        if (event.msg) await reply($t("lib.chat-media-links.text_ada0140652"));
         return true;
       }
       const queue = current ?? new Map<string, Waiting>();
       for (const [id, entry] of queue) if (entry.signal.aborted || entry.expires <= now) queue.delete(id);
       if (!queue.has(key) && queue.size >= maxWaiting) {
-        await reply("暂时无法等待新图片，请稍后再试。");
+        await reply($t("lib.chat-media-links.text_8109b0961b"));
         return true;
       }
       queue.set(key, { expires: now + waitTime, signal: activeWorkflow });
       waits.set(connection, queue);
-      await reply("⚠ 请发送图片");
+      await reply($t("lib.chat-media-links.text_80abaf62a3"));
       return true;
     }
 
     current?.delete(key);
     const selected = starts ? images : images.slice(0, 1);
     if (selected.length > maxImages) {
-      await reply(`一次最多处理 ${maxImages} 张图片。`, true);
+      await reply($t("lib.chat-media-links.text_81c4fd171c", { "maxImages": maxImages }), true);
       return true;
     }
     const available: { data: Uint8Array; summary?: string }[] = [];
@@ -116,7 +119,7 @@ export function createChatMediaLinks(publish: FileToUrl, httpReady: () => boolea
       if (!active()) return true;
       const data = await readQqMessageImage(image, signal);
       if (!data || (bytes += data.length) > maxPublicFileBytes || !await isVerifiedRaster(data)) {
-        await reply("无法读取当前会话的图片或图片过大。", true);
+        await reply($t("lib.chat-media-links.text_b832e35fc7"), true);
         return true;
       }
       available.push({ data, summary: typeof image.summary === "string" ? image.summary : undefined });
@@ -134,12 +137,12 @@ export function createChatMediaLinks(publish: FileToUrl, httpReady: () => boolea
         }
         nodes.push([{ type: "image", file: url, ...(summary === undefined ? {} : { summary }) }, "\n", url]);
       }
-      await reply(`✅ 检测到${nodes.length}张图片`);
+      await reply($t("lib.chat-media-links.text_6ded0ee258", { "length": nodes.length }));
       if (active() && nodes.length > 1) {
-        await sendCommandReply(event, { type: "forward", nodes, senderName: "图片直链" });
+        await sendCommandReply(event, { type: "forward", nodes, senderName: $t("lib.chat-media-links.text_72d1f2d637") });
       } else if (nodes[0]) await reply(nodes[0]);
     } catch {
-      await reply("暂时无法生成下载链接。", true);
+      await reply($t("lib.chat-media-links.text_a5073a0dda"), true);
     }
     return true;
   };

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { replyWithLog } from "./log-reply.ts";
 import type { MessageEvent } from "./messages.ts";
 import type { UpdateHistory } from "./update-history.ts";
@@ -5,7 +8,7 @@ import { parseUpdateTarget } from "./update-target.ts";
 
 const command = "#更新日志";
 const starRailLog = /^#星铁(?:插件)?更新日志$/u;
-const mismatchNotice = "当前检出的插件版本与宿主锁定版本不同，以下日志按宿主锁定版本列出。";
+const mismatchNotice = $t("lib.update-log-command.text_1ecfa80050");
 
 export function isUpdateLogCommand(message: string): boolean {
   return message.trimStart().startsWith(command) || starRailLog.test(message.trim());
@@ -19,7 +22,7 @@ export function createUpdateLogCommand(read: (requested?: string) => Promise<Upd
 
     const requested = starRail ? "starrail" : parseUpdateTarget(message.slice(command.length));
     if (requested === undefined) {
-      await event.reply("请输入有效的插件名，例如 #更新日志 system 或 #更新日志 @lotus-yunzai/system。");
+      await event.reply($t("lib.update-log-command.text_9790f939cf"));
       return true;
     }
 
@@ -27,15 +30,15 @@ export function createUpdateLogCommand(read: (requested?: string) => Promise<Upd
     try {
       log = await read(requested || undefined);
     } catch {
-      await event.reply("读取更新日志失败，请稍后重试。");
+      await event.reply($t("lib.update-log-command.text_3f1fbde032"));
       return true;
     }
     if (!log) {
-      await event.reply("暂无可用的更新日志。");
+      await event.reply($t("lib.update-log-command.text_82a1b4249c"));
       return true;
     }
 
-    const title = `${log.name} 更新日志，共${log.lines.length}条`;
+    const title = $t("lib.update-log-command.text_774b663722", { "name": log.name, "length": log.lines.length });
     const heading = log.pinnedMismatch ? `${title}\n${mismatchNotice}` : title;
     if (!log.lines.length) {
       await event.reply(heading);
@@ -43,7 +46,7 @@ export function createUpdateLogCommand(read: (requested?: string) => Promise<Upd
     }
     await replyWithLog(event, heading, log.lines, {
       separator: "\n\n",
-      unconfirmed: "更新日志转发结果未确认，请在聊天中核对。",
+      unconfirmed: $t("lib.update-log-command.text_548e671a33"),
     });
     return true;
   };

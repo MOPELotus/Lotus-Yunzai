@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { Database } from "bun:sqlite";
 import { lstat, mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
@@ -27,7 +30,7 @@ async function ensureDirectory(directory: string) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
   }
   if (!(await lstat(directory)).isDirectory() || await realpath(directory) !== directory) {
-    throw new Error("暂存公开 UID 目录必须为实体目录。");
+    throw new Error($t("lib.migration-public-role-references.text_7bb269093f"));
   }
 }
 

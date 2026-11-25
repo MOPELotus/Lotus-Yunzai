@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
@@ -89,7 +90,7 @@ globalThis.fetch = Object.assign(async (input, init) => {
 `;
 
 async function prepare(root: string) {
-  await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+  await linkHostPackages(root);
   const directory = join(root, "profiles");
   await mkdir(directory);
   async function profile(file: string, qq: number, id: number, mid: number, roles: object) {

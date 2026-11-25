@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { MessageEvent } from "../messages.ts";
 
 interface ContextEntry {
@@ -34,7 +37,7 @@ export class PluginContexts {
     const key = this.#key(event, group);
     if (this.#closed || key === undefined) return;
     if (!Number.isFinite(seconds) || seconds < 0 || seconds > 2_147_483) {
-      throw new RangeError("插件会话的超时时间无效。");
+      throw new RangeError($t("lib.plugins.contexts.text_7f8d3343a6"));
     }
 
     const entries = this.#sessions.get(key) ?? new Map<string, ContextEntry>();

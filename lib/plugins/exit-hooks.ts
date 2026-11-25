@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { OneBotLegacySignal } from "../messages.ts";
 import { HandlerScope } from "./handler.ts";
 
@@ -36,11 +39,11 @@ export class LegacyExitHooks {
   add(event: unknown, listener: unknown, once = false) {
     if (this.#exiting) return;
     if (event === "exit") {
-      if (typeof listener !== "function") throw new TypeError("Bot.exit 监听须为函数。");
+      if (typeof listener !== "function") throw new TypeError($t("lib.plugins.exit-hooks.text_8110bb030c"));
       const scope = HandlerScope.current();
       if (scope) this.#registrations.get(scope)?.push(listener as Listener);
     } else if (typeof event === "string" && legacySignalNames.has(event)) {
-      if (typeof listener !== "function") throw new TypeError("Bot 事件监听须为函数。");
+      if (typeof listener !== "function") throw new TypeError($t("lib.plugins.exit-hooks.text_a4b69f0274"));
       const scope = HandlerScope.current();
       if (scope) this.#live.get(scope)?.push({ name: event, fn: listener as LiveListener, once });
     }
@@ -69,7 +72,7 @@ export class LegacyExitHooks {
           if (signal.aborted) return;
           if (binding.name !== name || this.#live.get(scope) !== listeners || !listeners?.includes(binding)) continue;
           if (binding.once) listeners.splice(listeners.indexOf(binding), 1);
-          void scope.invoke(() => binding.fn.call(bot, event)).catch(() => console.warn("[插件] V3 通知回调执行失败。"));
+          void scope.invoke(() => binding.fn.call(bot, event)).catch(() => console.warn($t("lib.plugins.exit-hooks.text_b6d15131d8")));
         }
       }
     }
@@ -88,10 +91,10 @@ export class LegacyExitHooks {
         await Promise.race([
           Promise.all(listeners.map(({ scope, listener }) => Promise.resolve().then(() => {
             return scope.run(() => listener.call(bot, reason));
-          }).catch(() => console.warn("[插件] V3 退出回调执行失败。")))),
+          }).catch(() => console.warn($t("lib.plugins.exit-hooks.text_d8dd010997"))))),
           new Promise<void>(resolve => {
             timer = setTimeout(() => {
-              console.warn("[插件] 等待 V3 退出回调超时。");
+              console.warn($t("lib.plugins.exit-hooks.text_8a9def8531"));
               resolve();
             }, this.timeout);
           }),

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, readdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parseBiliLocal } from "../plugins/media/services/subscriptions/session.ts";
@@ -95,7 +98,7 @@ export async function stageLegacyMediaState(sourcePath: string, stagePath: strin
   const [source, stage] = await Promise.all([realpath(sourcePath), realpath(stagePath)]);
   const info = await lstat(stage);
   if (withinInstallation(source, stage) || withinInstallation(stage, source) || !info.isDirectory() || info.mode & 0o077) {
-    throw new Error("媒体状态迁移须使用独立的私有实体目录。");
+    throw new Error($t("lib.migration-media-state.text_0cc4bc3ac1"));
   }
   const destinationEndpoint = endpoint(tuneweaveUrl);
   const active: { path: string; files: number }[] = [];
@@ -147,7 +150,7 @@ export async function stageLegacyMediaState(sourcePath: string, stagePath: strin
     });
     const details = await lstat(directory);
     if (!details.isDirectory() || details.mode & 0o077 || await realpath(directory) !== directory) {
-      throw new Error("媒体状态暂存路径须为私有实体目录。");
+      throw new Error($t("lib.migration-media-state.text_2731c4a2cd"));
     }
   }
 
@@ -207,7 +210,7 @@ export async function stageLegacyMediaState(sourcePath: string, stagePath: strin
       signal?.throwIfAborted();
       const directory = join(root, path);
       if (depth > 8 || await realpath(directory) !== directory || !(await lstat(directory)).isDirectory()) {
-        throw new Error("旧 TuneWeave 账号目录格式无效。");
+        throw new Error($t("lib.migration-media-state.text_f696581a6d"));
       }
       for (const name of (await readdir(directory)).sort()) {
         const relativePath = join(path, name);
@@ -215,9 +218,9 @@ export async function stageLegacyMediaState(sourcePath: string, stagePath: strin
         if ((await lstat(file)).isDirectory()) await visit(relativePath, depth + 1);
         else {
           const record = await read(join(prefix, localStore, relativePath), maxAccounts);
-          if (!record) throw new Error("旧 TuneWeave 账号数据在读取期间发生变化。");
+          if (!record) throw new Error($t("lib.migration-media-state.text_a7e096f7bf"));
           bytesRead += record.bytes.length;
-          if (entries.size >= 4096 || bytesRead > maxLocalTotal) throw new Error("旧 TuneWeave 账号目录超过迁移上限。");
+          if (entries.size >= 4096 || bytesRead > maxLocalTotal) throw new Error($t("lib.migration-media-state.text_4bdcee847c"));
           if (!name.endsWith(".json")) supported = false;
           else try { JSON.parse(decode(record.bytes)); } catch { supported = false; }
           entries.set(relativePath, record.bytes);

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -39,7 +42,7 @@ export type ZzzHollowSnapshot = Result & (
 );
 
 function invalid(field: string): never {
-  throw new HoyoRequestError("response", `官方零号空洞响应的${field}无效。`);
+  throw new HoyoRequestError("response", $t("zzz-hollow-zero.text_432a4cfcd8", { "field": field }));
 }
 
 function object(value: unknown, field: string) {
@@ -68,15 +71,15 @@ function progress(value: unknown, suffix: string): ZzzHollowProgress | undefined
 }
 
 function challenge(value: unknown): ZzzHollowChallenge | undefined {
-  const data = object(value, "最优挑战");
-  if (data) return { name: text(data.max_name, 192), heat: count(data.heat_count, "以太活性"),
-    count: count(data.max_count, "通关次数"), seconds: count(data.best_time, "耗时") };
+  const data = object(value, $t("zzz-hollow-zero.text_af11138f63"));
+  if (data) return { name: text(data.max_name, 192), heat: count(data.heat_count, $t("zzz-hollow-zero.text_96fbc6a2a9")),
+    count: count(data.max_count, $t("zzz-hollow-zero.text_962c27ad90")), seconds: count(data.best_time, $t("zzz-hollow-zero.text_e77e3d58b0")) };
 }
 
 function fighter(value: unknown, buddy: boolean): ZzzHollowFighter | undefined {
-  const data = object(value, buddy ? "邦布" : "代理人");
+  const data = object(value, buddy ? $t("zzz-hollow-zero.text_aa46a7c35b") : $t("zzz-hollow-zero.text_5aea7d747f"));
   if (!data) return;
-  const id = count(data.id, "阵容编号");
+  const id = count(data.id, $t("zzz-hollow-zero.text_35d1d42008"));
   const icon = text(buddy ? data.bangboo_rectangle_url : data.role_square_url);
   const name = text(data.name_mi18n ?? data.name, 96);
   if (!id && !icon && !name) return;
@@ -85,7 +88,7 @@ function fighter(value: unknown, buddy: boolean): ZzzHollowFighter | undefined {
   const damageRate = typeof ratio === "number" && Number.isFinite(ratio) ? String(ratio) : text(ratio, 24)?.replace(/%$/u, "");
   return { itemId: id ? String(id) : undefined, icon, name,
     rarity: rarity === "S" || rarity === "A" || rarity === "B" ? rarity : undefined,
-    rank: buddy ? undefined : count(data.rank, "影画等级"), level: count(data.level, "阵容等级"),
+    rank: buddy ? undefined : count(data.rank, $t("zzz-hollow-zero.text_1b24e7d2ec")), level: count(data.level, $t("zzz-hollow-zero.text_cec5d0adeb")),
     damageRate: damageRate && /^\d{1,3}(?:\.\d{1,8})?$/u.test(damageRate) && Number(damageRate) <= 100 ? damageRate : undefined };
 }
 
@@ -93,13 +96,13 @@ function verifyIdentity(data: Json, expected: Identity) {
   for (const key of ["uid", "game_uid", "role_id"]) {
     const id = data[key];
     if (id !== undefined && ((typeof id !== "string" && typeof id !== "number") || String(id) !== expected.uid)) {
-      invalid("档案 UID");
+      invalid($t("zzz-hollow-zero.text_5e66ce9fd0"));
     }
   }
   for (const key of ["region", "server"]) {
-    if (data[key] !== undefined && data[key] !== expected.region) invalid("档案区服");
+    if (data[key] !== undefined && data[key] !== expected.region) invalid($t("zzz-hollow-zero.text_e6dcb75782"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid("游戏标识");
+  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-hollow-zero.text_a81ce382a1"));
 }
 
 function optionalList(value: unknown, name: string) {
@@ -109,19 +112,19 @@ function optionalList(value: unknown, name: string) {
 }
 
 export function normalizeZzzHollowZero(input: unknown, detail: unknown, identity: Identity, hollowMode: ZzzHollowMode): ZzzHollowSnapshot {
-  const data = object(input, "摘要") ?? invalid("摘要");
+  const data = object(input, $t("zzz-hollow-zero.text_21c04b2eee")) ?? invalid($t("zzz-hollow-zero.text_21c04b2eee"));
   verifyIdentity(data, identity);
-  const collection = optionalList(data.abyss_collect, "收集列表")
+  const collection = optionalList(data.abyss_collect, $t("zzz-hollow-zero.text_e4c3f6999a"))
     .slice(0, hollowMode === "withered" ? 5 : 7).map(row => progress(row, "collect") ?? {});
   const license = progress(data.abyss_level, "level");
   if (hollowMode === "withered") {
-    const supplemental = object(detail, "挑战详情");
+    const supplemental = object(detail, $t("zzz-hollow-zero.text_1b55b3119c"));
     if (supplemental) verifyIdentity(supplemental, identity);
-    const max = object(supplemental?.abyss_throne_max, "刀耕火焚");
-    const throne = max && { seconds: count(max.time, "探索耗时"), damage: count(max.max_damage, "最高伤害"),
-      avatars: optionalList(max.avatar_list, "代理人队伍").slice(0, 3).map(row => fighter(row, false)),
-      buddy: fighter(optionalList(max.buddy_list, "邦布队伍")[0], true) };
-    const maxDamage = count(object(data.abyss_throne, "挑战摘要")?.max_damage, "最高伤害");
+    const max = object(supplemental?.abyss_throne_max, $t("zzz-hollow-zero.text_24ec01f42b"));
+    const throne = max && { seconds: count(max.time, $t("zzz-hollow-zero.text_127d116c3e")), damage: count(max.max_damage, $t("zzz-hollow-zero.text_ba2612847b")),
+      avatars: optionalList(max.avatar_list, $t("zzz-hollow-zero.text_695046b8bb")).slice(0, 3).map(row => fighter(row, false)),
+      buddy: fighter(optionalList(max.buddy_list, $t("zzz-hollow-zero.text_f9ba9c9b50"))[0], true) };
+    const maxDamage = count(object(data.abyss_throne, $t("zzz-hollow-zero.text_fc78aa7096"))?.max_damage, $t("zzz-hollow-zero.text_ba2612847b"));
     const talent = progress(data.abyss_talent, "talent");
     return { ...identity, hollowMode, collection, license, talent, maxDamage, throne,
       status: license || talent || collection.length || maxDamage !== undefined || throne ? "available" : "empty" };

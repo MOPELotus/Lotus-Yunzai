@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
@@ -29,7 +32,7 @@ async function physical(path: string) {
   try {
     const info = await lstat(path);
     if (await realpath(path) !== path || (!info.isDirectory() && (!info.isFile() || info.nlink !== 1))) {
-      throw new Error("图鉴迁移只读取副本内的实体目录和无硬链接普通文件。");
+      throw new Error($t("lib.migration-atlas-state.text_568ede1469"));
     }
     return info;
   } catch (error) {
@@ -40,7 +43,7 @@ async function physical(path: string) {
 async function readStableFile(path: string, limit: number, signal?: AbortSignal) {
   const expected = await physical(path);
   if (!expected) return;
-  if (!expected.isFile() || expected.size > limit) throw new Error("图鉴迁移文件大小或类型无效。");
+  if (!expected.isFile() || expected.size > limit) throw new Error($t("lib.migration-atlas-state.text_fb1009c910"));
   const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
   try {
     const same = async () => {
@@ -48,16 +51,16 @@ async function readStableFile(path: string, limit: number, signal?: AbortSignal)
       return actual.dev === expected.dev && actual.ino === expected.ino && actual.size === expected.size &&
         actual.ctimeMs === expected.ctimeMs && actual.mtimeMs === expected.mtimeMs && actual.nlink === 1;
     };
-    if (!await same()) throw new Error("旧图鉴文件在读取期间变更。");
+    if (!await same()) throw new Error($t("lib.migration-atlas-state.text_ffaf914d74"));
     const bytes = Buffer.alloc(expected.size);
     let pos = 0;
     while (pos < bytes.length) {
       signal?.throwIfAborted();
       const { bytesRead } = await file.read(bytes, pos, bytes.length - pos, pos);
-      if (!bytesRead) throw new Error("旧图鉴文件在读取期间变更。");
+      if (!bytesRead) throw new Error($t("lib.migration-atlas-state.text_ffaf914d74"));
       pos += bytesRead;
     }
-    if (!await same() || await realpath(path) !== path) throw new Error("旧图鉴文件在读取期间变更。");
+    if (!await same() || await realpath(path) !== path) throw new Error($t("lib.migration-atlas-state.text_ffaf914d74"));
     return bytes;
   } finally {
     await file.close();
@@ -71,11 +74,11 @@ async function readConfig(path: string, signal?: AbortSignal) {
   try {
     parsed = Bun.YAML.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
-    throw new Error("图鉴迁移配置须为有效的 UTF-8 YAML。");
+    throw new Error($t("lib.migration-atlas-state.text_cedde76ed5"));
   }
   if (parsed == null) return {};
   const value = record(parsed);
-  if (!value) throw new Error("图鉴迁移配置须为 YAML 对象。");
+  if (!value) throw new Error($t("lib.migration-atlas-state.text_c96b40243c"));
   return value;
 }
 
@@ -86,7 +89,7 @@ async function atlasConfig(source: string, signal?: AbortSignal) {
       if (config === undefined) continue;
       if (Object.hasOwn(config, "atlas")) {
         const atlas = record(config.atlas);
-        if (!atlas) throw new Error("旧 atlas 配置须为 YAML 对象。");
+        if (!atlas) throw new Error($t("lib.migration-atlas-state.text_bcd053d25b"));
         return { base, atlas };
       }
       break;
@@ -131,7 +134,7 @@ function stageConfig(atlas: Record<string, unknown>) {
   }
   const policy = parseAtlasUpdatePolicy({ ...value, update_args: atlas.update_args, challenge_args: atlas.challenge_args });
   if (policy.version.issue || policy.challenge.issue || (atlas.auto_update !== undefined && !auto)) {
-    throw new Error("旧图鉴定时任务或分类范围无效，无法安全迁移。");
+    throw new Error($t("lib.migration-atlas-state.text_f305b3889e"));
   }
   for (const [key, task] of [["update_args", policy.version], ["challenge_args", policy.challenge]] as const) {
     const args = atlas[key];
@@ -160,7 +163,7 @@ async function atlasExport(source: string, base: string | undefined, configured:
     if (!withinInstallation(source, path) || !(await physical(join(path, "data/map.json")))?.isFile()) continue;
     found.push(path);
   }
-  if (found.length > 1) throw new Error("迁移副本中有两个旧图鉴导出，请先核定要保留的来源。");
+  if (found.length > 1) throw new Error($t("lib.migration-atlas-state.text_047c86ad9b"));
   return found.length ? { status: "present", path: found[0]! } as const : { status: "absent" } as const;
 }
 
@@ -249,7 +252,7 @@ export async function stageLegacyAtlasState(sourcePath: string, stateDirectory: 
   const info = await lstat(stage);
   if (stage !== resolve(stateDirectory) || !info.isDirectory() || (info.mode & 0o077) ||
       withinInstallation(source, stage) || withinInstallation(stage, source)) {
-    throw new Error("旧图鉴暂存必须使用独立的私有实体目录。");
+    throw new Error($t("lib.migration-atlas-state.text_07df2128ed"));
   }
   const config = await atlasConfig(source, signal);
   const legacyRoles = await projectAtlasRoleSettings(archive, signal);
@@ -261,9 +264,9 @@ export async function stageLegacyAtlasState(sourcePath: string, stateDirectory: 
     { readonly status: "staged"; readonly pages: number; readonly images: number } = { status: "absent" };
   if (exportRoot.status === "present") {
     const data = join(exportRoot.path, "data");
-    if (!(await physical(data))?.isDirectory()) throw new Error("旧图鉴导出数据须为实体目录。");
+    if (!(await physical(data))?.isDirectory()) throw new Error($t("lib.migration-atlas-state.text_9111c6a556"));
     const validation = await validateAtlasCandidate(data, [], signal);
-    if (!validation.ok) throw new Error("旧图鉴导出未通过可复用快照校验。");
+    if (!validation.ok) throw new Error($t("lib.migration-atlas-state.text_134842c151"));
     await physical(dirname(directory));
     await mkdir(dirname(directory), { recursive: true, mode: 0o700 });
     const prepared = await copyAtlasCandidate(exportRoot.path, directory, validation.pages, undefined, signal);
@@ -296,7 +299,7 @@ export async function stageLegacyAtlasState(sourcePath: string, stateDirectory: 
         const original = await readStableFile(file, 1024 * 1024, signal);
         const document = parseDocument(new TextDecoder("utf-8", { fatal: true }).decode(original), { merge: true, uniqueKeys: true });
         if (document.errors.length || !isMap(document.contents) || !isMap(document.get("atlas", true))) {
-          throw new Error("图鉴迁移无法安全扩展暂存配置。");
+          throw new Error($t("lib.migration-atlas-state.text_1b567f1a41"));
         }
         for (const key of changes) document.setIn(["atlas", key], projected[key]);
         signal?.throwIfAborted();

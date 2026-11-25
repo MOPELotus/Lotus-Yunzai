@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -40,7 +43,7 @@ export interface ZzzDeadlySnapshot {
 
 type Identity = Pick<ZzzDeadlySnapshot, "uid" | "region" | "scheduleType">;
 
-function invalid(message = "官方危局强袭战响应的战绩格式无效。"): never {
+function invalid(message = $t("zzz-deadly.text_411108d216")): never {
   throw new HoyoRequestError("response", message);
 }
 
@@ -78,15 +81,15 @@ function verifyIdentity(data: Json, identity: Identity) {
   for (const field of ["uid", "role_id", "game_uid"]) {
     const value = data[field];
     if (value !== undefined && value !== identity.uid && (typeof value !== "number" || String(value) !== identity.uid)) {
-      invalid("官方危局强袭战响应的 UID 与当前档案不一致。");
+      invalid($t("zzz-deadly.text_fc501e5e31"));
     }
   }
   for (const field of ["server", "region"]) {
-    if (data[field] !== undefined && data[field] !== identity.region) invalid("官方危局强袭战响应的区服与当前档案不一致。");
+    if (data[field] !== undefined && data[field] !== identity.region) invalid($t("zzz-deadly.text_24baf7e1a7"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid("官方危局强袭战响应的游戏与当前档案不一致。");
+  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-deadly.text_d450f51e89"));
   if (data.schedule_type !== undefined && count(data.schedule_type, 2) !== identity.scheduleType) {
-    invalid("官方危局强袭战响应的周期选择与查询不一致。");
+    invalid($t("zzz-deadly.text_d1b8410c6a"));
   }
 }
 
@@ -122,7 +125,7 @@ function rooms(value: unknown): readonly ZzzDeadlyRoom[] {
     const stars = count(data.star, 9);
     const availableStars = count(data.total_star, 9);
     if (stars !== undefined && availableStars !== undefined && stars > availableStars) {
-      invalid("官方危局强袭战响应的星级无效。");
+      invalid($t("zzz-deadly.text_cb22ead220"));
     }
     const boss = first(data.boss);
     const buff = first(data.buffer);
@@ -141,7 +144,7 @@ export function normalizeZzzDeadly(input: unknown, identity: Identity): ZzzDeadl
   verifyIdentity(data, identity);
   const start = time(data.start_time);
   const end = time(data.end_time);
-  if (start && end && start >= end) invalid("官方危局强袭战响应的统计周期无效。");
+  if (start && end && start >= end) invalid($t("zzz-deadly.text_66e7aa36f7"));
   const period = start && end ? { start, end } : undefined;
   if (!data.has_data) return { ...identity, status: "empty", trial: [], hard: [], ...(period && { period }) };
   if (data.has_hard !== undefined && typeof data.has_hard !== "boolean") invalid();

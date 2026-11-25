@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, unlink } from "node:fs/promises";
 import { createConnection, createServer, type Socket } from "node:net";
@@ -5,7 +8,7 @@ import { join } from "node:path";
 import { lockFile, managedHostLockPath } from "./file-lock.ts";
 
 const request = "lotus-stop-v1\n";
-const busy = "当前目录已有托管宿主运行。";
+const busy = $t("lib.foreground-control.text_b7751da923");
 const handshakeTimeout = 2_500;
 const stopTimeout = 25_000;
 
@@ -28,7 +31,7 @@ async function present(path: string) {
 async function privateDirectory(path: string, uid: number) {
   const stat = await present(path);
   if (stat && (!stat.isDirectory() || stat.uid !== uid || stat.mode & 0o077)) {
-    throw new Error("前台控制目录须为当前用户独占的实体目录（权限 0700）。");
+    throw new Error($t("lib.foreground-control.text_fac593cbfc"));
   }
   return stat;
 }
@@ -36,7 +39,7 @@ async function privateDirectory(path: string, uid: number) {
 async function ownedSocket(path: string, uid: number, privateMode = true) {
   const stat = await present(path);
   if (stat && (!stat.isSocket() || stat.uid !== uid || privateMode && stat.mode & 0o077)) {
-    throw new Error("前台控制入口的类型、所有者或权限无法核实。");
+    throw new Error($t("lib.foreground-control.text_1248258867"));
   }
   return stat;
 }
@@ -44,7 +47,7 @@ async function ownedSocket(path: string, uid: number, privateMode = true) {
 function listening(path: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const peer = createConnection(path);
-    peer.setTimeout(handshakeTimeout, () => peer.destroy(new Error("前台控制入口没有响应。")));
+    peer.setTimeout(handshakeTimeout, () => peer.destroy(new Error($t("lib.foreground-control.text_0dfba97ef0"))));
     peer.once("connect", () => { peer.destroy(); resolve(true); });
     peer.once("error", (error: NodeJS.ErrnoException) => {
       if (error.code === "ECONNREFUSED" || error.code === "ENOENT") resolve(false);
@@ -58,10 +61,10 @@ async function activeInstallation(root: string, uid: number): Promise<boolean> {
   const stat = await present(file);
   if (!stat) return false;
   if (!stat.isFile() || stat.uid !== uid || stat.mode & 0o022) {
-    throw new Error("宿主管理锁的类型、所有者或权限无法核实。");
+    throw new Error($t("lib.foreground-control.text_c8074b808f"));
   }
   try {
-    const lock = await lockFile(file, "托管宿主", 0, busy);
+    const lock = await lockFile(file, $t("lib.foreground-control.text_e533bb7ee6"), 0, busy);
     lock.close();
     return false;
   } catch (error) {
@@ -79,7 +82,7 @@ async function linuxProcess(pid: number | "self") {
     throw error;
   }
   const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-  if (!fields[0] || !/^[0-9]+$/u.test(fields[19] ?? "")) throw new Error("无法核实前台主管的进程身份。");
+  if (!fields[0] || !/^[0-9]+$/u.test(fields[19] ?? "")) throw new Error($t("lib.foreground-control.text_f8a6b0dbc7"));
   return { state: fields[0], start: fields[19]! };
 }
 
@@ -102,19 +105,19 @@ export async function serveForegroundControl(root: string, stop: () => void) {
   await mkdir(directory, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== "EEXIST") throw error;
   });
-  if (!await privateDirectory(directory, uid)) throw new Error("前台控制目录已丢失。");
+  if (!await privateDirectory(directory, uid)) throw new Error($t("lib.foreground-control.text_986ee657c0"));
 
   const previous = await ownedSocket(file, uid, false);
   if (previous) {
-    if (await listening(file)) throw new Error("同一安装已有活动前台控制入口。");
+    if (await listening(file)) throw new Error($t("lib.foreground-control.text_ec70ac8770"));
     const current = await ownedSocket(file, uid, false);
     if (!current || current.ino !== previous.ino || current.dev !== previous.dev) {
-      throw new Error("前台控制入口在启动期间被替换。");
+      throw new Error($t("lib.foreground-control.text_181167d66b"));
     }
     await unlink(file);
   }
   const identity = await linuxProcess("self");
-  if (process.platform === "linux" && !identity) throw new Error("无法核实前台主管的进程身份。");
+  if (process.platform === "linux" && !identity) throw new Error($t("lib.foreground-control.text_f8a6b0dbc7"));
   const receipt = `${process.pid} ${identity?.start ?? "-"}\n`;
   const pending = new Set<Socket>();
   const server = createServer(peer => {
@@ -142,7 +145,7 @@ export async function serveForegroundControl(root: string, stop: () => void) {
       server.listen(file, () => { server.off("error", reject); resolve(); });
     });
     await chmod(file, 0o600);
-    if (!await ownedSocket(file, uid)) throw new Error("前台控制入口已丢失。");
+    if (!await ownedSocket(file, uid)) throw new Error($t("lib.foreground-control.text_18a608f245"));
     server.unref();
   } catch (error) {
     server.close();
@@ -157,26 +160,26 @@ export async function serveForegroundControl(root: string, stop: () => void) {
 
 export async function stopForeground(root: string): Promise<boolean> {
   const target = endpoint(root);
-  if (!target) throw new Error("当前系统不支持跨终端停止，请在运行终端按 Ctrl+C。");
+  if (!target) throw new Error($t("lib.foreground-control.text_98f4ff6590"));
   const { directory, file, uid } = target;
   const socket = await privateDirectory(directory, uid) && await ownedSocket(file, uid);
   const active = await activeInstallation(root, uid);
   if (!active) {
-    if (socket) throw new Error("前台控制入口已过期，请重新启动宿主。");
+    if (socket) throw new Error($t("lib.foreground-control.text_4536ff162e"));
     return false;
   }
-  if (!socket) throw new Error("当前目录有活动托管宿主，无法核实前台停止入口。");
+  if (!socket) throw new Error($t("lib.foreground-control.text_b1faffe7ae"));
 
   const deadline = performance.now() + stopTimeout;
   const result = await new Promise<{ pid: number; started: string }>((resolve, reject) => {
     const peer = createConnection(file);
     let response = "";
     let acknowledged: { pid: number; started: string } | undefined;
-    const timer = setTimeout(() => peer.destroy(new Error("等待前台宿主退出超时。")), stopTimeout);
-    peer.setTimeout(handshakeTimeout, () => peer.destroy(new Error("前台控制入口没有响应。")));
+    const timer = setTimeout(() => peer.destroy(new Error($t("lib.foreground-control.text_b9995e0e55"))), stopTimeout);
+    peer.setTimeout(handshakeTimeout, () => peer.destroy(new Error($t("lib.foreground-control.text_0dfba97ef0"))));
     peer.once("connect", () => peer.write(request));
     peer.on("data", data => {
-      if (response.length + data.length > 64) return void peer.destroy(new Error("前台控制回执无效。"));
+      if (response.length + data.length > 64) return void peer.destroy(new Error($t("lib.foreground-control.text_da34438891")));
       response += data.toString("utf8");
       if (!response.endsWith("\n")) return;
       const match = /^([1-9]\d{0,9}) ([0-9]+|-)\n$/u.exec(response);
@@ -184,22 +187,22 @@ export async function stopForeground(root: string): Promise<boolean> {
       const started = match?.[2];
       if (!started || !Number.isSafeInteger(pid) || pid > 2_147_483_647 ||
           (process.platform === "linux") !== (started !== "-")) {
-        return void peer.destroy(new Error("前台控制回执无效。"));
+        return void peer.destroy(new Error($t("lib.foreground-control.text_da34438891")));
       }
       acknowledged = { pid, started };
       peer.setTimeout(0);
     });
     peer.once("error", error => {
-      reject(new Error("无法完成前台停止，控制连接失败或超时。", { cause: error }));
+      reject(new Error($t("lib.foreground-control.text_f69232dd07"), { cause: error }));
     });
     peer.once("close", () => {
       clearTimeout(timer);
       if (acknowledged) resolve(acknowledged);
-      else reject(new Error("前台控制连接在确认停止之前关闭。"));
+      else reject(new Error($t("lib.foreground-control.text_37e608563f")));
     });
   });
   while (await stillRunning(result.pid, result.started)) {
-    if (performance.now() >= deadline) throw new Error("等待原前台主管进程退出超时。");
+    if (performance.now() >= deadline) throw new Error($t("lib.foreground-control.text_5a0bb26b43"));
     await Bun.sleep(25);
   }
   return true;

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("account", messageCatalog.messages);
 import { generateProfileDevice } from "./generated-device.ts";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
@@ -42,7 +45,7 @@ function accountId(value: unknown): string {
 
 function profileFilename(qq: string, id: number): string {
   if (!/^\d+$/u.test(qq) || !Number.isInteger(id) || id < 1 || id > MAX_PROFILE_ID) {
-    throw new ProfileError("invalid", "QQ 或档案编号无效。");
+    throw new ProfileError("invalid", $t("index.text_349694e300"));
   }
   return `${qq}${id === 1 ? "" : `-${id}`}.yaml`;
 }
@@ -138,7 +141,7 @@ function cloudCredentialPresent(settings: Record<string, unknown>) {
 }
 
 function invalidCheckinSettings(): never {
-  throw new ProfileError("invalid", "自动签到设置无效。");
+  throw new ProfileError("invalid", $t("index.text_ec6bfb8c49"));
 }
 
 function checkinNotifyFields(change: Extract<ProfileCheckinSettingsChange, { type: "notify-enabled" | "notify-preference" | "bind-notify-group" }>) {
@@ -258,7 +261,7 @@ function readIdentity(value: unknown, qq: string, id: number) {
   if (data !== value || (data.version !== undefined && text(data.version) !== "1") ||
       (user.qq !== undefined && text(user.qq) !== qq) ||
       (profile.id !== undefined && text(profile.id) !== String(id))) {
-    throw new ProfileError("invalid", "档案内容、版本或身份无效。");
+    throw new ProfileError("invalid", $t("index.text_38fb3dc7bc"));
   }
 
   const account = record(data.account);
@@ -307,7 +310,7 @@ function fillCheckinNickname(document: Record<string, unknown>, state: ReturnTyp
 async function readFileSnapshot(path: string): Promise<Buffer> {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    if (!(await file.stat()).isFile()) throw new Error("档案须为普通文件。");
+    if (!(await file.stat()).isFile()) throw new Error($t("index.text_c7e942deb9"));
     return await file.readFile();
   } finally {
     await file.close();
@@ -361,7 +364,7 @@ async function serializeWrite<T>(path: string, action: () => Promise<T>): Promis
 }
 
 function changedProfile(): ProfileError {
-  return new ProfileError("changed", "档案已变更，请重新发起请求。");
+  return new ProfileError("changed", $t("index.text_0b089c48f2"));
 }
 
 type ProfileNickname = () => string | undefined;
@@ -374,7 +377,7 @@ type OptionalProfileNickname = {
 async function writeProfileDocument(path: string, document: unknown, expected: string | null, signal?: AbortSignal,
   verify?: () => Promise<void>, canCommit?: () => boolean, nickname?: OptionalProfileNickname) {
   const yaml = Bun.YAML.stringify(document);
-  if (typeof yaml !== "string") throw new ProfileError("invalid", "无法写入档案凭据。");
+  if (typeof yaml !== "string") throw new ProfileError("invalid", $t("index.text_ccf31274b1"));
   const temporary = await mkdtemp(join(dirname(path), ".profile-write-"));
   try {
     const staged = join(temporary, "profile.yaml");
@@ -384,7 +387,7 @@ async function writeProfileDocument(path: string, document: unknown, expected: s
     if (withoutNickname !== undefined) await writeFile(stagedWithoutNickname, withoutNickname, { mode: 0o600 });
     signal?.throwIfAborted();
     // Multiple hosts can share a profile directory. Revision check and publication must share the same OS lock.
-    const lock = await lockFile(join(dirname(path), `.${basename(path)}.lotus-profile.sqlite`), "档案");
+    const lock = await lockFile(join(dirname(path), `.${basename(path)}.lotus-profile.sqlite`), $t("index.text_b03d2fbde9"));
     try {
       signal?.throwIfAborted();
       await verify?.();
@@ -398,7 +401,7 @@ async function writeProfileDocument(path: string, document: unknown, expected: s
         const current = await readFileSnapshot(path).catch(() => { throw changedProfile(); });
         if (revisionOf(current) !== expected) throw changedProfile();
         signal?.throwIfAborted();
-        if (canCommit && !canCommit()) throw new DOMException("档案写入授权已失效。", "AbortError");
+        if (canCommit && !canCommit()) throw new DOMException($t("index.text_ff3070d68b"), "AbortError");
         // A disconnected chat can lose its optional nickname without losing the settings write.
         if (nickname && !nickname.isCurrent()) {
           if (withoutNickname === undefined) return expected;
@@ -492,7 +495,7 @@ function loginFields(result: ProfileLoginResult) {
   if (!/^[1-9]\d{0,19}$/u.test(stuid) || !safeField(stoken) || !safeField(ltoken) ||
       (mid && !safeField(mid)) || (stoken.startsWith("v2_") && !mid) ||
       !cookie || !stokenCookie || [cookie, stokenCookie].some((value) => value.length > 16_384 || /[^\x20-\x7E]/u.test(value))) {
-    throw new ProfileError("invalid", "确认登录返回的档案凭据无效。");
+    throw new ProfileError("invalid", $t("index.text_7097bd8cc6"));
   }
   const session = cookieFields(cookie);
   const login = cookieFields(stokenCookie);
@@ -504,7 +507,7 @@ function loginFields(result: ProfileLoginResult) {
       !session.some(([key, value]) => /^ltoken(?:_v2)?$/u.test(key) && value === ltoken) ||
       !login.some(([key, value]) => key === "stoken" && value === stoken) ||
       login.some(([key, value]) => key === "stoken" && value !== stoken)) {
-    throw new ProfileError("invalid", "确认登录返回的档案账号不一致。");
+    throw new ProfileError("invalid", $t("index.text_0cdf75fdad"));
   }
   return { ltuid: stuid, stuid, stoken, ltoken, mid, cookie, stoken_cookie: stokenCookie };
 }
@@ -566,7 +569,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       });
     } catch (error) {
       if (record(error).code === "ENOENT") return [];
-      throw new ProfileError("invalid", "无法读取档案目录。");
+      throw new ProfileError("invalid", $t("index.text_5572903c40"));
     }
   }
 
@@ -577,8 +580,8 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       return { document: record(data), state: readIdentity(data, qq, id), revision: revisionOf(snapshot) };
     } catch (error) {
       if (error instanceof ProfileError) throw error;
-      if (record(error).code === "ENOENT") throw new ProfileError("missing", "档案不存在。");
-      throw new ProfileError("invalid", "无法读取档案。");
+      if (record(error).code === "ENOENT") throw new ProfileError("missing", $t("index.text_d4aa366013"));
+      throw new ProfileError("invalid", $t("index.text_0ad01bd814"));
     }
   }
 
@@ -589,7 +592,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
 
   async function readLoggedIn(qq: string, id: number) {
     const profile = await read(qq, id);
-    if (!profile.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+    if (!profile.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
     return profile;
   }
 
@@ -599,7 +602,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
   }
 
   async function readRoleContext(qq: string, id: number, game: Game, uid: string | undefined, requireSelected: boolean) {
-    if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
+    if (!profileGames.includes(game)) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
     const profile = await readLoggedIn(qq, id);
     const roles = normalizeGameRoles(profile.roles[game]);
     const selection = profile.selected[game];
@@ -608,7 +611,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     const allowFallback = uid === undefined && !(requireSelected && hasSelection);
     const role = roles.find((item) => item.uid === activeUid) ??
       (allowFallback ? roles.find((item) => item.chosen) ?? roles[0] : undefined);
-    if (!role) throw new ProfileError("role-missing", "档案没有对应的游戏角色。");
+    if (!role) throw new ProfileError("role-missing", $t("index.text_8edebd665e"));
     return requestFor(profile, qq, id, game, role);
   }
 
@@ -620,7 +623,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
   async function optionalSnapshot(path: string) {
     return readFileSnapshot(path).catch((error: unknown) => {
       if (record(error).code === "ENOENT") return null;
-      throw new ProfileError("invalid", "无法读取扫码登录档案。");
+      throw new ProfileError("invalid", $t("index.text_f011fcab3c"));
     });
   }
 
@@ -665,7 +668,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
   ) {
     const filename = profileFilename(qq, id);
     const directory = await realpath(root).catch((error: unknown) => {
-      if (record(error).code === "ENOENT") throw new ProfileError("missing", "档案不存在。");
+      if (record(error).code === "ENOENT") throw new ProfileError("missing", $t("index.text_d4aa366013"));
       throw error;
     });
     const path = join(directory, filename);
@@ -728,7 +731,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
           ...document,
           account: { ...record(document.account), ...account, ...nextRoles, updated_at: now,
             roles_updated_at: result.roles ? now : sameAccount ? text(record(document.account).roles_updated_at) : "",
-            role_sync_error: result.roles ? "" : "登录成功，角色暂未同步。" },
+            role_sync_error: result.roles ? "" : $t("index.text_4ead3a371d") },
           device: previous.device.id || text(savedDevice.fp) || savedDevice.bound === true ? document.device :
             loginDevices.get(slot) ?? { ...savedDevice, bound: false, id: device.id, fp: "",
               name: device.name, model: device.model, android_version: device.androidVersion, raw: device.raw },
@@ -746,7 +749,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       return serializeWrite(path, async () => {
         signal?.throwIfAborted();
         let { document, state, revision } = await readDocument(qq, profileId, path);
-        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         let device = record(document.device);
         // Migrate only the exact placeholder written by the previous TS login flow.
         // Preserve arbitrary partial legacy identities and every manually bound device.
@@ -774,7 +777,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
             !isDeepStrictEqual(expected.device, state.device) || device.generated !== true || device.bound === true ||
             !instanceId || text(device.instance_id) !== instanceId || state.device.fp) throw changedProfile();
         if (!/^[0-9a-f]{13}$/iu.test(fp) || ["38d80737ce6f3", "38d7ee834d1e9"].includes(fp.toLowerCase())) {
-          throw new ProfileError("invalid", "官方未签发有效设备指纹。");
+          throw new ProfileError("invalid", $t("index.text_7fa9ba7fed"));
         }
         await writeProfileDocument(path, { ...document, device: { ...device, fp, fp_source: "mihoyo",
           updated_at: new Date().toISOString() } }, revision, signal);
@@ -787,7 +790,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
             (!sameDeviceBindingLogin(expected.account, current.account) || !isDeepStrictEqual(expected.device, current.device)))) {
         throw changedProfile();
       }
-      if (hasConflictingProfileCookieIdentity(current.account)) throw new ProfileError("invalid", "档案账号不一致，请重新扫码后绑定。");
+      if (hasConflictingProfileCookieIdentity(current.account)) throw new ProfileError("invalid", $t("index.text_b639fdff8f"));
     },
     async saveBoundDevice(qq: string, profileId: number, expected: string | DeviceBindingSnapshot, binding: DeviceBinding,
       signal?: AbortSignal) {
@@ -803,11 +806,11 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         const { account, device: previous, summary } = readIdentity(value, qq, profileId);
         if (!strict && revision !== expected.revision &&
             (!sameDeviceBindingLogin(expected.account, account) || !isDeepStrictEqual(expected.device, previous))) throw changedProfile();
-        if (!summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
-        if (hasConflictingProfileCookieIdentity(account)) throw new ProfileError("invalid", "档案账号不一致，请重新扫码后绑定。");
+        if (!summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
+        if (hasConflictingProfileCookieIdentity(account)) throw new ProfileError("invalid", $t("index.text_b639fdff8f"));
         const { id, fp, name, model, androidVersion } = binding;
         if (!/^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/u.test(id) || !/^[0-9a-f]{13}$/iu.test(fp)) {
-          throw new ProfileError("invalid", "请在同一份设备信息中提供设备 ID 和 FP。");
+          throw new ProfileError("invalid", $t("index.text_806fdd6062"));
         }
         const sameDevice = previous.id === id ? previous : undefined;
         const device = { bound: true, generated: false, id, fp,
@@ -825,7 +828,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         if (revisionOf(snapshot) !== expected) throw changedProfile();
         const value: unknown = Bun.YAML.parse(snapshot.toString("utf8"));
         const { summary } = readIdentity(value, qq, profileId);
-        if (!summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (!summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         if (!summary.deviceBound) return false;
         await writeProfileDocument(path, { ...record(value), device: { bound: false } }, expected, signal);
         return true;
@@ -861,7 +864,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         hasCookie: !!state.account.cookie,
         hasStoken: !!(state.account.stoken || state.account.stokenCookie),
         legacyCookie: !state.summary.loggedIn && hasLegacyGameCookie(state.account),
-        passport: aid ? (aid.length > 6 ? `${aid.slice(0, 2)}***${aid.slice(-2)}` : "已绑定") : "未绑定",
+        passport: aid ? (aid.length > 6 ? `${aid.slice(0, 2)}***${aid.slice(-2)}` : $t("index.text_f70c0007f3")) : $t("index.text_e026c6693d"),
         device: {
           name: (deviceName || "").slice(0, 80),
           generated: device.generated === true || (device.bound !== true && Boolean(state.device.id)),
@@ -895,11 +898,11 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     },
     async selectCatalogRole(qq: string, id: number, game: Game, uid: string, expected: string,
       signal: AbortSignal, canCommit: () => boolean) {
-      if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
+      if (!profileGames.includes(game)) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
       return updateCheckinProfile(qq, id, expected, (document, state) => {
-        if (!canCommit()) throw new DOMException("角色选择授权已失效。", "AbortError");
+        if (!canCommit()) throw new DOMException($t("index.text_17a1fdaceb"), "AbortError");
         if (!normalizeGameRoles(state.roles[game]).some(role => role.uid === uid)) {
-          throw new ProfileError("role-missing", "档案没有该游戏角色。");
+          throw new ProfileError("role-missing", $t("index.text_2e450055a3"));
         }
         if (accountId(state.selected[game]) === uid) return document;
         const account = record(document.account);
@@ -907,12 +910,12 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       }, signal, undefined, canCommit);
     },
     async savedRole(qq: string, id: number, game: Game): Promise<GameRole> {
-      if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
+      if (!profileGames.includes(game)) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
       const { roles, selected } = await read(qq, id);
       const list = normalizeGameRoles(roles[game]);
       const uid = accountId(selected[game]);
       const role = uid ? list.find((item) => item.uid === uid) ?? { uid, nickname: "", region: "", gameBiz: "", chosen: false } : list[0];
-      if (!role) throw new ProfileError("role-missing", "档案没有对应的游戏角色。");
+      if (!role) throw new ProfileError("role-missing", $t("index.text_8edebd665e"));
       return role;
     },
     async selectedShopRoleUid(qq: string, id: number, game: "gs" | "sr" | "zzz" | "bh3" | "bh2" | "nxx") {
@@ -976,7 +979,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         notify: profileNotifications(record(document.profile).notify) };
     },
     async previewRedeemAccount(qq: string, profileId: number, game: Game) {
-      if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
+      if (!profileGames.includes(game)) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
       const { document, state, revision } = await readDocument(qq, profileId);
       const settings = previewRedeemPreference(document.auto_redeem);
       if (!state.summary.loggedIn || !settings.enabled || !settings.games.includes(game)) return;
@@ -991,10 +994,10 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       if (typeof enabled !== "boolean" || (games && games.some(game => !profileGames.includes(game)))) invalidCheckinSettings();
       if (options?.enroll && !enabled) invalidCheckinSettings();
       return updateCheckinProfile(qq, profileId, expectedRevision, (document, state) => {
-        if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         const previous = previewRedeemPreference(document.auto_redeem);
         const selected = games ? [...new Set(games)] : previous.games;
-        if (enabled && !selected.length) throw new ProfileError("invalid", "请至少选择一款游戏。");
+        if (enabled && !selected.length) throw new ProfileError("invalid", $t("index.text_004c23d73e"));
         if (document.auto_redeem === undefined && !enabled && games === undefined) return document;
         return { ...document, auto_redeem: { ...record(document.auto_redeem), enable: enabled, games: selected,
           ...((document.auto_redeem === undefined || options?.enroll) && { local_enrollment: true }) } };
@@ -1018,7 +1021,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const { stuid, ltuid, stoken } = state.account;
       const aid = stuid || ltuid;
       if (!state.summary.loggedIn || !aid || (stuid && ltuid && stuid !== ltuid)) {
-        throw new ProfileError("login-required", "档案无法核验登录账号。");
+        throw new ProfileError("login-required", $t("index.text_bda4811c9c"));
       }
       const generation = text(record(document.account).updated_at) || stoken;
       return createHash("sha256").update(JSON.stringify([qq, id, aid, generation])).digest("hex");
@@ -1072,7 +1075,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
           typeof patch.cloud?.genshin !== "boolean" || typeof patch.cloud?.zzz !== "boolean") invalidCheckinSettings();
       if (typeof patch.osEnabled !== "boolean" || internationalWebGames.some(key => typeof patch.os?.[key] !== "boolean")) invalidCheckinSettings();
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
-        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         const raw = record(record(document.games).cn);
         const configured = configuredCnCheckins({ ...raw, enable: true });
         let updated = state.summary.enabled === patch.enabled ? document : { ...document, enabled: patch.enabled };
@@ -1094,7 +1097,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
           const enabled = patch.cloud[game];
           if (enabled === (previous.enable === true)) continue;
           if (enabled && !cloudCredentialPresent(previous)) {
-            throw new ProfileError("invalid", "请先在聊天中绑定对应云游戏账号。");
+            throw new ProfileError("invalid", $t("index.text_70e1c1170d"));
           }
           updated = updateCloudGame(updated, game, { enable: enabled });
         }
@@ -1117,7 +1120,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       }, signal, verify);
     },
     async internationalRoleContext(qq: string, id: number, game: Game) {
-      if (!profileGames.includes(game)) throw new ProfileError("invalid", "游戏类型无效。");
+      if (!profileGames.includes(game)) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
       const { document, state, revision } = await readDocument(qq, id);
       const os = record(record(document.games).os);
       const account = verifiedInternationalAccount(os, os.verified_activity_cookie);
@@ -1170,7 +1173,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       signal?: AbortSignal, canCommit?: () => boolean, nickname?: ProfileNickname) {
       if (typeof enabled !== "boolean") invalidCheckinSettings();
       const result = await updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
-        if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         return state.summary.enabled === enabled ? document : { ...document, enabled };
       }, signal, undefined, canCommit, enabled ? nickname : undefined);
       return { enabled, ...result };
@@ -1179,7 +1182,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       if (!Number.isSafeInteger(groupId) || groupId < 1) invalidCheckinSettings();
       const name = typeof nickname === "string" ? nickname.replace(/[\p{Cc}\p{Cf}]/gu, "").trim().slice(0, 40) : "";
       const { changed, revision } = await updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
-        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         const profile = record(document.profile);
         const notify = record(profile.notify);
         const groups = Array.isArray(notify.fallback_groups) ? notify.fallback_groups as unknown[] : [];
@@ -1209,7 +1212,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     async setProfileCheckinSettings(qq: string, id: number, expectedRevision: string, change: ProfileCheckinSettingsChange,
       nickname?: ProfileNickname) {
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
-        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         return applyCheckinSettings(document, change);
       }, undefined, undefined, undefined, nickname);
     },
@@ -1223,7 +1226,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
           (verified.activityCookie !== undefined && (typeof verified.activityCookie !== "string" ||
             !/^[\x20-\x7e]{1,16384}$/u.test(verified.activityCookie)))) invalidCheckinSettings();
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
-        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         const games = record(document.games);
         const { verified_activity_cookie: _previous, ...os } = record(games.os);
         return { ...document, games: { ...games, os: {
@@ -1236,14 +1239,14 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     async setCloudGameEnabled(qq: string, id: number, expectedRevision: string, game: "genshin" | "zzz", enabled: boolean) {
       if ((game !== "genshin" && game !== "zzz") || typeof enabled !== "boolean") invalidCheckinSettings();
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
-        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         return updateCloudGame(document, game, { enable: enabled });
       });
     },
     async saveCloudToken(qq: string, id: number, expectedRevision: string, game: "genshin" | "zzz", token: string, signal?: AbortSignal) {
       if ((game !== "genshin" && game !== "zzz") || typeof token !== "string" || !/^[\x20-\x7e]{1,16384}$/u.test(token)) invalidCheckinSettings();
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
-        if (!state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (!state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         return updateCloudGame(document, game, { token, enable: true });
       }, signal);
     },
@@ -1252,34 +1255,34 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const name = profileFilename(qq, id);
       if (!credentials.cookie.trim() || !credentials.ltoken.trim() ||
           [credentials.cookie, credentials.ltoken, credentials.stokenCookie ?? ""].some((value) => /[\r\n\0]/u.test(value))) {
-        throw new ProfileError("invalid", "刷新响应的凭据格式无效。");
+        throw new ProfileError("invalid", $t("index.text_884478e9a5"));
       }
 
       return updateAccount(qq, id, name, (account, current) => {
-        if (!current.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (!current.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         if (hasConflictingProfileCookieIdentity({
           ...current.account, cookie: credentials.cookie,
           stokenCookie: credentials.stokenCookie ?? current.account.stokenCookie,
-        })) throw new ProfileError("invalid", "刷新返回的 Cookie 与档案账号不一致。");
+        })) throw new ProfileError("invalid", $t("index.text_5156e890e2"));
         const login = new Map(cookieFields(credentials.stokenCookie ?? ""));
         const stuid = accountId(login.get("stuid"));
         const stoken = current.account.stoken || new Map(cookieFields(current.account.stokenCookie)).get("stoken");
         if (stuid && stoken && login.get("stoken") !== stoken) {
-          throw new ProfileError("invalid", "刷新返回的登录令牌与当前档案不一致。");
+          throw new ProfileError("invalid", $t("index.text_27f8bb597a"));
         }
         return {
           ...account, cookie: credentials.cookie, ltoken: credentials.ltoken,
           ...(stuid && stoken && { stuid, ltuid: stuid, stoken, mid: login.get("mid") ?? current.account.mid }),
           ...(credentials.stokenCookie === undefined ? {} : { stoken_cookie: credentials.stokenCookie }),
           ...(roles && { ...rolesForStorage(roles, current), roles_updated_at: new Date().toISOString(), role_sync_error: "" }),
-          ...(roles === null && { role_sync_error: "角色暂未同步。" }),
+          ...(roles === null && { role_sync_error: $t("index.text_ac14c9f1f5") }),
         };
       }, revision);
     },
     async saveRoles(qq: string, id: number, revision: string, roles: GameRoles) {
       const name = profileFilename(qq, id);
       return updateAccount(qq, id, name, (account, current) => {
-        if (!current.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+        if (!current.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         return { ...account, ...rolesForStorage(roles, current),
           roles_updated_at: new Date().toISOString(), role_sync_error: "" };
       }, revision);
@@ -1302,16 +1305,16 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       return readRoleContext(qq, id, game, undefined, true);
     },
     async requestContexts(qq: string, id: number, games: readonly Game[] = profileGames) {
-      if (games.some((game) => !profileGames.includes(game))) throw new ProfileError("invalid", "游戏类型无效。");
+      if (games.some((game) => !profileGames.includes(game))) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
       const profile = await readLoggedIn(qq, id);
       return requestsFor(profile, qq, id, games);
     },
     async requestContextsForRead(qq: string, id: number, games: readonly Game[]) {
-      if (games.some((game) => !profileGames.includes(game))) throw new ProfileError("invalid", "游戏类型无效。");
+      if (games.some((game) => !profileGames.includes(game))) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
       const profile = await read(qq, id);
       const sources = requestsFor(profile, qq, id, games);
       if (profile.summary.loggedIn) return { sources };
-      if (!hasLegacyGameCookie(profile.account)) throw new ProfileError("login-required", "档案尚未登录。");
+      if (!hasLegacyGameCookie(profile.account)) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
       return {
         sources,
         async verifyReadOnly() {
@@ -1333,7 +1336,7 @@ export async function importProfiles(source: string, destination: string, apply 
     if (record(error).code === "ENOENT") return resolve(destination);
     throw error;
   });
-  if (from === into) throw new Error("档案导入需要不同的来源和目标目录。");
+  if (from === into) throw new Error($t("index.text_90e1e8d865"));
 
   const files = await readdir(from, { withFileTypes: true });
   const result = { ready: 0, imported: 0, unchanged: 0, conflict: 0, invalid: 0 };

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { configuredIds } from "./config.ts";
@@ -73,10 +76,10 @@ export async function readFriendRequests(root: URL, delayMs = 3_000, other?: Req
         handled.add(key);
         if (handled.size > maxRequests) handled.delete(handled.values().next().value!);
         if (approved) return "confirmed";
-        console.warn("[好友申请] 协议端未接受自动审批。");
+        console.warn($t("lib.friend-requests.text_48c177dc11"));
         return "rejected";
       } catch {
-        console.warn("[好友申请] 未确认自动审批结果。");
+        console.warn($t("lib.friend-requests.text_aae767231b"));
         return "unknown";
       }
     } catch (error) {

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createProfileStore, type Game, type ProfileAccountContext } from "@lotus-yunzai/account";
 import { BbsCheckinRequestError, createProfileHoyoClient, HoyoRequestError, type BbsMissionState } from "@lotus-yunzai/hoyo-client";
 import { checkinScheduleClock, type CheckinSchedulePlan } from "./checkin-schedule-plan.ts";
@@ -49,15 +52,15 @@ interface MiyousheOverviewOptions {
   readonly now?: () => number;
 }
 
-const changed = () => new HoyoRequestError("profile-changed", "档案已变更，请刷新后重试。");
+const changed = () => new HoyoRequestError("profile-changed", $t("lib.miyoushe-overview.text_f48c8f7c9c"));
 
 function missionLabel(missionId: number, missionKey: string) {
   // 米游社自 4 月 28 日起撤下三项日常互动任务（公告 74971515）。
   if ([59, 60, 61].includes(missionId) || ["read_post", "like_post", "share_post"].includes(missionKey)) return;
-  if (missionId === 58 || missionKey === "continuous_sign") return "社区连续签到";
-  if (missionKey.startsWith("bind_game_role")) return "绑定游戏角色";
-  if (missionKey.startsWith("modify_signature")) return "完善个人签名";
-  return `社区任务 ${missionId}`;
+  if (missionId === 58 || missionKey === "continuous_sign") return $t("lib.miyoushe-overview.text_1746b0d94b");
+  if (missionKey.startsWith("bind_game_role")) return $t("lib.miyoushe-overview.text_511ec0d13d");
+  if (missionKey.startsWith("modify_signature")) return $t("lib.miyoushe-overview.text_929ada9b6c");
+  return $t("lib.miyoushe-overview.text_5ec327b66e", { "missionId": missionId });
 }
 
 function projectMissions(state: BbsMissionState): NonNullable<MiyousheOverview["missions"]> {
@@ -75,13 +78,13 @@ function projectMissions(state: BbsMissionState): NonNullable<MiyousheOverview["
 
 function missionProblem(error: unknown) {
   if (error instanceof BbsCheckinRequestError) return ({
-    "cookie-expired": "当前档案的 Cookie 已过期，请重新登录后刷新。",
-    "login-expired": "当前档案登录已过期，请重新登录后刷新。",
-    risk: "请在米游社官方客户端完成验证后刷新。",
-    "rate-limited": "读取任务过于频繁，请稍后刷新。",
+    "cookie-expired": $t("lib.miyoushe-overview.text_bb531120ac"),
+    "login-expired": $t("lib.miyoushe-overview.text_551318d06b"),
+    risk: $t("lib.miyoushe-overview.text_11497a3690"),
+    "rate-limited": $t("lib.miyoushe-overview.text_1e7373e7d2"),
   })[error.reason];
-  if (error instanceof HoyoRequestError && error.code === "refresh") return "无法刷新当前档案的 Cookie，请确认登录状态。";
-  return "暂时无法读取社区任务和余额。";
+  if (error instanceof HoyoRequestError && error.code === "refresh") return $t("lib.miyoushe-overview.text_cfe1abea95");
+  return $t("lib.miyoushe-overview.text_92c7816b49");
 }
 
 function profileSecrets(context: ProfileAccountContext) {
@@ -128,7 +131,7 @@ export function createMiyousheOverview({ profileDirectory, readTodaySchedule,
         if (error instanceof HoyoRequestError && error.code === "profile-changed") throw error;
         missionError = missionProblem(error);
       }
-    } else missionError = "当前档案尚未登录，请在聊天中扫码登录。";
+    } else missionError = $t("lib.miyoushe-overview.text_ef81073a10");
 
     const { date } = checkinScheduleClock(now());
     const plan = await readTodaySchedule?.(date).catch(() => null);

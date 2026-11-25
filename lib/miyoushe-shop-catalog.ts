@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { TrackingGood } from "./miyoushe-shop-tracking.ts";
 import { createProfileStore, gameRegionDisplayName, type ProfileAccountContext } from "@lotus-yunzai/account";
 import { createProfileHoyoClient, HoyoRequestError, isCookieExpired } from "@lotus-yunzai/hoyo-client";
@@ -17,7 +20,7 @@ type ProductStatus = "available" | "scheduled" | "sold_out" | "ended" | "unknown
 export { MiyousheShopError };
 
 function invalidResponse(): never {
-  throw new MiyousheShopError(502, "商城返回的数据格式有误。");
+  throw new MiyousheShopError(502, $t("lib.miyoushe-shop-catalog.text_9ef1049ddc"));
 }
 
 function object(value: unknown): Json | undefined {
@@ -103,7 +106,7 @@ function filters(query: URLSearchParams) {
   if ([...query.keys()].some(key => key !== "page" && key !== "game") ||
     query.getAll("page").length > 1 || query.getAll("game").length > 1 ||
     !/^[1-9]\d{0,2}$/u.test(page) || Number(page) > pageLimit || (game && !codePattern.test(game))) {
-    throw new MiyousheShopError(400, "商城分区或页码格式错误。");
+    throw new MiyousheShopError(400, $t("lib.miyoushe-shop-catalog.text_3d7c3145da"));
   }
   return { page: Number(page), game: game === "all" ? "" : game };
 }
@@ -119,7 +122,7 @@ export function miyousheShopRegionName(gameBiz: string, region: string, reported
   const game = gameKeys.get(gameBiz);
   if (game === "gs" || game === "sr" || game === "zzz") return gameRegionDisplayName(game, region, reported);
   const name = text(reported, 80);
-  return name && !codePattern.test(name) ? name : "未知区服";
+  return name && !codePattern.test(name) ? name : $t("lib.miyoushe-shop-catalog.text_d27d31175b");
 }
 
 interface ShopOptions {
@@ -132,7 +135,7 @@ export function createMiyousheShopCatalog({ profileDirectory, transport = fetch,
   const profiles = createProfileStore(profileDirectory);
   const roleClient = createProfileHoyoClient(profiles, transport);
   async function getProduct(id: string, signal?: AbortSignal) {
-    if (!goodsIdPattern.test(id)) throw new MiyousheShopError(400, "商品编号无效。");
+    if (!goodsIdPattern.test(id)) throw new MiyousheShopError(400, $t("lib.miyoushe-shop-catalog.text_71b97b5205"));
     const value = product(await readMiyousheShop(transport, "detail", { goods_id: id }, signal), now());
     if (value.id !== id) invalidResponse();
     return value;
@@ -145,7 +148,7 @@ export function createMiyousheShopCatalog({ profileDirectory, transport = fetch,
       const current = await profiles.accountContext(account.qq, account.profileId);
       signal?.throwIfAborted();
       if (current.revision !== account.revision) {
-        throw new HoyoRequestError("profile-changed", "档案已变更，请刷新后重试。");
+        throw new HoyoRequestError("profile-changed", $t("lib.miyoushe-shop-catalog.text_f48c8f7c9c"));
       }
     }
     await verify();
@@ -242,7 +245,7 @@ export function createMiyousheShopCatalog({ profileDirectory, transport = fetch,
         signal?.throwIfAborted();
         await verifyLogin?.();
         if (error instanceof HoyoRequestError && error.code === "profile-changed") throw error;
-        return { good, roles: [], roleError: "暂时无法读取当前档案的角色。请在米游社确认绑定状态后重试。" };
+        return { good, roles: [], roleError: $t("lib.miyoushe-shop-catalog.text_cbbe954247") };
       }
     },
   };

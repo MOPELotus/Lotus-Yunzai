@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, readlink, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,7 +79,7 @@ async function retainedArchivePath(root: string, previous: string, path: string)
 }
 
 export async function verifyMovedHttpsPaths(root: string, previous: string, https?: HttpsPaths): Promise<void> {
-  const message = "HTTPS 证书或私钥无法随版本切换安全接管。";
+  const message = $t("lib.update-https-paths.text_fafdd0831d");
   for (const path of installedHttpsPaths(root, https)) {
     if (await retainedArchivePath(root, previous, path)) throw new Error(message);
   }

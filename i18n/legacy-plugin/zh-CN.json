@@ -1,0 +1,18 @@
+{
+  "language": "zh-CN",
+  "name": "简体中文",
+  "namespace": "legacy-plugin",
+  "description": "兼容插件基类的默认名称、回调校验和交互会话超时提示。",
+  "sections": {
+    "plugin": {
+      "description": "兼容插件基础行为",
+      "source": "lib/plugins/plugin.js"
+    }
+  },
+  "parameters": {},
+  "messages": {
+    "plugin.unnamed": "未命名插件",
+    "plugin.invalidCleanup": "插件清理与恢复回调必须是函数。",
+    "plugin.contextTimeout": "操作超时已取消"
+  }
+}

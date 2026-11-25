@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { fileURLToPath } from "node:url";
 import type { CaptchaModelProgress } from "@lotus-yunzai/captcha";
 import { createInitializationProgress } from "../initialization-progress.ts";
@@ -27,7 +30,7 @@ export async function initializeCaptchaModels(root: URL, signal: AbortSignal, {
 }: { readonly prepare?: Preparation; readonly report?: (message: string) => void;
   readonly onProgress?: (progress: CaptchaInitializationProgress) => unknown } = {}) {
   signal.throwIfAborted();
-  const display = !onProgress && !report ? createInitializationProgress("验证码模型", { signal }) : undefined;
+  const display = !onProgress && !report ? createInitializationProgress($t("lib.captcha.initialize.text_dff4df816a"), { signal }) : undefined;
   const emit = (event: CaptchaInitializationProgress, fallback: string) => {
     if (signal.aborted) return;
     try {
@@ -37,29 +40,29 @@ export async function initializeCaptchaModels(root: URL, signal: AbortSignal, {
     } catch { /* A display failure does not invalidate a prepared model. */ }
   };
   try {
-    emit({ stage: "captcha-models", message: "正在检查本地验证码模型，下载并校验缺失文件。" },
-      "[初始化] 正在检查本地验证码模型，下载并校验缺失文件。");
+    emit({ stage: "captcha-models", message: $t("lib.captcha.initialize.text_e258f976db") },
+      $t("lib.captcha.initialize.text_1586cd0d7a"));
     await prepare({ signal, modelsDirectory: fileURLToPath(new URL("data/captcha/models", root)),
       onProgress(progress) {
         if (signal.aborted) return;
         const { modelId, completed, total, stage, fileBytes, fileTotalBytes, cached } = progress;
         const ready = stage === "ready" || stage === undefined;
-        const action = ready ? cached ? "缓存已校验" : "已就绪" : stage === "downloading" ? "下载" : stage === "verifying" ? "校验" : "检查缓存";
+        const action = ready ? cached ? $t("lib.captcha.initialize.text_8b5b5bbe29") : $t("lib.captcha.initialize.text_ab27f80d04") : stage === "downloading" ? $t("lib.captcha.initialize.text_4673a23061") : stage === "verifying" ? $t("lib.captcha.initialize.text_41b0af8c5c") : $t("lib.captcha.initialize.text_73e98fe5a1");
         const position = ready ? completed : Math.min(total, completed + 1);
-        const retry = progress.attempt ? `（尝试 ${progress.attempt}/${progress.maxAttempts}）` : "";
-        const message = `验证码模型 ${position}/${total}：${modelId} · ${action}${retry}`;
-        const counters = ready ? { completed, total, unit: "个" } : fileTotalBytes !== undefined && fileBytes !== undefined
+        const retry = progress.attempt ? $t("lib.captcha.initialize.text_ac34d6ccad", { "attempt": progress.attempt, "maxAttempts": progress.maxAttempts }) : "";
+        const message = $t("lib.captcha.initialize.text_b0b2ab059f", { "position": position, "total": total, "modelId": modelId, "action": action, "retry": retry });
+        const counters = ready ? { completed, total, unit: $t("lib.captcha.initialize.text_3a116815bc") } : fileTotalBytes !== undefined && fileBytes !== undefined
           ? { completed: fileBytes, total: fileTotalBytes, unit: "bytes" } : {};
         const suffix = !ready && fileBytes !== undefined && fileTotalBytes !== undefined
           ? ` ${bytes(fileBytes)}/${bytes(fileTotalBytes)}` : "";
-        emit({ stage: `captcha-models:${modelId}:${stage ?? "ready"}`, message, ...counters }, `[初始化] ${message}${suffix}`);
+        emit({ stage: `captcha-models:${modelId}:${stage ?? "ready"}`, message, ...counters }, $t("lib.captcha.initialize.text_ab7c22b604", { "message": message, "suffix": suffix }));
       },
     });
     signal.throwIfAborted();
-    if (display) display.complete("本地验证码模型已就绪。");
-    else emit({ stage: "captcha-models", message: "本地验证码模型已就绪。" }, "[初始化] 本地验证码模型已就绪。");
+    if (display) display.complete($t("lib.captcha.initialize.text_a57a523374"));
+    else emit({ stage: "captcha-models", message: $t("lib.captcha.initialize.text_a57a523374") }, $t("lib.captcha.initialize.text_446b0231e6"));
   } catch (error) {
-    display?.fail(signal.aborted ? "本地验证码模型准备已中止。" : "本地验证码模型准备失败。");
+    display?.fail(signal.aborted ? $t("lib.captcha.initialize.text_e855bcfc86") : $t("lib.captcha.initialize.text_85f022c660"));
     throw error;
   } finally { display?.close(); }
 }

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -40,7 +43,7 @@ type Scope = (typeof scopes)[number]["path"];
 type GameDataCount = { readonly path: string; files: number; bytes: number };
 
 function sourceChanged() {
-  return new Error("旧游戏数据在迁移过程中发生变化，请使用停写后的安装副本。");
+  return new Error($t("lib.migration-game-data.text_8fd5fb66ef"));
 }
 
 async function named(path: string): Promise<Stats | undefined> {
@@ -94,7 +97,7 @@ async function validateActive(scope: Scope, name: string, bytes: Buffer, destina
     if (scope === "data/PlayerData/gs" && !readPanel(uid, input, panelCatalog, true, true)) throw new Error("Missing panel");
     if (scope === "data/PlayerData/sr") readLegacyPanel(uid, input);
   } catch {
-    throw new Error(`旧游戏数据 ${scope} 含无法由当前版本读取的文件。`);
+    throw new Error($t("lib.migration-game-data.text_19b4ee6a70", { "scope": scope }));
   }
 }
 
@@ -105,7 +108,7 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
   const stageInfo = await lstat(stage);
   if (withinInstallation(source, stage) || withinInstallation(stage, source) ||
       !(await lstat(source)).isDirectory() || stage !== resolve(stateDirectory) || !stageInfo.isDirectory() || (stageInfo.mode & 0o077)) {
-    throw new Error("旧游戏数据暂存必须使用独立的私有实体目录。");
+    throw new Error($t("lib.migration-game-data.text_9d20e4a17b"));
   }
   const dirs = new Map<string, Stats>();
   const files = new Map<string, Stats>();
@@ -119,7 +122,7 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
     if (!info) return false;
     if (!info.isDirectory() || await realpath(path) !== path) {
       if (optional) return false;
-      throw new Error("旧游戏数据须位于副本的实体目录内。");
+      throw new Error($t("lib.migration-game-data.text_2edb0fbf2d"));
     }
     dirs.set(path, info);
     return true;
@@ -132,7 +135,7 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
     }
     const info = await lstat(path);
     if (!info.isDirectory() || (info.mode & 0o077) || await realpath(path) !== path) {
-      throw new Error("旧游戏数据暂存路径须为私有实体目录。");
+      throw new Error($t("lib.migration-game-data.text_efde680826"));
     }
   }
 
@@ -153,7 +156,7 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
     const info = await named(path);
     if (!info) throw sourceChanged();
     if (!info.isFile() || info.nlink !== 1 || info.size > scope.maxMiB * 1024 * 1024) {
-      throw new Error(`旧游戏数据 ${scope.path} 须为大小有效且无硬链接的普通文件。`);
+      throw new Error($t("lib.migration-game-data.text_5cd82afd40", { "path": scope.path }));
     }
     const bytes = await readSnapshot(path, info, signal);
     const isActive = scope.active(name);
@@ -172,7 +175,7 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
       if (folders.length < scope.nesting) {
         if (numeric.test(name)) await scan(scope, [...folders, name]);
       } else if (name === ".lotus-genshin-gacha-journal.json" && scope.path === "data/gachaJson") {
-        throw new Error("原神抽卡目录含未恢复的写入，请在副本中恢复事务后再迁移。");
+        throw new Error($t("lib.migration-game-data.text_47e01eb5c9"));
       } else if (!name.startsWith(".") && name.endsWith(".json")) {
         await save(scope, folders, name);
       }
@@ -220,7 +223,7 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
           const info = await named(path);
           if (!info) throw sourceChanged();
           if (!info.isFile() || info.nlink !== 1 || info.size > limit) {
-            throw new Error(`旧游戏数据 ${destination} 须为大小有效且无硬链接的普通文件。`);
+            throw new Error($t("lib.migration-game-data.text_3dcd16cc67", { "destination": destination }));
           }
           const bytes = await readSnapshot(path, info, signal);
           files.set(path, info);
@@ -246,12 +249,12 @@ export async function stageLegacyGameData(sourcePath: string, stateDirectory: st
               for (const item of value as unknown[]) months.push(item);
             }
           } catch {
-            throw new Error(`旧游戏数据 ${destination} 含无法由当前版本读取或归属不符的文件。`);
+            throw new Error($t("lib.migration-game-data.text_4a58767ed1", { "destination": destination }));
           }
         }
         // The current reader gives earlier rows priority when their month overlaps.
         const bytes = snapshots.length === 1 ? snapshots[0]! : Buffer.from(JSON.stringify(months) + "\n");
-        if (bytes.length > limit) throw new Error(`合并后的旧游戏数据 ${destination} 超出读取大小。`);
+        if (bytes.length > limit) throw new Error($t("lib.migration-game-data.text_a2e3972731", { "destination": destination }));
         await publishFile(destination, [], name, bytes, active);
       }
     }

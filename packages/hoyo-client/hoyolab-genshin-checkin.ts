@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { HoyoTransport } from "./credentials.ts";
 import type { HoYoLabCheckinAccount, HoYoLabCheckinOptions } from "./hoyolab-checkin-transport.ts";
 import {
@@ -5,7 +8,7 @@ import {
 } from "./hoyolab-default-checkin.ts";
 
 const game = {
-  gameBiz: "hk4e_global", name: "原神", activity: "e202102251931481",
+  gameBiz: "hk4e_global", name: $t("hoyolab-genshin-checkin.text_d1597c51ed"), activity: "e202102251931481",
   endpoint: "https://sg-act-public-api.hoyolab.com/event/sol", signgame: "hk4e",
   regions: ["os_usa", "os_euro", "os_asia", "os_cht"], uidPattern: /^[1-9]\d{8,9}$/u,
   credential: "cookie", reportBoundRole: true, sendBrowserDevice: true,

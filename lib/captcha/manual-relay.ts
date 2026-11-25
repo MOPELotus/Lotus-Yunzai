@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { randomBytes } from "node:crypto";
 import { createVerificationHandler } from "../../vendor/gt-manual/lib/server.js";
 
@@ -62,11 +65,11 @@ const protectedHeaders = {
 
 function publicBase(raw: string): URL {
   const match = typeof raw === "string" && /^https?:\/\/[^\s/?#@\\]+(\/[^\s?#\\]*)?$/iu.exec(raw);
-  if (!match || match[0] !== raw) throw new Error("人工验证公开地址无效。");
+  if (!match || match[0] !== raw) throw new Error($t("lib.captcha.manual-relay.text_1d31ea95e7"));
   const parsed = URL.parse(raw);
   if (!parsed || parsed.username || parsed.password || parsed.port === "0" ||
       (parsed.protocol !== "https:" && !["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname))) {
-    throw new Error("人工验证公开地址须使用 HTTPS 或本机回环 HTTP。");
+    throw new Error($t("lib.captcha.manual-relay.text_450e8f174c"));
   }
   const path = match[1]?.replace(/\/$/u, "") ?? "";
   try {
@@ -77,13 +80,13 @@ function publicBase(raw: string): URL {
     // GT-Manual uses the path in both HTML attributes and string replacement templates.
     if (!/^[\w/.~@+!()'*,;=:%-]+$/u.test(parsed.pathname)) throw new Error();
   } catch {
-    throw new Error("人工验证公开路径无效。");
+    throw new Error($t("lib.captcha.manual-relay.text_f84f81a7d8"));
   }
   return parsed;
 }
 
 function positive(value: number, max: number): number {
-  if (!Number.isSafeInteger(value) || value < 1 || value > max) throw new Error("人工验证容量或超时配置无效。");
+  if (!Number.isSafeInteger(value) || value < 1 || value > max) throw new Error($t("lib.captcha.manual-relay.text_b76fedd39a"));
   return value;
 }
 
@@ -136,7 +139,7 @@ export function createManualCaptchaRelay({
   publicUrl, basePath = manualCaptchaBasePath, ttlMs = 180_000, resultTtlMs = 30_000, maxTasks = 1000, now,
 }: ManualCaptchaRelayOptions) {
   const origin = publicBase(publicUrl);
-  if (!/^(?:\/[A-Za-z0-9_-]+)+$/u.test(basePath) || basePath.length > 160) throw new Error("人工验证路径配置无效。");
+  if (!/^(?:\/[A-Za-z0-9_-]+)+$/u.test(basePath) || basePath.length > 160) throw new Error($t("lib.captcha.manual-relay.text_4f40010b8c"));
   const publicPath = origin.pathname.replace(/\/$/u, "") + basePath;
   const registerKey = randomBytes(32).toString("base64url");
   const stopped = new AbortController();

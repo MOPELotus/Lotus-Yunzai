@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { renderPng } from "@lotus-yunzai/skia";
 import { cp, mkdir, symlink, writeFile } from "node:fs/promises";
@@ -11,7 +12,7 @@ async function prepare(root: string) {
   const destination = join(root, "plugins", "genshin");
   await cp(source, destination, { recursive: true, filter: path => ![".git", "node_modules"].includes(basename(path)) });
   await symlink(join(source, "node_modules"), join(destination, "node_modules"), "dir");
-  await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+  await linkHostPackages(root);
   await mkdir(join(root, "profiles"), { recursive: true });
   for (const qq of [42, 43]) {
     const id = String(900_000_000 + qq);

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 export class HoyoRequestError extends Error {
   constructor(
     readonly code: "invalid-input" | "transport" | "http" | "response" | "api" | "refresh" | "profile-changed",
@@ -15,7 +18,7 @@ export class HoyoRequestError extends Error {
 export class CaptchaBusinessRejectedError extends HoyoRequestError {
   readonly originalRequestRejected = true;
   constructor(retcode: number, readonly stage: "challenge" | "verification" | "business", cause?: unknown) {
-    super("api", "验证码尚未完成，原社区请求未被受理，可重新发起。", 200, retcode,
+    super("api", $t("errors.text_c8677c2a97"), 200, retcode,
       cause === undefined ? undefined : { cause });
     this.name = "CaptchaBusinessRejectedError";
   }
@@ -30,6 +33,6 @@ export function requiresServiceVerification(value: { msg?: unknown; message?: un
 
 export class ZzzManualGachaLinkRequired extends HoyoRequestError {
   constructor() {
-    super("invalid-input", "当前绝区零国际服档案需要手动录入官方抽卡链接。");
+    super("invalid-input", $t("errors.text_08fac30eb6"));
   }
 }

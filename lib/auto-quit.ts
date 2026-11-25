@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { configuredIds } from "./config.ts";
 import { otherPolicySetting, readRequestOtherPolicies, requestAutomationSettings, type RequestOtherPolicies } from "./request-other-policies.ts";
 import type { GroupNotice } from "./messages.ts";
@@ -106,7 +109,7 @@ export async function readAutoQuit(root: URL, masterIds: (bot: number) => readon
       const timer = setTimeout(finishNotice, quitNoticeTimeoutMs);
       signal?.addEventListener("abort", finishNotice, { once: true });
       try {
-        await Promise.race([event.reply("禁止拉群，已自动退出"), noticeWait.promise]);
+        await Promise.race([event.reply($t("lib.auto-quit.text_091daae6cb")), noticeWait.promise]);
       } catch {
         // The notification may fail independently of the permitted departure.
       } finally {
@@ -120,7 +123,7 @@ export async function readAutoQuit(root: URL, masterIds: (bot: number) => readon
         return await leaveGroup() === true;
       } catch (error) {
         if (!(error instanceof Error && "delivery" in error && error.delivery === "not-sent")) {
-          console.warn("[自动退群] 协议端未确认退群结果。");
+          console.warn($t("lib.auto-quit.text_72d8b8c449"));
         }
         return false;
       }

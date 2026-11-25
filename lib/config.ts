@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 export async function readLocalConfig(root: URL, name: string, legacyDefaults?: Record<string, unknown>): Promise<Record<string, unknown>> {
   return await readOptionalLocalConfig(root, name, legacyDefaults) ?? {};
 }
@@ -18,7 +21,7 @@ export async function readOptionalConfigFile(root: URL, path: string): Promise<R
     if (typeof value !== "object" || Array.isArray(value)) throw new Error();
     return value as Record<string, unknown>;
   } catch {
-    throw new Error(`无法读取 ${path}。`);
+    throw new Error($t("lib.config.text_cafd49aeeb", { "path": path }));
   }
 }
 

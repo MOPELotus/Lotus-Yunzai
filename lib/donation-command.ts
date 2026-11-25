@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { nativeImageRasterScale } from "@lotus-yunzai/skia";
 import { renderDonationCard } from "@lotus-yunzai/skia/donation";
 import { setTimeout as wait } from "node:timers/promises";
@@ -34,8 +37,8 @@ export function donationCommands(lifetime: AbortSignal, directory = Bun.env.LOTU
       };
       if (!card || card.png.byteLength > limit || !await reply(segment.image(card.png))) {
         if (signal.aborted) return [];
-        await reply(card ? "捐赠图片发送失败，请通过稍后发送的链接查看。"
-          : "捐赠图片生成失败，请通过稍后发送的链接查看。");
+        await reply(card ? $t("lib.donation-command.text_ce015e735b")
+          : $t("lib.donation-command.text_be0105d390"));
       }
       await pause(signal).catch(() => {});
       return signal.aborted ? [] : url;

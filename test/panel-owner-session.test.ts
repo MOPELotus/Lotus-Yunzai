@@ -248,7 +248,8 @@ test("管理面板精确入口优先于角色面板，拒绝和缺少配置时�
     const noOwner = new CommandRegistry();
     noOwner.registerModule({ name: "@lotus-yunzai/genshin", commands: {}, fallback() { throw new Error("不得落到角色面板"); } });
     expect(await noOwner.dispatchFallback({ msg: "#管理面板", post_type: "message", isGroup: false, isPrivate: true,
-      message_type: "private", reply: async () => true }, () => true, () => true)).toBeUndefined();
+      message_type: "private", isMaster: true, raw_message: "#管理面板", message: [{ type: "text", text: "#管理面板" }],
+      reply: async () => true }, () => true, () => true)).toBeUndefined();
   } finally {
     lifecycle.abort(); owner.close(); await rm(directory, { recursive: true, force: true });
   }

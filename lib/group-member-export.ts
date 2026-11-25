@@ -1,9 +1,12 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 export const groupExportSession = Symbol("groupExportSession");
 
 export interface ExportedGroupMember {
   readonly id: number;
   readonly name: string;
-  readonly gender: "男" | "女" | "未知";
+  readonly gender: string;
   readonly title: string;
   readonly role: "member" | "admin" | "owner";
 }
@@ -26,18 +29,18 @@ export function readExportedGroupMembers(value: unknown, group: number): readonl
         seen.has(user_id) || (role !== "member" && role !== "admin" && role !== "owner")) return;
     seen.add(user_id);
     members.push({
-      id: user_id, role, name: display(card) ?? display(nickname) ?? "群成员",
-      gender: sex === "male" ? "男" : sex === "female" ? "女" : "未知",
-      title: display(title) ?? display(special_title) ?? "无",
+      id: user_id, role, name: display(card) ?? display(nickname) ?? $t("lib.group-member-export.text_9d8692671d"),
+      gender: sex === "male" ? $t("lib.group-member-export.text_4e79758a99") : sex === "female" ? $t("lib.group-member-export.text_0ab4610b92") : $t("lib.group-member-export.text_4d8c1c5b42"),
+      title: display(title) ?? display(special_title) ?? $t("lib.group-member-export.text_484d556139"),
     });
   }
   return members;
 }
 
 export function groupMemberCsv(members: readonly ExportedGroupMember[]) {
-  const rows = [["QQ号", "昵称/群名片", "性别", "头衔", "是否管理员", "是否群主"]];
+  const rows = [[$t("lib.group-member-export.text_242918012c"), $t("lib.group-member-export.text_aaee6e4e0b"), $t("lib.group-member-export.text_a752a7d8c1"), $t("lib.group-member-export.text_44a94721f5"), $t("lib.group-member-export.text_e9462d2c96"), $t("lib.group-member-export.text_dbcbe11e0d")]];
   for (const { id, name, gender, title, role } of members) {
-    rows.push([String(id), name, gender, title, role === "admin" ? "是" : "否", role === "owner" ? "是" : "否"]);
+    rows.push([String(id), name, gender, title, role === "admin" ? $t("lib.group-member-export.text_b5141d3d19") : $t("lib.group-member-export.text_0c70665b6e"), role === "owner" ? $t("lib.group-member-export.text_b5141d3d19") : $t("lib.group-member-export.text_0c70665b6e")]);
   }
   const cell = (value: string) => {
     const safe = /^[\s\p{Cf}]*[=+@＝＋＠－\-]|^[\t\r\n]/u.test(value) ? "'" + value : value;

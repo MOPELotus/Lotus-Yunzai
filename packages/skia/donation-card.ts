@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { join } from "node:path";
@@ -9,8 +12,8 @@ import { nativeImageRasterScale, renderPng } from "./index.ts";
 const assets = new URL("../../resources/donation/", import.meta.url);
 const defaultFonts = builtinResourceDirectory("core/passport");
 const methods = [
-  { title: "微信支付", file: "wechat-lotus.png", notice: "使用微信扫一扫" },
-  { title: "支付宝", file: "alipay-lotus.jpg", notice: "使用支付宝扫一扫" },
+  { title: $t("donation-card.text_064464bf64"), file: "wechat-lotus.png", notice: $t("donation-card.text_c20cd157ad") },
+  { title: $t("donation-card.text_276a8bc458"), file: "alipay-lotus.jpg", notice: $t("donation-card.text_a506b9d728") },
 ] as const;
 const width = 830;
 const panelWidth = 390;
@@ -48,9 +51,9 @@ export async function renderDonationCard(directory: string, scale: 1 | 2 | 4 = n
     }),
     Promise.all(methods.map(async ({ file }) => {
       const path = Bun.file(join(directory, file));
-      if (!await path.exists() || path.size > 8 * 1024 * 1024) throw new Error("捐赠图片不可用。");
+      if (!await path.exists() || path.size > 8 * 1024 * 1024) throw new Error($t("donation-card.text_5d653b2d82"));
       const image = await loadImage(Buffer.from(await path.arrayBuffer()));
-      if (!image.width || !image.height || image.height > 4 * image.width) throw new Error("捐赠图片尺寸无效。");
+      if (!image.width || !image.height || image.height > 4 * image.width) throw new Error($t("donation-card.text_0211bfd25a"));
       return image;
     })),
   ]);
@@ -91,8 +94,8 @@ export async function renderDonationCard(directory: string, scale: 1 | 2 | 4 = n
     }
 
     panel(15, 45, width - 30, 133);
-    print("捐赠支持", 35, 60, 50, titleFont);
-    print("如果你觉得 MOPELotus 的项目或机器人对你有帮助，可以通过以下方式自愿支持。", 35, 130, 18);
+    print($t("donation-card.text_c16d780c58"), 35, 60, 50, titleFont);
+    print($t("donation-card.text_9d4d19609f"), 35, 130, 18);
 
     for (const [index, method] of methods.entries()) {
       const poster = posters[index]!;
@@ -113,6 +116,6 @@ export async function renderDonationCard(directory: string, scale: 1 | 2 | 4 = n
     ctx.shadowBlur = 2;
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
-    print(`Lotus-Yunzai · ${shanghaiTime.format(at)}`, width / 2, panelTop + panelHeight + 35, 12, bodyFont, "#fff", "center");
+    print($t("donation-card.text_c657691343", { "value1": shanghaiTime.format(at) }), width / 2, panelTop + panelHeight + 35, 12, bodyFont, "#fff", "center");
   }, mode, { renderScale: scale, allowHalfScale: scale === 4 });
 }

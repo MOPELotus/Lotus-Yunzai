@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { MessageReply } from "../messages.ts";
 import type { GroupTarget, GroupTransport } from "./onebot-groups.ts";
 
@@ -61,7 +64,7 @@ export function noticeGroupTransport(fallback: GroupTransport, onebot: () => rea
     async recallGroupMessage(adapter: NoticeGroupAccount["adapter"], botId: number, groupId: number,
       messageId: number, signal?: AbortSignal) {
       const account = adapter === "onebot" ? onebot().find(account => account.botId === botId) : milky();
-      if (account?.botId !== botId || signal?.aborted) throw new NoticeNotSentError("原公告会话不可用。");
+      if (account?.botId !== botId || signal?.aborted) throw new NoticeNotSentError($t("lib.adapters.notice-groups.text_017f59d82b"));
       await account.recall(groupId, messageId, signal);
     },
   });

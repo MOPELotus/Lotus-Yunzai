@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { createHash, randomInt } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import { transientReadResponse } from "@lotus-yunzai/http";
@@ -150,7 +153,7 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
   for (const row of [data, obj(data?.role)]) {
     if (route.kind === "record" && row && ((uid !== undefined && uid !== null && ["uid", "role_id", "game_uid"].some(key => row[key] !== undefined && String(row[key]) !== String(uid))) ||
         (region !== undefined && region !== null && ["region", "server"].some(key => row[key] !== undefined && row[key] !== region)))) {
-      throw new HoyoRequestError("response", "验证码响应与原请求角色不一致。");
+      throw new HoyoRequestError("response", $t("captcha-business.text_870449edea"));
     }
   }
   const targetKey = requestKey(target.url, target.init);
@@ -188,16 +191,16 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
       }
       break;
     }
-    if (!response) throw new HoyoRequestError("transport", "验证码业务接口连接失败。");
+    if (!response) throw new HoyoRequestError("transport", $t("captcha-business.text_f0ae20c1eb"));
     if (!response.ok || response.redirected || (response.url && response.url !== url.href)) {
       await response.body?.cancel().catch(() => undefined);
-      throw new HoyoRequestError("http", "验证码业务接口请求未完成。", response.status);
+      throw new HoyoRequestError("http", $t("captcha-business.text_96cfb6920a"), response.status);
     }
     const payload = await readGameRecordPayload(response, 128 * 1024, deadline);
     await guard();
-    if (!payload || code(payload.retcode) === undefined) throw new HoyoRequestError("response", "验证码业务接口响应无效。");
-    if (rateLimited(payload)) throw new HoyoRequestError("api", "验证码业务接口请求频繁。", response.status, code(payload.retcode));
-    if (authCodes.has(code(payload.retcode)!)) throw new HoyoRequestError("api", "验证码业务账号状态已变化。", response.status, code(payload.retcode));
+    if (!payload || code(payload.retcode) === undefined) throw new HoyoRequestError("response", $t("captcha-business.text_7a9c999b3a"));
+    if (rateLimited(payload)) throw new HoyoRequestError("api", $t("captcha-business.text_870e2a6aeb"), response.status, code(payload.retcode));
+    if (authCodes.has(code(payload.retcode)!)) throw new HoyoRequestError("api", $t("captcha-business.text_7d88c6c64a"), response.status, code(payload.retcode));
     return payload;
   }
   let firstInline = inline(target.payload);
@@ -221,7 +224,7 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
         : "/game_record/app/card/wapi/createVerification?is_high=true";
       const created = await api(path);
       const challenge = inline(created);
-      if (code(created.retcode) !== 0 || !challenge) throw new HoyoRequestError("response", "官方未返回受支持的验证码挑战。");
+      if (code(created.retcode) !== 0 || !challenge) throw new HoyoRequestError("response", $t("captcha-business.text_f65295a4bb"));
       return challenge;
     },
     async accept(proof: CaptchaProof) {
@@ -234,7 +237,7 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
         const result = await api(path, { geetest_challenge: proof.challenge, geetest_validate: proof.validate, geetest_seccode: proof.seccode, ...(tool && { app_key: appKey }) });
         const challenge = obj(result.data)?.challenge;
         if (code(result.retcode) !== 0) return { accepted: false };
-        if (!field(challenge)) throw new HoyoRequestError("response", "官方验证码校验缺少业务凭证。");
+        if (!field(challenge)) throw new HoyoRequestError("response", $t("captcha-business.text_bae9a27a8d"));
         headers = { "x-rpc-challenge": challenge };
       }
       await guard();

@@ -1,10 +1,13 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { ownerAccountSession } from "./adapters/owner-account.ts";
 import { qzoneSession, type QzonePost } from "./adapters/qzone.ts";
 import { readQqMessageImage } from "./chat-files.ts";
 import { isVerifiedRaster } from "./file-to-url.ts";
 import { segment, type MessageEvent } from "./messages.ts";
 
-export const ownerQzoneFeatures = ["[group] QQ 空间说说", "group", "@lotus-yunzai/group"];
+export const ownerQzoneFeatures = [$t("lib.owner-qzone-command.text_2addde0474"), "group", "@lotus-yunzai/group"];
 const listCommand = /^#获?取说说列表\s*(\d+)?$/u;
 const deleteCommand = /^#删除?说说\s*(\d+)$/u;
 const publishCommand = /^#发说说([\s\S]*)$/u;
@@ -13,8 +16,8 @@ const listLifetime = 10 * 60_000;
 const maxMessages = 4096;
 const maxImageBytes = 6 * 1024 * 1024;
 const maxImageTotalBytes = 12 * 1024 * 1024;
-const unsupported = "当前协议端未确认支持 QQ 空间说说，需要支持空间说说的 NapCat。";
-const refreshList = "请先获取包含该序号的说说列表，再使用 #删除说说 序号。";
+const unsupported = $t("lib.owner-qzone-command.text_78d92ebf18");
+const refreshList = $t("lib.owner-qzone-command.text_d4011a8620");
 const dateFormat = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit",
   hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
@@ -27,7 +30,7 @@ interface ListReceipt {
 
 function postDate(time: number) {
   const date = new Date(time * 1000);
-  return time > 0 && Number.isFinite(date.getTime()) ? dateFormat.format(date) : "时间未知";
+  return time > 0 && Number.isFinite(date.getTime()) ? dateFormat.format(date) : $t("lib.owner-qzone-command.text_664939a1fa");
 }
 
 function shorten(content: string) {
@@ -36,7 +39,7 @@ function shorten(content: string) {
 }
 
 function describe(post: QzonePost, index: number) {
-  return `${index}. ${shorten(post.content)}\n- [${post.private ? "私密" : "公开"}] | ${postDate(post.time)} | ${post.comments} 条评论`;
+  return $t("lib.owner-qzone-command.text_25a7bc1d1c", { "index": index, "value2": shorten(post.content), "value3": post.private ? $t("lib.owner-qzone-command.text_412677b5b7") : $t("lib.owner-qzone-command.text_7a73baf0ce"), "value4": postDate(post.time), "comments": post.comments });
 }
 
 function imageParts(message: MessageEvent["message"] | undefined) {
@@ -56,7 +59,7 @@ export function createOwnerQzoneCommand() {
     const account = event[ownerAccountSession];
     if (event.message_type !== "private" || event.sub_type !== "friend" || !account?.isOwner() ||
         event.self_id === undefined || event.user_id === undefined || event.message_id === undefined) {
-      await event.reply("只有当前机器人已绑定的主人可在好友私聊操作 QQ 空间说说。");
+      await event.reply($t("lib.owner-qzone-command.text_5b85f0a4c0"));
       return true;
     }
     const session = event[qzoneSession];
@@ -72,7 +75,7 @@ export function createOwnerQzoneCommand() {
     const owner = event.user_id;
     const processing = busy.get(connection) ?? new Set<number>();
     if (processing.has(owner)) {
-      await reply("正在处理上一条说说指令。");
+      await reply($t("lib.owner-qzone-command.text_f35af904df"));
       return true;
     }
     processing.add(owner);
@@ -92,20 +95,20 @@ export function createOwnerQzoneCommand() {
       if (claimed.has(key)) return true;
       if (!await session.supported(signal)) { await reply(unsupported); return true; }
       if (!active()) return true;
-      if (!await confirmFriend()) { await reply("无法确认当前机器人的好友关系。"); return true; }
+      if (!await confirmFriend()) { await reply($t("lib.owner-qzone-command.text_8c4bae45bc")); return true; }
       if (!active()) return true;
 
       if (list) {
         views.delete(owner);
         const page = Number(list[1] ?? 1);
         const offset = (page - 1) * pageSize;
-        if (page < 1 || !Number.isSafeInteger(offset + pageSize)) { await reply("请输入有效的说说列表页码。"); return true; }
+        if (page < 1 || !Number.isSafeInteger(offset + pageSize)) { await reply($t("lib.owner-qzone-command.text_aab46645f8")); return true; }
         const result = await readPage(offset);
-        if (!result) { await reply("无法读取说说列表，请确认当前 NapCat 支持该接口后重试。"); return true; }
-        if (!result.posts.length) { await reply(offset === 0 ? "说说列表为空。" : "这页没有说说。"); return true; }
+        if (!result) { await reply($t("lib.owner-qzone-command.text_fee62ab595")); return true; }
+        if (!result.posts.length) { await reply(offset === 0 ? $t("lib.owner-qzone-command.text_78957569c5") : $t("lib.owner-qzone-command.text_806ee0e930")); return true; }
         const pages = result.totalKnown ? `${page}/${Math.ceil(result.total / pageSize)}` : String(page);
         const description = result.posts.map((post, index) => describe(post, offset + index + 1)).join("\n");
-        if (active()) await event.reply(`说说列表\n${description}\n页数：${pages}`, false, {
+        if (active()) await event.reply($t("lib.owner-qzone-command.text_511441181d", { "description": description, "pages": pages }), false, {
           onDelivered(messageId) {
             if (active()) views.set(owner, { messageId, offset, posts: result.posts, expires: Date.now() + listLifetime });
           },
@@ -124,18 +127,18 @@ export function createOwnerQzoneCommand() {
         const index = position - recent.offset - 1;
         const selected = recent.posts[index];
         if (!selected) { await reply(refreshList); return true; }
-        if (selected.tid === undefined) { await reply("协议端未返回这条说说的标识，无法安全删除。"); return true; }
+        if (selected.tid === undefined) { await reply($t("lib.owner-qzone-command.text_1995366d0a")); return true; }
         const current = await readPage(recent.offset);
         if (!current || current.posts[index]?.tid !== selected.tid) {
           views.delete(owner);
-          await reply("说说列表位置发生变化或无法核对，请重新获取列表。");
+          await reply($t("lib.owner-qzone-command.text_e17b38a081"));
           return true;
         }
         if (!active() || !await confirmFriend() || !claimWrite()) return true;
         views.delete(owner);
         const receipt = await session.remove(selected.tid, signal);
-        await reply(receipt.status === "confirmed" ? `删除说说成功。\n${describe(selected, position)}` : receipt.status === "unknown"
-          ? "删除结果未确认，请在 QQ 空间核对。" : "删除说说失败。");
+        await reply(receipt.status === "confirmed" ? $t("lib.owner-qzone-command.text_97c4d15449", { "value1": describe(selected, position) }) : receipt.status === "unknown"
+          ? $t("lib.owner-qzone-command.text_98044fe30e") : $t("lib.owner-qzone-command.text_14a380829b"));
         return true;
       }
 
@@ -144,11 +147,11 @@ export function createOwnerQzoneCommand() {
       let parts = imageParts(event.message);
       if (!parts.length && event.reply_id !== undefined) {
         const quoted = await event.lookupMediaReply?.(download).catch(() => undefined);
-        if (!quoted) { await reply("无法读取当前好友私聊引用的消息。"); return true; }
+        if (!quoted) { await reply($t("lib.owner-qzone-command.text_563c2493dc")); return true; }
         parts = imageParts(quoted.message);
       }
-      if (!content && !parts.length) { await reply("请填写说说正文，或发送要发布的图片。"); return true; }
-      if (parts.length > 9) { await reply("一条说说最多可带 9 张图片。"); return true; }
+      if (!content && !parts.length) { await reply($t("lib.owner-qzone-command.text_333fa22afd")); return true; }
+      if (parts.length > 9) { await reply($t("lib.owner-qzone-command.text_e1d0651e28")); return true; }
       let bytesLeft = maxImageTotalBytes;
       const images: Uint8Array[] = [];
       for (const part of parts) {
@@ -157,7 +160,7 @@ export function createOwnerQzoneCommand() {
         }).catch(() => undefined);
         if (!active()) return true;
         if (!bytes || !await isVerifiedRaster(bytes, 16_000_000, 4096)) {
-          await reply("无法读取说说图片，或图片尺寸、总大小超出限制。");
+          await reply($t("lib.owner-qzone-command.text_8407dcaf0b"));
           return true;
         }
         images.push(bytes);
@@ -167,10 +170,10 @@ export function createOwnerQzoneCommand() {
       views.delete(owner);
       const receipt = await session.publish(content, images, signal);
       if (receipt.status === "confirmed") {
-        const summary = `发表说说成功。\n${shorten(content)}`;
-        const details = `\n- [公开] | ${postDate(receipt.value.time)}`;
+        const summary = $t("lib.owner-qzone-command.text_5c73c71e7d", { "value1": shorten(content) });
+        const details = $t("lib.owner-qzone-command.text_c0d6d01c1f", { "value1": postDate(receipt.value.time) });
         await reply(images[0] ? [summary, segment.image(images[0]), details] : summary + details);
-      } else await reply(receipt.status === "unknown" ? "发表结果未确认，请在 QQ 空间核对。" : "发表说说失败。");
+      } else await reply(receipt.status === "unknown" ? $t("lib.owner-qzone-command.text_b1c89914d5") : $t("lib.owner-qzone-command.text_4c0ad7b4c0"));
       return true;
     } finally {
       processing.delete(owner);

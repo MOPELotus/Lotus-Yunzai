@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -67,7 +68,7 @@ async function prepare(root: string) {
   const target = join(root, "plugins/starrail");
   await cp(modulePath, target, { recursive: true, filter: item => ![".git", "node_modules", "test"].includes(basename(item)) });
   await symlink(join(modulePath, "node_modules"), join(target, "node_modules"), "dir");
-  await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+  await linkHostPackages(root);
   for (const [qq, id, uid] of [[42, 2, named], [43, 3, empty], [42, 4, refusal], [42, 5, discarded], [42, 6, changed]] as const) {
     await write(root, `profiles/${qq}-${id}.yaml`, profile(qq, id, uid));
   }

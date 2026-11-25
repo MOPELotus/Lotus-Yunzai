@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { setTimeout as wait } from "node:timers/promises";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
@@ -5,7 +8,7 @@ import { HoyoRequestError } from "./errors.ts";
 import { gachaAuthHeaders, gachaStokenCookie } from "./gacha-auth-request.ts";
 
 export const genshinGachaPools = [
-  { type: 301, name: "角色" }, { type: 302, name: "武器" }, { type: 500, name: "集录" }, { type: 200, name: "常驻" },
+  { type: 301, name: $t("genshin-gacha.text_c47b54e84e") }, { type: 302, name: $t("genshin-gacha.text_4fe131173e") }, { type: 500, name: $t("genshin-gacha.text_8f161c1237") }, { type: 200, name: $t("genshin-gacha.text_300b6634fe") },
 ] as const;
 
 export type GenshinGachaPool = typeof genshinGachaPools[number]["type"];
@@ -44,18 +47,18 @@ function cnRegion({ game, role: { uid, gameBiz: roleBiz, region: explicit } }: P
   const region = explicit.trim() || uidRegion;
   if (game !== "gs" || !/^[1-5]\d{8}$/u.test(uid) || (roleBiz && roleBiz !== gameBiz) ||
       (region !== "cn_gf01" && region !== "cn_qd01") || (uid.startsWith("5") !== (region === "cn_qd01"))) {
-    throw new HoyoRequestError("invalid-input", "原神官方抽卡仅支持档案中已确认的国服角色与区服。");
+    throw new HoyoRequestError("invalid-input", $t("genshin-gacha.text_a1797bcbe4"));
   }
   return region;
 }
 
 function parseRow(row: unknown, uid: string, type: GenshinGachaPool): GenshinGachaRow {
-  if (!record(row)) throw new HoyoRequestError("response", "原神卡池包含无效记录。");
+  if (!record(row)) throw new HoyoRequestError("response", $t("genshin-gacha.text_203e0e6c84"));
   const id = decimal(row.id);
   const gachaType = typeof row.gacha_type === "string" || typeof row.gacha_type === "number" ? String(row.gacha_type) : "";
   if (!id || (typeof row.uid !== "string" && typeof row.uid !== "number") || String(row.uid) !== uid ||
       (gachaType !== String(type) && !(type === 301 && gachaType === "400"))) {
-    throw new HoyoRequestError("response", "原神卡池返回了无效编号、账号或分类的记录。");
+    throw new HoyoRequestError("response", $t("genshin-gacha.text_ce1ee3106c"));
   }
   return { ...row, id, uid, gacha_type: gachaType as RecordPool };
 }
@@ -68,9 +71,9 @@ function createGenshinRequests(
   verifyProfile?: () => Promise<void>,
 ) {
   async function guard() {
-    if (signal?.aborted) throw new HoyoRequestError("transport", "原神抽卡请求已取消。");
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("genshin-gacha.text_43424ca534"));
     await verifyProfile?.();
-    if (signal?.aborted) throw new HoyoRequestError("transport", "原神抽卡请求已取消。");
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("genshin-gacha.text_43424ca534"));
   }
 
   async function request(endpoint: URL, auth: boolean, init: RequestInit) {
@@ -81,23 +84,23 @@ function createGenshinRequests(
       response = await transport(endpoint, { ...init, redirect: "error", credentials: "omit",
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     } catch {
-      throw new HoyoRequestError("transport", "原神抽卡请求未完成。");
+      throw new HoyoRequestError("transport", $t("genshin-gacha.text_7fc7e6e79c"));
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new HoyoRequestError("http", "原神抽卡接口返回 HTTP 错误。", response.status);
+      throw new HoyoRequestError("http", $t("genshin-gacha.text_f4f1c8af84"), response.status);
     }
     const payload: unknown = await response.json().catch(() => undefined);
     const code = record(payload) ? payload.retcode : undefined;
     const retcode = auth && typeof code === "string" && /^-?\d{1,10}$/u.test(code) ? Number(code) : code;
     if (typeof retcode !== "number" || !Number.isSafeInteger(retcode) || !record(payload)) {
-      throw new HoyoRequestError("response", "原神抽卡接口响应格式有误。");
+      throw new HoyoRequestError("response", $t("genshin-gacha.text_12af51d8d7"));
     }
     if (retcode !== 0) {
       const ServiceError = auth ? GenshinAuthKeyRequestError : HoyoRequestError;
-      throw new ServiceError("api", "原神抽卡接口拒绝请求。", response.status, retcode);
+      throw new ServiceError("api", $t("genshin-gacha.text_e810ccba12"), response.status, retcode);
     }
-    if (!record(payload.data)) throw new HoyoRequestError("response", "原神抽卡响应缺少有效数据。");
+    if (!record(payload.data)) throw new HoyoRequestError("response", $t("genshin-gacha.text_60a2671fe4"));
     return payload.data;
   }
   return { guard, request };
@@ -111,11 +114,11 @@ export async function readGenshinAuthKey(
 ) {
   const region = cnRegion(source);
   const uid = source.role.uid;
-  const cookie = gachaStokenCookie(source, "原神");
+  const cookie = gachaStokenCookie(source, $t("genshin-gacha.text_d1597c51ed"));
   const { request } = createGenshinRequests(transport, signal, verifyProfile);
   let headers: Headers;
   try { headers = gachaAuthHeaders(cookie, source); }
-  catch { throw new HoyoRequestError("invalid-input", "原神抽卡的档案设备信息无效。"); }
+  catch { throw new HoyoRequestError("invalid-input", $t("genshin-gacha.text_12da1eff35")); }
   const credential = await request(new URL("/binding/api/genAuthKey", authOrigin), true, {
     method: "POST", headers,
     body: JSON.stringify({ auth_appid: authApp, game_biz: gameBiz, game_uid: Number(uid), region }),
@@ -125,7 +128,7 @@ export async function readGenshinAuthKey(
       (credential.game_uid !== undefined && decimal(credential.game_uid) !== uid) ||
       (credential.region !== undefined && credential.region !== region) ||
       (credential.game_biz !== undefined && credential.game_biz !== gameBiz)) {
-    throw new HoyoRequestError("response", "原神抽卡登录响应的凭据或角色身份无效。");
+    throw new HoyoRequestError("response", $t("genshin-gacha.text_2d9e085462"));
   }
 
   const url = new URL("/gacha_info/api/getGachaLog", gachaOrigin);
@@ -144,7 +147,7 @@ async function readGenshinGachaOnce(
 ) {
   if (!Number.isInteger(intervalMs) || intervalMs < 0 || intervalMs > 2_147_483_647 ||
       !Number.isInteger(maxPages) || maxPages < 1 || maxPages > 1_000) {
-    throw new HoyoRequestError("invalid-input", "原神抽卡请求间隔或分页上限无效。");
+    throw new HoyoRequestError("invalid-input", $t("genshin-gacha.text_46945a7aad"));
   }
   const { uid, region, url } = await readGenshinAuthKey(source, transport, { signal }, verifyProfile);
   const { guard, request } = createGenshinRequests(transport, signal, verifyProfile);
@@ -155,7 +158,7 @@ async function readGenshinGachaOnce(
     for (let page = 1; page <= maxPages; page++) {
       if (intervalMs) {
         try { await wait(intervalMs, undefined, { signal }); }
-        catch { throw new HoyoRequestError("transport", "原神抽卡请求已取消。"); }
+        catch { throw new HoyoRequestError("transport", $t("genshin-gacha.text_43424ca534")); }
       }
       const endpoint = new URL(url);
       endpoint.searchParams.set("gacha_type", String(type));
@@ -163,21 +166,21 @@ async function readGenshinGachaOnce(
       endpoint.searchParams.set("end_id", cursor);
       const data = await request(endpoint, false, { method: "GET", headers: { Accept: "application/json" } });
       if ((data.region !== undefined && data.region !== region) || (data.uid !== undefined && decimal(data.uid) !== uid)) {
-        throw new HoyoRequestError("response", "原神抽卡响应的账号或区服与档案不一致。");
+        throw new HoyoRequestError("response", $t("genshin-gacha.text_0875a96f0e"));
       }
       if (!Array.isArray(data.list) || data.list.length > 20) {
-        throw new HoyoRequestError("response", "原神抽卡响应的分页列表无效。");
+        throw new HoyoRequestError("response", $t("genshin-gacha.text_afa5d7703c"));
       }
       if (!data.list.length) return rows;
       const batch = data.list.map((row) => parseRow(row, uid, type));
       const next = batch[batch.length - 1]!.id;
       if (cursor !== "0" && BigInt(next) >= BigInt(cursor)) {
-        throw new HoyoRequestError("response", "原神抽卡响应的下一页游标无效。");
+        throw new HoyoRequestError("response", $t("genshin-gacha.text_e42ce73091"));
       }
       rows.push(...batch);
       cursor = next;
     }
-    throw new HoyoRequestError("response", "原神抽卡列表超过分页上限，本次未取完。");
+    throw new HoyoRequestError("response", $t("genshin-gacha.text_89d0456c9a"));
   }
 
   const pools: { type: GenshinGachaPool; name: string; records: GenshinGachaRow[] }[] = [];

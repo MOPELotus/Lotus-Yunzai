@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import {
@@ -6,15 +9,15 @@ import {
 
 const games = {
   starrail: {
-    gameBiz: "hkrpg_global", name: "星铁", signgame: "hkrpg", activity: "e202303301540311",
+    gameBiz: "hkrpg_global", name: $t("hoyolab-role-checkin.text_a2927891f0"), signgame: "hkrpg", activity: "e202303301540311",
     regions: ["prod_official_usa", "prod_official_eur", "prod_official_asia", "prod_official_cht"],
   },
   zzz: {
-    gameBiz: "nap_global", name: "绝区零", signgame: "zzz", activity: "e202406031448091",
+    gameBiz: "nap_global", name: $t("hoyolab-role-checkin.text_b1110352c9"), signgame: "zzz", activity: "e202406031448091",
     regions: ["prod_gf_jp", "prod_gf_us", "prod_gf_eu", "prod_gf_sg"],
   },
   nxx: {
-    gameBiz: "nxx_global", name: "未定事件簿", signgame: "nxx", activity: "e202202281857121",
+    gameBiz: "nxx_global", name: $t("hoyolab-role-checkin.text_a6e4fbed57"), signgame: "nxx", activity: "e202202281857121",
     regions: ["glb_prod_wd01"],
   },
 } as const;
@@ -39,11 +42,11 @@ function uidOf(value: unknown) {
 }
 
 function invalidResponse(subject: string): never {
-  throw new HoyoRequestError("response", `官方${subject}响应无效。`);
+  throw new HoyoRequestError("response", $t("hoyolab-role-checkin.text_691992adbc", { "subject": subject }));
 }
 
 function invalidSelection(name: string): never {
-  throw new HoyoRequestError("invalid-input", `${name}国际服签到需要当前 HoYoLAB 档案的绑定角色，并须符合签到黑名单。`);
+  throw new HoyoRequestError("invalid-input", $t("hoyolab-role-checkin.text_7eb2cbbb20", { "name": name }));
 }
 
 function verifyRole<G extends Game>(data: Json, { uid, region, gameBiz }: HoYoLabBoundRole<G>, subject: string) {
@@ -74,7 +77,7 @@ export async function openHoYoLabRoleCheckin<G extends Game>(
   const endpoint = `https://sg-act-public-api.hoyolab.com/event/luna/${signgame}/os`;
   const readHeaders = { "x-rpc-signgame": signgame };
   const client = openHoYoLabCheckinTransport(source, transport, options, "ltoken");
-  const subject = `${name}国际服角色目录`;
+  const subject = $t("hoyolab-role-checkin.text_3661f1e5e0", { "name": name });
   const catalogue = await client.roleList(gameBiz, subject);
   const attempts = new Map<string, {
     role: HoYoLabBoundRole<G>; read: number; canSubmit: boolean; submitted: boolean;
@@ -106,7 +109,7 @@ export async function openHoYoLabRoleCheckin<G extends Game>(
         async readInfo() {
           const read = ++attempt.read;
           attempt.canSubmit = false;
-          const subject = `${name}国际服签到状态`;
+          const subject = $t("hoyolab-role-checkin.text_34486d64ee", { "name": name });
           const url = new URL(`${endpoint}/info`);
           url.search = new URLSearchParams(params).toString();
           const data = await client.request(url, readHeaders, subject);
@@ -123,7 +126,7 @@ export async function openHoYoLabRoleCheckin<G extends Game>(
         async submit(): Promise<"accepted"> {
           if (attempt.submitted || !attempt.canSubmit) invalidSelection(name);
           attempt.submitted = true;
-          const subject = `${name}国际服签到提交`;
+          const subject = $t("hoyolab-role-checkin.text_2de6071f91", { "name": name });
           const url = new URL(`${endpoint}/sign`);
           const data = await client.request(url, {
             ...readHeaders, "Content-Type": "application/json", "x-rpc-platform": "4", "x-rpc-client_type": "5",

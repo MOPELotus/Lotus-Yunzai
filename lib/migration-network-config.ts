@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createPrivateKey, createPublicKey, X509Certificate } from "node:crypto";
 import { lstat, mkdir, open, realpath, rm } from "node:fs/promises";
 import { isIP } from "node:net";
@@ -30,7 +33,7 @@ function pick(source: Fields, keys: readonly string[]) {
 
 function subsection(source: unknown, path: string): Fields | undefined {
   if (source === undefined || source === null) return;
-  if (typeof source !== "object" || Array.isArray(source)) throw new Error(`旧 ${path} 须为映射。`);
+  if (typeof source !== "object" || Array.isArray(source)) throw new Error($t("lib.migration-network-config.text_1f93cea4a9", { "path": path }));
   return source as Fields;
 }
 
@@ -136,14 +139,14 @@ async function readFamilyFile(source: string, prefix: string, family: Family, si
     file = await readMigrationSourceFile(source, join(source, prefix, `${family}.yaml`), 256 * 1024, signal);
   } catch {
     signal?.throwIfAborted();
-    throw new Error(`旧 ${family}.yaml 须为副本中的普通 YAML 文件。`);
+    throw new Error($t("lib.migration-network-config.text_c73de64a6c", { "family": family }));
   }
   if (!file) return;
   try {
     const config: unknown = Bun.YAML.parse(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes));
     return subsection(config, family) ?? {};
   } catch {
-    throw new Error(`旧 ${family}.yaml 须为有效的 YAML 映射。`);
+    throw new Error($t("lib.migration-network-config.text_b5e81f69d3", { "family": family }));
   }
 }
 
@@ -190,7 +193,7 @@ async function privateDirectory(root: string, path: string) {
     });
     if (!info) await mkdir(current, { mode: 0o700 });
     if (!(await lstat(current)).isDirectory() || await realpath(current) !== current) {
-      throw new Error("网络配置暂存目录须为实体目录。");
+      throw new Error($t("lib.migration-network-config.text_57a04dc201"));
     }
   }
 }
@@ -202,7 +205,7 @@ export async function stageLegacyNetworkConfig(sourcePath: string, stagePath: st
   const [sourceInfo, stageInfo] = await Promise.all([lstat(source), lstat(stage)]);
   if (!sourceInfo.isDirectory() || !stageInfo.isDirectory() || withinInstallation(source, stage) ||
       withinInstallation(stage, source) || (sourceInfo.dev === stageInfo.dev && sourceInfo.ino === stageInfo.ino)) {
-    throw new Error("网络配置暂存须位于旧安装副本之外的独立目录。");
+    throw new Error($t("lib.migration-network-config.text_bca686ceec"));
   }
   const raw: NetworkConfig = {};
   for (const family of families) {

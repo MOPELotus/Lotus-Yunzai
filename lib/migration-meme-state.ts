@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { Database } from "bun:sqlite";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -53,7 +56,7 @@ function rows(database: Database) {
     for (const row of database.query<{
       name: unknown; key: unknown; arg_name: unknown; arg_value: unknown; createdAt: unknown; updatedAt: unknown;
     }, [number]>("SELECT name, key, arg_name, arg_value, createdAt, updatedAt FROM preset LIMIT ?").iterate(dataRowLimit + 1)) {
-      if (++rowCount > dataRowLimit) throw new Error("表情旧数据超限。");
+      if (++rowCount > dataRowLimit) throw new Error($t("lib.migration-meme-state.text_a1a99c4905"));
       const { name, key, arg_name, arg_value, createdAt, updatedAt } = row;
       if (!text(name) || !safeCatalogKey(key) || !text(arg_name, 256) || !text(arg_value) ||
           !text(createdAt, 128) || !text(updatedAt, 128) || denied.has(key) || isExcludedMemeTemplate(key)) continue;
@@ -67,7 +70,7 @@ function rows(database: Database) {
     for (const { key, count } of database.query<{ key: unknown; count: unknown }, [number]>(
       'SELECT key, "all" AS count FROM stat LIMIT ?',
     ).iterate(dataRowLimit + 1)) {
-      if (++rowCount > dataRowLimit) throw new Error("表情旧数据超限。");
+      if (++rowCount > dataRowLimit) throw new Error($t("lib.migration-meme-state.text_a1a99c4905"));
       if (safeCatalogKey(key) && !denied.has(key) && !isExcludedMemeTemplate(key) &&
           typeof count === "number" && Number.isSafeInteger(count) && count >= 0) {
         statistics.push([key, count]);
@@ -135,7 +138,7 @@ export async function stageLegacyMemeState(archive: string | undefined, state: s
       if (!snapshot) continue;
       const parsed: unknown = Bun.YAML.parse(new TextDecoder("utf-8", { fatal: true }).decode(snapshot.bytes));
       if (parsed == null) continue;
-      if (typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("旧表情设置格式无效。");
+      if (typeof parsed !== "object" || Array.isArray(parsed)) throw new Error($t("lib.migration-meme-state.text_19c1dd1739"));
       config = parsed as Record<string, unknown>;
     } catch {
       signal?.throwIfAborted();

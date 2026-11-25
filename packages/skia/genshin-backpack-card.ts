@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { genshinSummaryOptions, quantityText, summaryBox, summaryIcon, summarySection, type GenshinSummaryCardOptions } from "./genshin-summary-elements.ts";
 import { drawInfoText, infoCardColors, measureInfoText, renderInfoCard } from "./info-card.ts";
 
@@ -16,7 +19,7 @@ export interface GenshinBackpackCardModel {
 export type GenshinBackpackCardOptions = GenshinSummaryCardOptions;
 
 export async function renderGenshinBackpackCard(model: GenshinBackpackCardModel, options: GenshinBackpackCardOptions = {}) {
-  return renderInfoCard({ title: "原神背包", metadata: "米游社养成计算器 · ≥ 表示至少拥有该数量" },
+  return renderInfoCard({ title: $t("genshin-backpack-card.text_2a3c6b8bff"), metadata: $t("genshin-backpack-card.text_5b0e9d1429") },
     ({ x: left, y, width, measure }) => {
       const columns = 6;
       const gap = 12;
@@ -40,7 +43,7 @@ export async function renderGenshinBackpackCard(model: GenshinBackpackCardModel,
         height: height || 30,
         async draw(ctx) {
           let top = y;
-          if (!categories.length) drawInfoText(ctx, ["暂无素材记录"], left, top, { size: 20, color: infoCardColors.muted });
+          if (!categories.length) drawInfoText(ctx, [$t("genshin-backpack-card.text_229673db70")], left, top, { size: 20, color: infoCardColors.muted });
           for (const category of categories) {
             summarySection(ctx, category.heading, left, top, width);
             top += category.heading.length * 32 + 12;
@@ -49,7 +52,7 @@ export async function renderGenshinBackpackCard(model: GenshinBackpackCardModel,
                 const x = left + column * (itemWidth + gap);
                 const center = x + itemWidth / 2;
                 summaryBox(ctx, x, top, itemWidth, row.height);
-                await summaryIcon(ctx, entry.image, center - 27, top + 8, 54, "素材");
+                await summaryIcon(ctx, entry.image, center - 27, top + 8, 54, $t("genshin-backpack-card.text_9af69965f1"));
                 drawInfoText(ctx, entry.label, center, top + 65, { size: 18, leading: 24, align: "center" });
                 drawInfoText(ctx, entry.count, center, top + 65 + entry.label.length * 24,
                   { size: 18, leading: 23, color: infoCardColors.gold, align: "center" });

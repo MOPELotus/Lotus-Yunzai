@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { createHash } from "node:crypto";
@@ -65,7 +68,7 @@ async function loadTheme(directory: string) {
     [miSans, "fonts/MiSans-VF.ttf"],
   ] as const) {
     const fontPath = join(directory, file);
-    if (!await Bun.file(fontPath).exists()) throw new Error(`账号资料卡原字体不可用：${file}`);
+    if (!await Bun.file(fontPath).exists()) throw new Error($t("profile-card.text_0ae1c81d69", { "file": file }));
     FontLibrary.use(name, [fontPath]);
   }
   const background = await loadImage(join(directory, "miao-theme/bg/bg-hydro.webp"));
@@ -164,7 +167,7 @@ class ProfileLayout {
   }
 
   text(value: string | number | undefined, x: number, y: number, w: number, size: number, color: string,
-    { font = this.theme.text, leading = size * 1.5, center = false, shadow = false, singleLine = false } = {}) {
+    { font = this.theme.text, leading = size * 1.5, center = false, shadow = false, singleLine = false, footer = false } = {}) {
     let rows = lines(this.#measure, value, w, size, font);
     if (singleLine && rows.length > 1) rows = [`${rows[0]!.slice(0, -2)}…`];
     this.commands.push((ctx) => {
@@ -181,7 +184,7 @@ class ProfileLayout {
       }
       for (const [index, row] of rows.entries()) {
         const textX = x + (center ? w / 2 : 0), textY = y + index * leading;
-        ctx.fillStyle = row.includes("Lotus-Yunzai") ? brandTextColor(ctx, row, textX, textY) : color;
+        ctx.fillStyle = footer ? brandTextColor(ctx, row, textX, textY) : color;
         ctx.fillText(row, textX, textY);
       }
       ctx.restore();
@@ -231,7 +234,7 @@ function fieldTexts(fields: readonly ProfileCardField[] | undefined): string[] {
 
 export async function renderProfileCard(model: ProfileCardModel,
   { mode = "auto", scale = 4, resourceDirectory = Bun.env.LOTUS_PASSPORT_QR_RESOURCES?.trim() || defaultResources }: ProfileCardOptions = {}): Promise<PngRender> {
-  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("资料卡缩放比例须在 1 至 4 之间。");
+  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError($t("profile-card.text_272ec10384"));
   const theme = await openProfileCardTheme(resourceDirectory);
   const layout = new ProfileLayout(theme);
   const groups: NonNullable<ProfileCardModel["roleGroups"]> = model.roleGroups?.length ? model.roleGroups : (model.roles ?? [])
@@ -248,16 +251,16 @@ export async function renderProfileCard(model: ProfileCardModel,
   const artwork = model.uidList ? await (uidListArt ??= Promise.all([
     loadUidListImage("check.webp"), loadUidListImage("face.webp"), loadUidListImage("zzz-banner.png"),
   ]).then(([checked, defaultFace, zzzBanner]) => ({ checked, defaultFace, zzzBanner }))) : undefined;
-  layout.heading(model.title || "账号资料卡", model.subtitle);
+  layout.heading(model.title || $t("profile-card.text_46a9096ed6"), model.subtitle);
   for (const group of groups) {
     const top = layout.y;
-    const rows = group.rows?.length ? group.rows : [{ name: "未同步游戏角色" }];
+    const rows = group.rows?.length ? group.rows : [{ name: $t("profile-card.text_662fc174b9") }];
     const height = 42 + rows.length * 76;
     layout.clip(10, top, panelWidth, height);
     layout.rect(10, top, panelWidth, height, "rgba(255,255,255,.65)");
     layout.rect(10, top, panelWidth, 34, "rgba(255,255,255,.8)");
     layout.text(group.label, 25, top + 8, panelWidth - 30, 16, "#333");
-    if (group.command) layout.text(`使用 ${group.command} 切换`, 226, top + 10, 184, 12, "#666", { center: true });
+    if (group.command) layout.text($t("profile-card.text_63514a39f5", { "command": group.command }), 226, top + 10, 184, 12, "#666", { center: true });
     for (const [index, row] of rows.entries()) {
       const y = top + 42 + index * 76;
       layout.rect(19, y + 20, 18, 22, row.active ? gold : white, 6);
@@ -296,7 +299,7 @@ export async function renderProfileCard(model: ProfileCardModel,
       layout.text(row.uid || row.name, 10 + indent, y + 9, panelWidth - indent - 22, row.uid ? 24 : 16, ink,
         { font: row.uid ? theme.number : theme.text, leading: 21 });
       if (row.uid) {
-        const caption = [row.name, row.level ? `Lv.${row.level}` : "", row.active && !model.uidList ? "当前 UID" : ""].filter(Boolean).join(" · ");
+        const caption = [row.name, row.level ? `Lv.${row.level}` : "", row.active && !model.uidList ? $t("profile-card.text_3e2354a0f3") : ""].filter(Boolean).join(" · ");
         if (row.badge) {
           layout.rect(292, y + 11, 56, 19, row.active ? gold : "#4a5366", 4);
           layout.text(row.badge, 292, y + 14, 56, 11, row.active ? "#3a2702" : white, { center: true });
@@ -309,12 +312,12 @@ export async function renderProfileCard(model: ProfileCardModel,
     layout.y += height + 10;
   }
   if (!model.uidList) {
-    layout.log("账号状态", [model.summary ?? "", ...fieldTexts(model.account)]);
-    layout.log("签到设置", fieldTexts(model.settings));
+    layout.log($t("profile-card.text_449636a1fe"), [model.summary ?? "", ...fieldTexts(model.account)]);
+    layout.log($t("profile-card.text_6c2ca351be"), fieldTexts(model.settings));
   }
-  if (model.warnings?.length) layout.log("提示", model.warnings);
-  layout.text(`Lotus-Yunzai${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, 15, layout.y + 15, width - 30, 12, white,
-    { center: true, shadow: true, leading: 18 });
+  if (model.warnings?.length) layout.log($t("profile-card.text_f56c6c8220"), model.warnings);
+  layout.text($t("profile-card.text_33d658749e", { "value1": model.generatedAt ? ` · ${model.generatedAt}` : "" }), 15, layout.y + 15, width - 30, 12, white,
+    { center: true, shadow: true, leading: 18, footer: true });
 
   const height = Math.max(240, layout.y + 50);
   const zoom = 720 / width * scale;

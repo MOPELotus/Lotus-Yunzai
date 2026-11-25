@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { parseGachaDisplaySettings } from "@lotus-yunzai/gacha/display-settings";
@@ -100,7 +103,7 @@ export async function stageLegacyGachaDisplayConfig(archive: string | undefined,
     if (!Object.keys(config).length) return { active: false, deferred };
     const output = join(stage, "config");
     await mkdir(output, { mode: 0o700, recursive: true });
-    if (!(await lstat(output)).isDirectory() || await realpath(output) !== output) throw new Error("抽卡设置暂存路径须为实体目录。");
+    if (!(await lstat(output)).isDirectory() || await realpath(output) !== output) throw new Error($t("lib.migration-gacha-display.text_362bd69b90"));
     signal?.throwIfAborted();
     await writeFile(join(output, `${gachaDisplayConfigName}.yaml`), Bun.YAML.stringify(config), { flag: "wx", mode: 0o600 });
     return { active: true, deferred };

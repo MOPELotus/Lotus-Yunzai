@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { link, open, unlink } from "node:fs/promises";
@@ -11,15 +15,15 @@ interface Entry {
 async function readJournal(path: string, modern: boolean): Promise<Map<string, Entry>> {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    if (!(await file.stat()).isFile()) throw new Error("账本须为普通文件。");
+    if (!(await file.stat()).isFile()) throw new Error($t("scripts.export-preview-redeem-history.text_c15290ad89"));
     const data: unknown = JSON.parse(await file.readFile("utf8"));
-    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("账本格式无效。");
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error($t("scripts.export-preview-redeem-history.text_a067e29333"));
     const entries = new Map<string, Entry>();
     for (const [key, value] of Object.entries(data)) {
       if (modern && key === "__lotusPreviewJournalVersion" && value === 1) continue;
       if (!/^[a-f0-9]{64}$/u.test(key) || !value || typeof value !== "object" ||
           !Number.isSafeInteger(value.time) || value.time < 0 || !["started", "finished"].includes(value.status)) {
-        throw new Error("账本中有无效记录。");
+        throw new Error($t("scripts.export-preview-redeem-history.text_98bb7c7f2c"));
       }
       const { time, status } = value;
       entries.set(key, { time, status });
@@ -52,7 +56,7 @@ async function writeNewJournal(path: string, entries: ReadonlyMap<string, Entry>
 
 const [current, previous, destination, ...extra] = process.argv.slice(2);
 if (!current || !previous || !destination || extra.length) {
-  console.error("用法：bun scripts/export-preview-redeem-history.ts <新版账本副本> <旧插件账本副本或 -> <新导出文件>");
+  console.error($t("scripts.export-preview-redeem-history.text_c0cb3cda6b"));
   process.exit(2);
 }
 
@@ -68,6 +72,6 @@ try {
   await writeNewJournal(resolve(destination), old);
   console.log(JSON.stringify({ preserved: old.size - added, added, total: old.size }));
 } catch {
-  console.error("前瞻兑换账本导出失败。请检查两份副本的格式，并指定尚不存在的输出文件。");
+  console.error($t("scripts.export-preview-redeem-history.text_e708d1ea04"));
   process.exitCode = 1;
 }

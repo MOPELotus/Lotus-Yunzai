@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { accountScopePolicies, accountScopePolicy, accountScopes, type AccountScope, type GroupScope, type RemoteScope } from "./account-scope-policy.ts";
 import { readLocalConfig } from "./config.ts";
 import { watchConfigFiles } from "./config-watch.ts";
@@ -13,7 +16,7 @@ export function readOwnerSnapshot(config: Readonly<Record<string, unknown>>) {
     const bot = match?.[1];
     const user = match?.[2];
     if (!bot || !user || (bot === "stdin") !== (user === "stdin")) {
-      throw new Error("other.yaml 的 master 须为机器人账号:主人账号，终端可使用 stdin:stdin。");
+      throw new Error($t("lib.permissions.text_bb5dfed55c"));
     }
     const users = owners.get(bot) ?? new Set<string>();
     users.add(user);
@@ -41,7 +44,7 @@ export async function readMasterPermissions(root: URL, signal?: AbortSignal) {
         if (!signal.aborted) snapshot = updated;
         break;
       }
-    }, () => console.warn("[主人权限] 配置重载失败，保留上次有效设置。"));
+    }, () => console.warn($t("lib.permissions.text_b30350bfea")));
   }
   return {
     get terminal() {

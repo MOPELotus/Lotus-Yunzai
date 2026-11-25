@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -46,24 +49,24 @@ function saveDefaultStatus(root: URL, enabled: boolean, canWrite: () => boolean,
   });
 }
 
-const enabledLabel = (enabled: boolean | undefined) => enabled === undefined ? "无法读取" : enabled ? "已开启" : "已关闭";
+const enabledLabel = (enabled: boolean | undefined) => enabled === undefined ? $t("lib.chat-settings.text_c270415855") : enabled ? $t("lib.chat-settings.text_8a4ef3e48e") : $t("lib.chat-settings.text_6744b4c6a9");
 
 function cardGroups(like: boolean | undefined, status: boolean | undefined): NoticeSettingsCardGroup[] {
   return [{
-    title: "系统设置",
+    title: $t("lib.chat-settings.text_68ea5dd4d7"),
     rows: [
       {
-        label: "陌生人点赞", value: enabledLabel(like), off: like !== true, hint: "#设置陌生人点赞 + 开启/关闭",
-        description: "不活跃的账号可能会点赞失败",
+        label: $t("lib.chat-settings.text_9da9735f47"), value: enabledLabel(like), off: like !== true, hint: $t("lib.chat-settings.text_3d80ac3b4c"),
+        description: $t("lib.chat-settings.text_2faaa89b4e"),
       },
       {
-        label: "默认状态", value: enabledLabel(status), off: status !== true, hint: "#设置状态 + 开启/关闭",
-        description: "开启后可直接发送「状态」查看运行情况",
+        label: $t("lib.chat-settings.text_0710358f06"), value: enabledLabel(status), off: status !== true, hint: $t("lib.chat-settings.text_1ca5257247"),
+        description: $t("lib.chat-settings.text_82911d96fe"),
       },
     ],
   }, {
-    title: "其他设置", rows: [
-      { label: "通知设置", hint: "#通知设置", value: ">>>", description: "查看通知设置" },
+    title: $t("lib.chat-settings.text_863edfe5ac"), rows: [
+      { label: $t("lib.chat-settings.text_247ca01ae2"), hint: "#通知设置", value: ">>>", description: $t("lib.chat-settings.text_c3a6f9ffaf") },
     ],
   }];
 }
@@ -82,19 +85,19 @@ export function createChatSettings(root: URL, directories: PluginLoadReport["dir
   }
   return async ({ setting, enabled }: Setting, canWrite: () => boolean, signal: AbortSignal,
     withImage = true): Promise<MessageReply | undefined> => {
-    if (!canWrite()) return "暂无权限，只有主人才能操作。";
-    if (setting === "渲染精度") return "当前各功能使用自己的渲染配置，聊天中没有全局渲染精度设置。";
+    if (!canWrite()) return $t("lib.chat-settings.text_bc401012d5");
+    if (setting === "渲染精度") return $t("lib.chat-settings.text_3225f47f7f");
     if (setting === "状态") {
-      if (directories.get("system")?.packageName !== "@lotus-yunzai/system") return "状态模块当前不可用。";
+      if (directories.get("system")?.packageName !== "@lotus-yunzai/system") return $t("lib.chat-settings.text_5c36454321");
       try {
         await saveDefaultStatus(root, enabled, canWrite, signal);
       } catch {
-        return "无法保存默认状态，请检查状态配置后重试。";
+        return $t("lib.chat-settings.text_cac4432cff");
       }
     } else if (setting === "陌生人点赞") {
       try {
         const service = await likes();
-        if (!service) return "资料卡点赞模块当前不可用。";
+        if (!service) return $t("lib.chat-settings.text_d2b0df742a");
         for (let attempt = 0; ; attempt++) {
           const { revision } = await service.readLikeSettings();
           try {
@@ -105,7 +108,7 @@ export function createChatSettings(root: URL, directories: PluginLoadReport["dir
           }
         }
       } catch {
-        return "无法保存陌生人点赞设置，请检查点赞配置后重试。";
+        return $t("lib.chat-settings.text_a4edd615f5");
       }
     }
     const [like, status] = await Promise.all([
@@ -126,12 +129,12 @@ export function createChatSettings(root: URL, directories: PluginLoadReport["dir
       }
     }
     return [
-      "Lotus-Yunzai 设置",
-      `陌生人点赞 ${enabledLabel(like)}`,
-      "  #设置陌生人点赞开启 / #设置陌生人点赞关闭",
-      `默认状态 ${enabledLabel(status)}`,
-      "  #设置状态开启 / #设置状态关闭",
-      ...(notices ? ["通知设置发送 #通知设置"] : []),
+      $t("lib.chat-settings.text_8bd9de142b"),
+      $t("lib.chat-settings.text_524a1801aa", { "value1": enabledLabel(like) }),
+      $t("lib.chat-settings.text_4e7df59721"),
+      $t("lib.chat-settings.text_486e093912", { "value1": enabledLabel(status) }),
+      $t("lib.chat-settings.text_dc855b011d"),
+      ...(notices ? [$t("lib.chat-settings.text_5314f25257")] : []),
     ].join("\n");
   };
 }

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { hasNeteasePartnerAccount } from "./netease-partner-defaults.ts";
 import { createHmac, randomBytes } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -18,7 +21,7 @@ type Changes = Partial<PartnerPanelSettings> & {
 };
 type Patch = Changes & { review_clear_api_key?: true };
 const revisionKey = randomBytes(32);
-const defaultComments = ["打卡支持"];
+const defaultComments = [$t("lib.panel-partner.text_3dd212d563")];
 const numericDefaults = { login_timeout_ms: 300000, login_poll_ms: 3000, delay_ms_min: 8000, delay_ms_max: 11000,
   review_max_chars: 140, review_timeout_ms: 180000 };
 

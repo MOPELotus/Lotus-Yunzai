@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { ChatFileResult } from "./chat-files.ts";
 import type { MessageEvent, MessageReply } from "./messages.ts";
 import { memberDisplayName } from "./adapters/onebot-member-display.ts";
@@ -65,13 +68,13 @@ export async function replyOwnerContactList(
   const { signal } = session;
   const authorized = () => !signal.aborted && session.authorized();
   if (!authorized()) return;
-  const title = `${kind}列表`;
+  const title = $t("lib.owner-contact-list.text_b7bfc0a2e9", { "kind": kind });
   const reply = async (text: string) => {
     if (authorized()) await session.reply(text, signal);
   };
   const page = argument ? Number(argument) : 1;
   if (argument && (!/^[1-9]\d{0,5}$/u.test(argument) || !Number.isSafeInteger(page))) {
-    await reply(`用法 #${title} [页码]`);
+    await reply($t("lib.owner-contact-list.text_09fc6c8650", { "title": title }));
     return;
   }
   const shown = kind === "群" && page > 1 ? snapshots?.displayedGroups(event) : undefined;
@@ -79,31 +82,31 @@ export async function replyOwnerContactList(
     : parseFriendList(await session.friends(signal).catch(() => undefined));
   if (!authorized()) return;
   if (!loaded) {
-    await reply(`${title}读取失败，请稍后再试。`);
+    await reply($t("lib.owner-contact-list.text_b5e5af79ee", { "title": title }));
     return;
   }
   if (!loaded.length) {
-    await reply(`当前账号没有${kind}。`);
+    await reply($t("lib.owner-contact-list.text_414085dba6", { "kind": kind }));
     return;
   }
 
   const pages = Math.ceil(loaded.length / pageSize);
   if (page > pages) {
-    await reply(`${title}只有 ${pages} 页，请输入 1-${pages}。`);
+    await reply($t("lib.owner-contact-list.text_49a6a53663", { "title": title, "pages": pages, "value3": pages }));
     return;
   }
   const start = (page - 1) * pageSize;
   const rows = loaded.slice(start, start + pageSize).map(({ id, name }, index) => {
     const label = memberDisplayName(name)?.replace(/[\u202a-\u202e\u2066-\u2069]/gu, "").slice(0, 80);
-    return `${start + index + 1}、${label || "未知名称"}(${id})`;
+    return `${start + index + 1}、${label || $t("lib.owner-contact-list.text_2e72569d34")}(${id})`;
   });
-  const nodes = [`${title}如下，共 ${loaded.length} 条（第 ${page}/${pages} 页）${page < pages ? `\n下一页 #${title} ${page + 1}` : ""}`];
+  const nodes = [$t("lib.owner-contact-list.text_747c03e05d", { "title": title, "length": loaded.length, "page": page, "pages": pages, "value5": page < pages ? $t("lib.owner-contact-list.text_bbda6f77b3", { "title": title, "value2": page + 1 }) : "" })];
   for (let offset = 0; offset < rows.length; offset += nodeSize) {
     nodes.push(rows.slice(offset, offset + nodeSize).join("\n"));
   }
   if (!authorized()) return;
   const result = await session.forward(nodes, signal).catch(() => "unknown");
   if (result === "confirmed" && kind === "群" && !shown && authorized()) snapshots?.rememberGroups(event, loaded);
-  if (result === "rejected") await reply(`${title}未能发送，请稍后再试。`);
-  if (result === "unknown") await reply(`${title}发送结果未确认，请先检查私聊。`);
+  if (result === "rejected") await reply($t("lib.owner-contact-list.text_784ef1130f", { "title": title }));
+  if (result === "unknown") await reply($t("lib.owner-contact-list.text_aefc6c6077", { "title": title }));
 }

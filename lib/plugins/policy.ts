@@ -1,26 +1,29 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 interface Rule {
   readonly names: readonly string[];
   readonly replacement: string;
 }
 
 const merged: readonly Rule[] = [
-  { names: ["yunzai-genshin", "kissnavel/genshin", "miao-plugin"], replacement: "genshin 和 starrail" },
+  { names: ["yunzai-genshin", "kissnavel/genshin", "miao-plugin"], replacement: $t("lib.plugins.policy.text_b2b35960a4") },
   { names: ["starrail-plugin"], replacement: "starrail" },
   { names: ["zzz-plugin"], replacement: "zzz" },
-  { names: ["ark-plugin"], replacement: "genshin 和 starrail" },
+  { names: ["ark-plugin"], replacement: $t("lib.plugins.policy.text_b2b35960a4") },
   { names: ["lolomi-calc"], replacement: "genshin" },
   { names: ["fansky_qs", "tianru-plugin", "nwflower/atlas", "atlas-plugin", "achievements-plugin", "liangshi-calc"],
     replacement: "atlas" },
-  { names: ["mora-plugin"], replacement: "guides 和游戏模块" },
+  { names: ["mora-plugin"], replacement: $t("lib.plugins.policy.text_6644cd4e3f") },
   { names: ["xiaoyao-cvs-plugin", "device-plugin", "lovemys", "axiu-plugin", "bujidao",
-    "bujidaorun", "trss-plugin", "xhh-tl"], replacement: "公共账号服务和游戏模块" },
+    "bujidaorun", "trss-plugin", "xhh-tl"], replacement: $t("lib.plugins.policy.text_c3b2aed38a") },
   { names: ["guoba-plugin"], replacement: "panel" },
-  { names: ["yenai-plugin", "earth-k-plugin"], replacement: "group 和 system" },
+  { names: ["yenai-plugin", "earth-k-plugin"], replacement: $t("lib.plugins.policy.text_09087ef608") },
   { names: ["notice-plugin"], replacement: "notice" },
   { names: ["meme-plugin"], replacement: "meme" },
   { names: ["rconsole-plugin", "xiaofei-plugin", "xhh", "yuki-plugin"], replacement: "media" },
-  { names: ["flower-plugin"], replacement: "各游戏模块的模拟抽卡" },
-  { names: ["lotus-plugin", "lotus-refactor"], replacement: "Lotus-Yunzai 的各功能模块" },
+  { names: ["flower-plugin"], replacement: $t("lib.plugins.policy.text_40b361bce6") },
+  { names: ["lotus-plugin", "lotus-refactor"], replacement: $t("lib.plugins.policy.text_c725cdb17e") },
 ];
 
 const kuroSignInNames = ["a-game_checkin", "a-game-checkin", "yoshino-xiao7/a-game_checkin", "yunzai-kuro-plugin",
@@ -28,26 +31,26 @@ const kuroSignInNames = ["a-game_checkin", "a-game-checkin", "yoshino-xiao7/a-ga
 
 const kuroGames = [
   {
-    title: "鸣潮",
-    games: ["鸣潮", "鳴潮", "wutheringwaves", "wuwa"],
+    title: $t("lib.plugins.policy.text_b9d21efb6e"),
+    games: [$t("lib.plugins.policy.text_b9d21efb6e"), $t("lib.plugins.policy.text_7ffc8996bf"), "wutheringwaves", "wuwa"],
     names: ["waves-plugin", "erzaozi/waves-plugin", "kagura-wei/waves-plugin", "ams-plugin", "tyql688/ams-plugin",
       "kuromc-plugin", "loneyclown/kuromc-plugin", "wuwa-panel", "syasaki77/wuwa-panel", "gamepush-plugin",
       "liulian-plugin", "wutheringwavesuid", "xutheringwavesuid", "wavesgachasim", "gutools",
       "mcbq-plugin", "mingchaobq-plugin", "xh2580/mingchaobq-plugin", ...kuroSignInNames],
   },
   {
-    title: "战双帕弥什",
-    games: ["战双", "戰雙", "战双帕弥什", "戰雙帕彌什", "punishinggrayraven", "pgr", "pns"],
+    title: $t("lib.plugins.policy.text_bf9f35196b"),
+    games: [$t("lib.plugins.policy.text_c9d1ffe8c8"), $t("lib.plugins.policy.text_e7f1cf8a85"), $t("lib.plugins.policy.text_bf9f35196b"), $t("lib.plugins.policy.text_572bb52641"), "punishinggrayraven", "pgr", "pns"],
     names: ["pgruid", "loping151/pgruid", "pgrgachasim", "xbaiyz12/pgrgachasim", ...kuroSignInNames],
   },
   {
-    title: "战场双马尾",
-    games: ["战场双马尾", "戰場雙馬尾", "戦場ツインテール", "twintailsbattleground", "twintailbattleground"],
+    title: $t("lib.plugins.policy.text_77e3f7c087"),
+    games: [$t("lib.plugins.policy.text_77e3f7c087"), $t("lib.plugins.policy.text_83e1f40bcf"), $t("lib.plugins.policy.text_c4210c634f"), "twintailsbattleground", "twintailbattleground"],
     names: [],
   },
   {
-    title: "库洛游戏",
-    games: ["库洛游戏", "庫洛遊戲", "kurogames"],
+    title: $t("lib.plugins.policy.text_19e053be48"),
+    games: [$t("lib.plugins.policy.text_19e053be48"), $t("lib.plugins.policy.text_c15d699bb8"), "kurogames"],
     names: ["gs_kuro_cos", "mimokit/gs_kuro_cos", "concywee/nonebot-plugin-kurogames"],
   },
 ] as const;
@@ -80,12 +83,12 @@ export function repositoryKey(value: string): string | undefined {
 export function rejectionReason(names: readonly string[], games: readonly string[]): string | undefined {
   const rule = merged.find(({ names: candidates }) => candidates.some((name) => names.includes(name)));
   if (rule) {
-    return `旧插件功能已归并，请使用 ${rule.replacement}。`;
+    return $t("lib.plugins.policy.text_86babfebc9", { "replacement": rule.replacement });
   }
   const declaredGames = games.map(gameKey);
   const matched = kuroGames.filter(game =>
     game.names.some(name => names.includes(name)) || game.games.some(name => declaredGames.includes(name)));
   if (matched.length) {
-    return `包含${matched.map(({ title }) => title).join("、")}功能，Lotus-Yunzai 不加载该插件。`;
+    return $t("lib.plugins.policy.text_e6719ed747", { "value1": matched.map(({ title }) => title).join("、") });
   }
 }

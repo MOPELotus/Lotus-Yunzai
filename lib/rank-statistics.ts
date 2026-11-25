@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { withoutReadRetries, withReadRetries } from "@lotus-yunzai/http";
 // Ark protocol reference e81b5ef9111294c17b2b489aee9a94e4ebc0c9c6. See rank-statistics.LICENSE.
 const endpoint = "https://ark.ivny.cn";
@@ -6,12 +9,12 @@ const maxBytes = 64 * 1024;
 
 export const rankPercentiles = [1, 5, 10, 20, 30, 50, 70, 90, 95, 99] as const;
 const messages: Readonly<Record<number, string>> = {
-  [-1]: "排名服务要求更新客户端版本。",
-  101: "排名中没有此角色编号。",
-  102: "暂无此角色的伤害排名数据。",
-  103: "排名服务拒绝了此次排名统计查询。",
-  104: "排名查询过于频繁，请稍后重试。",
-  201: "排名查询过于频繁，请稍后重试。",
+  [-1]: $t("lib.rank-statistics.text_b22af80ded"),
+  101: $t("lib.rank-statistics.text_d3bce4ad61"),
+  102: $t("lib.rank-statistics.text_4b84ce76b9"),
+  103: $t("lib.rank-statistics.text_827bc8b525"),
+  104: $t("lib.rank-statistics.text_57fe768b35"),
+  201: $t("lib.rank-statistics.text_57fe768b35"),
 };
 
 export type DamageRankStats = {
@@ -47,18 +50,18 @@ export function readRankStatsPayload(input: unknown): RankStatsResult {
   const result = object(Array.isArray(input) ? input[1] : input);
   if (result?.retcode !== 100) {
     const code = result?.retcode;
-    return { message: typeof code === "number" && messages[code] ? messages[code]! : "排名服务暂时无法返回伤害排名统计。" };
+    return { message: typeof code === "number" && messages[code] ? messages[code]! : $t("lib.rank-statistics.text_ac38649797") };
   }
   const data = object(result.data);
   const total = sampleCount(data?.total);
-  if (total === 0) return { message: "暂无此角色的伤害排名样本。" };
+  if (total === 0) return { message: $t("lib.rank-statistics.text_38c1870774") };
   const title = text(data?.name);
   const values = data?.scores;
   if (!title || total === undefined || !Array.isArray(values) || values.length < rankPercentiles.length || values.length > 64) {
-    return { message: "排名服务返回的伤害排名统计不完整。" };
+    return { message: $t("lib.rank-statistics.text_0b6092c828") };
   }
   const scores = values.slice(0, rankPercentiles.length).map(score).filter(item => item !== undefined);
-  if (scores.length !== rankPercentiles.length) return { message: "排名服务返回的伤害排名统计不完整。" };
+  if (scores.length !== rankPercentiles.length) return { message: $t("lib.rank-statistics.text_0b6092c828") };
   return { stats: { title, total, scores } };
 }
 
@@ -108,16 +111,16 @@ export async function postArkQuery(route: "rank/specific" | "rank/data" | "rank/
     });
     if (!response.ok || response.redirected) {
       void response.body?.cancel().catch(() => undefined);
-      return { message: response.status === 429 ? messages[104]! : "排名服务暂时无法连接。" };
+      return { message: response.status === 429 ? messages[104]! : $t("lib.rank-statistics.text_c3e9cd3869") };
     }
     return { payload: await readBoundedRankPayload(response, maximum) };
   } catch {
-    return { message: "排名服务暂时无法连接。" };
+    return { message: $t("lib.rank-statistics.text_c3e9cd3869") };
   }
 }
 
 export async function fetchRankStats(id: number, signal: AbortSignal, transport: RankStatsTransport = fetch): Promise<RankStatsResult> {
-  if (!Number.isSafeInteger(id) || id < 1) return { message: "此角色没有有效的排名统计编号。" };
+  if (!Number.isSafeInteger(id) || id < 1) return { message: $t("lib.rank-statistics.text_f2e83c6c51") };
   const result = await postArkQuery("rank/specific", { id, percent: 0 }, signal, transport);
   return "message" in result ? result : readRankStatsPayload(result.payload);
 }
@@ -143,18 +146,18 @@ export function matchPublicDamageRank(message: string, game: RankGame) {
 
 export async function fetchPublicDamageRank(uid: string, id: number, signal: AbortSignal,
   transport: RankStatsTransport = fetch): Promise<{ readonly rank: number; readonly score: number } | { readonly message: string }> {
-  if (!uidPattern.test(uid) || !Number.isSafeInteger(id) || id < 1) return { message: "角色或 UID 无效。" };
+  if (!uidPattern.test(uid) || !Number.isSafeInteger(id) || id < 1) return { message: $t("lib.rank-statistics.text_85ba4f5751") };
   const result = await postArkQuery("rank/data", { uid, id, update: 0 }, signal, transport);
   if ("message" in result) return result;
   const row = object(result.payload);
   if (row?.retcode !== 100) {
     const code = row?.retcode;
-    return { message: code === 102 ? "此 UID 的该角色暂无全服伤害排名。" :
-      typeof code === "number" && messages[code] ? messages[code]! : "排名服务暂时无法返回全服位次。" };
+    return { message: code === 102 ? $t("lib.rank-statistics.text_d7c3dc23dc") :
+      typeof code === "number" && messages[code] ? messages[code]! : $t("lib.rank-statistics.text_1ba99e337c") };
   }
   const rank = sampleCount(row.rank);
   const amount = score(row.score);
-  return rank && amount !== undefined ? { rank, score: amount } : { message: "排名服务返回的全服位次不完整。" };
+  return rank && amount !== undefined ? { rank, score: amount } : { message: $t("lib.rank-statistics.text_5ff203d38f") };
 }
 
 export async function queryPublicDamageRank(message: string, game: RankGame,
@@ -164,12 +167,12 @@ export async function queryPublicDamageRank(message: string, game: RankGame,
   if (!match || signal.aborted) return;
   const prefix = game === "gs" ? "#" : "*";
   if (!match.query) return game === "gs" || match.explicitGame
-    ? `用法：${prefix}角色排名 角色名 UID` : undefined;
+    ? $t("lib.rank-statistics.text_d61fe85c56", { "prefix": prefix }) : undefined;
   const character = await resolve(match.query.name);
   if (signal.aborted) return;
-  if (!character) return match.explicitGame ? "找不到该游戏的角色。请检查角色名和 UID。" : undefined;
+  if (!character) return match.explicitGame ? $t("lib.rank-statistics.text_432a4691b0") : undefined;
   const result = await fetchPublicDamageRank(match.query.uid, character.id, signal, transport);
   if (signal.aborted) return;
   return "message" in result ? result.message :
-    `UID ${match.query.uid} 的${character.name}全服伤害排名为 ${result.rank}，伤害评分 ${result.score.toFixed(2)}。`;
+    $t("lib.rank-statistics.text_244a149bbc", { "uid": match.query.uid, "name": character.name, "rank": result.rank, "value4": result.score.toFixed(2) });
 }

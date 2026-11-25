@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { createProfileStore } from "@lotus-yunzai/account";
 import { renderStatusCard } from "@lotus-yunzai/skia/status-card";
 import { appendPrivateAuditLine } from "./checkin-audit.ts";
@@ -16,9 +19,9 @@ interface GroupCleanupOptions {
 }
 
 const command = "#群清理退群";
-const title = "群配置清理";
+const title = $t("lib.group-cleanup-commands.text_04ee73e15c");
 const args = /^(\d{1,19})(?:\s+(\d{1,16}))?$/u;
-const denied = "当前会话没有群配置清理权限。";
+const denied = $t("lib.group-cleanup-commands.text_c2cbcdc304");
 
 export function groupCleanupCommands({ profiles, auditPath, readConfig, isMaster, activeSignal, render = renderStatusCard }: GroupCleanupOptions): CommandModule {
   return {
@@ -62,16 +65,16 @@ export function groupCleanupCommands({ profiles, auditPath, readConfig, isMaster
         }
 
         const settings = await authorized();
-        if (!settings) return signal.aborted ? "" : reply("拒绝", denied);
+        if (!settings) return signal.aborted ? "" : reply($t("lib.group-cleanup-commands.text_136de7a8c4"), denied);
         const match = args.exec(argument.trim());
         const qq = match?.[1];
         const groupId = match?.[2] === undefined ? group_id : Number(match[2]);
         if (!qq || (groupId !== undefined && (!Number.isSafeInteger(groupId) || groupId < 1))) {
-          return reply("失败", "请使用 #群清理退群 <用户QQ> [群号]。");
+          return reply($t("lib.group-cleanup-commands.text_28384d7afd"), $t("lib.group-cleanup-commands.text_78f91f8737"));
         }
 
         const ids = await profiles.listIds(qq).catch(() => undefined);
-        if (!ids) return reply("失败", "暂时无法读取用户档案。");
+        if (!ids) return reply($t("lib.group-cleanup-commands.text_28384d7afd"), $t("lib.group-cleanup-commands.text_08e56ba5cc"));
         const actions: { profileId: number; revision: string; planned: boolean; removed: boolean }[] = [];
         let unreadable = 0;
         for (const profileId of ids) {
@@ -102,7 +105,7 @@ export function groupCleanupCommands({ profiles, auditPath, readConfig, isMaster
         try {
           await audit(canTry ? "plan" : undefined);
         } catch {
-          return reply("失败", "无法写入群配置清理审计记录。");
+          return reply($t("lib.group-cleanup-commands.text_28384d7afd"), $t("lib.group-cleanup-commands.text_d47dc1c1c3"));
         }
 
         if (canTry) {
@@ -111,7 +114,7 @@ export function groupCleanupCommands({ profiles, auditPath, readConfig, isMaster
             const latest = await authorized();
             if (!roster || !roster.some(member => member.userId === self_id) || !roster.some(member => member.userId === user_id) ||
               roster.some(member => member.userId === qqNumber) || !latest || latest.dryRun || !latest.removeFallback ||
-              latest.archiveRequested) throw new Error("无法确认群通知回退变更");
+              latest.archiveRequested) throw new Error($t("lib.group-cleanup-commands.text_92713e37a1"));
           }
 
           for (const action of planned) {
@@ -127,20 +130,20 @@ export function groupCleanupCommands({ profiles, auditPath, readConfig, isMaster
             await audit("result");
           } catch {
             const count = actions.filter(action => action.removed).length;
-            return reply("失败", `已移除 ${count} 份群通知回退，结果审计写入失败，操作计划已保留。`, [], true);
+            return reply($t("lib.group-cleanup-commands.text_28384d7afd"), $t("lib.group-cleanup-commands.text_18cab136d0", { "count": count }), [], true);
           }
         }
 
         const removed = actions.filter(action => action.removed).length;
-        const note = settings.archiveRequested ? "其他群与私聊状态尚未核实，档案归档仅预览。"
-          : removed ? "清理结果已写入审计。"
-          : canTry ? "未确认目标已离群或档案已变更，保留回退设置。"
-          : "已写入清理预览。";
-        return reply(removed ? "完成" : "预览", note, [
-          `用户　${qq}`, `群　${groupId ?? "未知"}`, `档案　${ids.length}`,
-          `拟移除群通知回退　${planned.length}`, ...(removed ? [`已移除群通知回退　${removed}`] : []),
-          "归档档案　0", ...(unreadable ? [`无法读取　${unreadable}`] : []),
-          ...(removed && removed < planned.length ? [`未确认　${planned.length - removed}`] : []),
+        const note = settings.archiveRequested ? $t("lib.group-cleanup-commands.text_06fc08ca6f")
+          : removed ? $t("lib.group-cleanup-commands.text_9652dbffab")
+          : canTry ? $t("lib.group-cleanup-commands.text_4687886b7c")
+          : $t("lib.group-cleanup-commands.text_7a7eca527e");
+        return reply(removed ? $t("lib.group-cleanup-commands.text_c0b3fbff51") : $t("lib.group-cleanup-commands.text_13d61fea9f"), note, [
+          $t("lib.group-cleanup-commands.text_d089566658", { "qq": qq }), $t("lib.group-cleanup-commands.text_8344f202e3", { "value1": groupId ?? $t("lib.group-cleanup-commands.text_4d8c1c5b42") }), $t("lib.group-cleanup-commands.text_7a5bcd0c2d", { "length": ids.length }),
+          $t("lib.group-cleanup-commands.text_c98da239de", { "length": planned.length }), ...(removed ? [$t("lib.group-cleanup-commands.text_d830134e0f", { "removed": removed })] : []),
+          $t("lib.group-cleanup-commands.text_bafd8576e3"), ...(unreadable ? [$t("lib.group-cleanup-commands.text_9b4888c8af", { "unreadable": unreadable })] : []),
+          ...(removed && removed < planned.length ? [$t("lib.group-cleanup-commands.text_d1dd078a20", { "value1": planned.length - removed })] : []),
         ], true);
       },
     },

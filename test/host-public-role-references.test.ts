@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -185,7 +186,7 @@ test("两个真实宿主网关只让好友管理自身公开引用，三游戏�
       "https://enka.network/api/zzz/uid/82000042", "https://profile.microgg.cn/api/uid/100000044", "https://profile.microgg.cn/api/uid/100000042",
     ]);
   }, 3_000, preload, async root => {
-    await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+    await linkHostPackages(root);
     for (const plugin of ["genshin", "starrail", "zzz"]) {
       const source = join(import.meta.dir, "../plugins", plugin);
       const target = join(root, "plugins", plugin);

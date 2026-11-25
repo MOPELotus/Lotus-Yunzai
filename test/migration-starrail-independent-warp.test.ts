@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -83,7 +84,7 @@ test.skipIf(!executable)("普通迁移自动归档独立星铁并在真实宿主
       };
     `, async target => {
       await put(target, "package.json", '{"name":"lotus-yunzai"}');
-      await symlink(join(import.meta.dir, "../packages"), join(target, "packages"), "dir");
+      await linkHostPackages(target);
       const stars = join(target, "plugins/starrail");
       await cp(new URL("../plugins/starrail", import.meta.url), stars, {
         recursive: true, filter: path => !/\/(?:\.git|node_modules|test|resources|LICENSES)(?:\/|$)/u.test(path),

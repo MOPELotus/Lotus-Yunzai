@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { dlopen } from "bun:ffi";
 import { join, win32 } from "node:path";
 
@@ -21,7 +24,7 @@ function kernelLibrary() {
 
 let kernel: ReturnType<typeof kernelLibrary> | undefined;
 function api() {
-  if (process.platform !== "win32" || !["x64", "arm64"].includes(process.arch)) throw new Error("当前宿主不支持 Windows 运维。");
+  if (process.platform !== "win32" || !["x64", "arm64"].includes(process.arch)) throw new Error($t("lib.remote-win32.text_069c713286"));
   return (kernel ??= kernelLibrary()).symbols;
 }
 
@@ -62,15 +65,15 @@ export function windowsRemoteAdministrator(): boolean {
 export function windowsRemoteJob(pid: number) {
   const native = api();
   const job = native.CreateJobObjectW(null, null);
-  if (job === 0n) throw new Error("无法创建 Windows 远程进程作业。");
+  if (job === 0n) throw new Error($t("lib.remote-win32.text_0254772e4d"));
   try {
     const limits = Buffer.alloc(144); // JOBOBJECT_EXTENDED_LIMIT_INFORMATION on Win64.
     limits.writeUInt32LE(0x00002000, 16); // BasicLimitInformation.LimitFlags = KILL_ON_JOB_CLOSE.
-    if (!native.SetInformationJobObject(job, 9, limits, limits.length)) throw new Error("无法限制远程进程作业。");
+    if (!native.SetInformationJobObject(job, 9, limits, limits.length)) throw new Error($t("lib.remote-win32.text_7cf1c47d64"));
     const processHandle = native.OpenProcess(0x0101, 0, pid); // SET_QUOTA | TERMINATE.
-    if (processHandle === 0n) throw new Error("无法打开远程命令进程。");
+    if (processHandle === 0n) throw new Error($t("lib.remote-win32.text_18c3d77d8b"));
     try {
-      if (!native.AssignProcessToJobObject(job, processHandle)) throw new Error("无法派发远程进程作业。");
+      if (!native.AssignProcessToJobObject(job, processHandle)) throw new Error($t("lib.remote-win32.text_9924f2003f"));
     } finally {
       native.CloseHandle(processHandle);
     }
@@ -92,14 +95,14 @@ function pinPath(path: string, directory: boolean) {
   const wide = Buffer.from(path + "\u0000", "utf16le");
   // Read only the attributes and withhold write and delete sharing throughout the operation.
   const handle = native.CreateFileW(wide, 0x0080, 0x00000001, null, 3, 0x02200000, 0n);
-  if (handle === 0xffffffffffffffffn || handle === 0n) throw new Error("无法打开受保护的运维路径。");
+  if (handle === 0xffffffffffffffffn || handle === 0n) throw new Error($t("lib.remote-win32.text_7cb95becc5"));
   const info = Buffer.alloc(52);
   try {
-    if (!native.GetFileInformationByHandle(handle, info)) throw new Error("无法核对运维路径。");
+    if (!native.GetFileInformationByHandle(handle, info)) throw new Error($t("lib.remote-win32.text_ac1b3603cd"));
     const attributes = info.readUInt32LE();
     if ((attributes & 0x0400) !== 0 || ((attributes & 0x0010) !== 0) !== directory ||
         !directory && info.readUInt32LE(40) !== 1) {
-      throw new Error("运维路径不能使用链接或重解析点。");
+      throw new Error($t("lib.remote-win32.text_2018b3238a"));
     }
   } catch (error) {
     native.CloseHandle(handle);
@@ -112,7 +115,7 @@ export async function withWindowsRemotePath<T>(
   root: string, parts: readonly string[], name: string, read: boolean, access: (path: string, name: string) => Promise<T>,
 ) {
   const drive = win32.parse(root).root;
-  if (!/^[A-Za-z]:\\$/u.test(drive)) throw new Error("运维文件仅支持 Windows 本地盘。");
+  if (!/^[A-Za-z]:\\$/u.test(drive)) throw new Error($t("lib.remote-win32.text_315f66ca54"));
   const release: (() => unknown)[] = [];
   let directory = drive;
   try {
@@ -136,7 +139,7 @@ function wideString(value: string) {
 function fromNativeWideString(pointer: bigint) {
   const native = api();
   const length = native.lstrlenW(pointer);
-  if (length < 1 || length > 16_384) throw new Error("Windows 安全描述符无效。");
+  if (length < 1 || length > 16_384) throw new Error($t("lib.remote-win32.text_6be5061e8a"));
   const buffer = Buffer.alloc(length * 2);
   native.RtlMoveMemory(buffer, pointer, BigInt(buffer.length));
   return buffer.toString("utf16le");
@@ -144,18 +147,18 @@ function fromNativeWideString(pointer: bigint) {
 
 function hostSid(security: ReturnType<typeof securityLibrary>["symbols"]) {
   const token = Buffer.alloc(8);
-  if (!security.OpenProcessToken(0xffffffffffffffffn, 0x0008, token)) throw new Error("无法读取 Windows 运行账号。");
+  if (!security.OpenProcessToken(0xffffffffffffffffn, 0x0008, token)) throw new Error($t("lib.remote-win32.text_552c016022"));
   const handle = token.readBigUInt64LE();
   const native = api();
   try {
     const required = Buffer.alloc(4);
     security.GetTokenInformation(handle, 1, null, 0, required);
     const size = required.readUInt32LE();
-    if (size < 16 || size > 16_384) throw new Error("Windows 运行账号无效。");
+    if (size < 16 || size > 16_384) throw new Error($t("lib.remote-win32.text_3d886b8440"));
     const information = Buffer.alloc(size);
-    if (!security.GetTokenInformation(handle, 1, information, size, required)) throw new Error("无法读取 Windows 运行账号。");
+    if (!security.GetTokenInformation(handle, 1, information, size, required)) throw new Error($t("lib.remote-win32.text_552c016022"));
     const stringPointer = Buffer.alloc(8);
-    if (!security.ConvertSidToStringSidW(information.readBigUInt64LE(), stringPointer)) throw new Error("无法识别 Windows 运行账号。");
+    if (!security.ConvertSidToStringSidW(information.readBigUInt64LE(), stringPointer)) throw new Error($t("lib.remote-win32.text_c5fd9568cf"));
     const pointer = stringPointer.readBigUInt64LE();
     try { return fromNativeWideString(pointer); }
     finally { native.LocalFree(pointer); }
@@ -174,7 +177,7 @@ export function protectWindowsRemoteAuth(path: string, create: boolean, director
     function descriptorString(descriptor: bigint) {
       const output = Buffer.alloc(8);
       if (!security.ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor, 1, 5, output, null)) {
-        throw new Error("无法核对 Windows 运维配对权限。");
+        throw new Error($t("lib.remote-win32.text_7e9e709baa"));
       }
       const text = output.readBigUInt64LE();
       try { return fromNativeWideString(text); }
@@ -184,7 +187,7 @@ export function protectWindowsRemoteAuth(path: string, create: boolean, director
     const descriptor = Buffer.alloc(8);
     if (!security.ConvertStringSecurityDescriptorToSecurityDescriptorW(
       wideString(`O:${sid}D:P(A;${directory ? "OICI" : ""};FA;;;${sid})`), 1, descriptor, null,
-    )) throw new Error("无法准备 Windows 运维配对权限。");
+    )) throw new Error($t("lib.remote-win32.text_f8585c74c3"));
     const expected = descriptor.readBigUInt64LE();
     try {
       if (create) {
@@ -206,24 +209,24 @@ export function protectWindowsRemoteAuth(path: string, create: boolean, director
           if (!security.GetSecurityDescriptorDacl(expected, exists, acl, Buffer.alloc(4)) ||
               !exists.readInt32LE() || security.SetNamedSecurityInfoW(target, 1, 0x80000004,
                 0n, 0n, acl.readBigUInt64LE(), 0n) !== 0) {
-            throw new Error("无法设置 Windows 运维配对权限。");
+            throw new Error($t("lib.remote-win32.text_adabe4147a"));
           }
         } else if (native.GetLastError() !== 183) {
-          throw new Error(directory ? "无法建立 Windows 运维配对目录。" : "无法建立 Windows 运维配对数据库。");
+          throw new Error(directory ? $t("lib.remote-win32.text_3daa61fa5c") : $t("lib.remote-win32.text_ae24a3729b"));
         }
       }
       const actual = Buffer.alloc(8);
       const release = pinPath(path, directory);
       try {
         if (security.GetNamedSecurityInfoW(target, 1, 5, null, null, null, null, actual) !== 0) {
-          throw new Error("无法读取 Windows 运维配对权限。");
+          throw new Error($t("lib.remote-win32.text_a970516d56"));
         }
         const current = actual.readBigUInt64LE();
         try {
           const normalized = (text: string) => text.replace(/D:[A-Z]*/u, "D:");
           const value = descriptorString(current);
           if (!/D:P/u.test(value) || normalized(value) !== normalized(descriptorString(expected))) {
-            throw new Error(directory ? "Windows 运维配对目录的权限过宽。" : "Windows 运维配对数据库的权限过宽。");
+            throw new Error(directory ? $t("lib.remote-win32.text_e07db4f5dd") : $t("lib.remote-win32.text_16c28fbbff"));
           }
         } finally {
           native.LocalFree(current);

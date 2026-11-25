@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { challengeReminderConfigFile, projectChallengeReminderConfig } from "../plugins/zzz/challenge-reminder-store.ts";
@@ -12,7 +15,7 @@ async function readSettings(root: string, file: string, signal?: AbortSignal) {
   if (value == null) return {};
   if (typeof value !== "object" || Array.isArray(value) ||
       ("enable" in value && typeof value.enable !== "boolean")) {
-    throw new Error("绝区零挑战提醒配置须为 YAML 映射，enable 须为布尔值。");
+    throw new Error($t("lib.migration-zzz-challenge-reminder.text_80cc9de792"));
   }
   return value;
 }
@@ -35,7 +38,7 @@ export async function stageLegacyZzzChallengeReminder(source: string, archive: s
   const directory = join(stage, "config");
   await mkdir(directory, { mode: 0o700, recursive: true });
   if (!(await lstat(directory)).isDirectory() || await realpath(directory) !== directory) {
-    throw new Error("绝区零挑战提醒的暂存路径须为实体目录。");
+    throw new Error($t("lib.migration-zzz-challenge-reminder.text_9cfc184ba2"));
   }
   signal?.throwIfAborted();
   await writeFile(join(stage, challengeReminderConfigFile), Bun.YAML.stringify(record), { flag: "wx", mode: 0o600 });

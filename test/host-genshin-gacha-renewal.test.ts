@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -83,7 +84,7 @@ async function prepare(root: string) {
   const target = join(root, "plugins/genshin");
   await cp(source, target, { recursive: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });
   await symlink(join(source, "node_modules"), join(target, "node_modules"), "dir");
-  await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+  await linkHostPackages(root);
   await mkdir(join(root, "profiles"), { recursive: true });
   for (const [qq, id, account] of profiles) {
     const uid = uids[account];

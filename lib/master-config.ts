@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants, renameSync } from "node:fs";
 import { mkdtemp, open, realpath, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -34,14 +37,14 @@ async function effectiveFile(root: URL): Promise<string> {
       if (errno(error) !== "ENOENT") throw error;
     }
   }
-  throw new Error("请先在本机配置 other.yaml 并设置主人授权。");
+  throw new Error($t("lib.master-config.text_6009ff8931"));
 }
 
 async function readSnapshot(file: string) {
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await handle.stat();
-    if (!stat.isFile()) throw new Error("主人配置须为普通 YAML 文件。");
+    if (!stat.isFile()) throw new Error($t("lib.master-config.text_8930ae6797"));
     return { stat, bytes: await handle.readFile() };
   } finally {
     await handle.close();
@@ -61,7 +64,7 @@ function readDocument(text: string) {
     if ([...ownerFields].some((key) => !isDeepStrictEqual(values.get(key), config[key]))) throw new Error();
     return { document, values: values as Map<unknown, unknown>, config, text };
   } catch {
-    throw new Error("主人配置的 YAML 无效。");
+    throw new Error($t("lib.master-config.text_bf3bf51eb8"));
   }
 }
 
@@ -95,9 +98,9 @@ async function editOtherConfig<T>(
   const file = await effectiveFile(root);
   const database = await lockFile(join(dirname(file), `.${basename(file)}.lotus-master.sqlite`), "other.yaml");
   try {
-    if (await effectiveFile(root) !== file) throw new Error("other.yaml 的配置位置已变更。");
+    if (await effectiveFile(root) !== file) throw new Error($t("lib.master-config.text_6055e445f4"));
     const current = await readSnapshot(file);
-    if (isCurrent && !isCurrent()) throw new Error("配置写入会话已失效。");
+    if (isCurrent && !isCurrent()) throw new Error($t("lib.master-config.text_06ca515d7e"));
     const edit = await mutate(readDocument(current.bytes.toString("utf8")));
     const { yaml } = edit;
     if (yaml === undefined) return edit.result;
@@ -117,15 +120,15 @@ async function editOtherConfig<T>(
         await output.close();
       }
 
-      if (await effectiveFile(root) !== file) throw new Error("other.yaml 的配置位置已变更。");
+      if (await effectiveFile(root) !== file) throw new Error($t("lib.master-config.text_6055e445f4"));
       const latest = await readSnapshot(file);
       if (current.stat.ino !== latest.stat.ino || current.stat.dev !== latest.stat.dev ||
           current.stat.mode !== latest.stat.mode || current.stat.uid !== latest.stat.uid ||
           current.stat.gid !== latest.stat.gid || !current.bytes.equals(latest.bytes)) {
-        throw new Error("other.yaml 已变更。");
+        throw new Error($t("lib.master-config.text_37bf3232ec"));
       }
       // Keep the final session check and config replacement in the same event-loop turn.
-      if (isCurrent && !isCurrent()) throw new Error("配置写入会话已失效。");
+      if (isCurrent && !isCurrent()) throw new Error($t("lib.master-config.text_06ca515d7e"));
       renameSync(staged, file);
       return edit.result;
     } finally {
@@ -140,17 +143,17 @@ export async function persistMaster(
   root: URL, bot: number, user: number, approver: number | "stdin", isCurrent?: () => boolean,
 ): Promise<Record<string, unknown>> {
   if (!isId(bot) || !isId(user) || (approver !== "stdin" && !isId(approver))) {
-    throw new Error("主人授权须指定有效的机器人与 QQ 账号。");
+    throw new Error($t("lib.master-config.text_79e8ffbcd2"));
   }
 
   return editOtherConfig(root, ({ document, values, config }) => {
     const masters = valuesOf(config.master);
     if (!masters.every((entry) => typeof entry === "string" && ownerPair.test(entry.trim()))) {
-      throw new Error("主人配置包含无效账号绑定。");
+      throw new Error($t("lib.master-config.text_4cffc90bd3"));
     }
     const authorization = approver === "stdin" ? "stdin:stdin" : `${bot}:${approver}`;
     if (!masters.some((entry) => typeof entry === "string" && entry.trim() === authorization)) {
-      throw new Error("当前操作者未获得这台机器人的主人授权。");
+      throw new Error($t("lib.master-config.text_4dd06df728"));
     }
 
     const owner = `${bot}:${user}`;
@@ -167,7 +170,7 @@ export async function persistMaster(
     if (!isDeepStrictEqual(unknownFields(values), unknownFields(next.values)) ||
         !isDeepStrictEqual(valuesOf(next.config.master), alreadyMaster ? masters : [...masters, owner]) ||
         !isDeepStrictEqual(valuesOf(next.config.masterQQ), alreadyLegacy ? legacy : [...legacy, user])) {
-      throw new Error("写入主人配置将改变其他 YAML 字段或引用。");
+      throw new Error($t("lib.master-config.text_b1de7c1510"));
     }
 
     return { result: next.config, yaml };
@@ -186,7 +189,7 @@ type ListResult = Added | "removed" | "missing";
 function replaceListText(text: string, oldNode: Node | undefined, document: ReturnType<typeof readDocument>["document"], key: HostAccessList) {
   const rendered = document.toString();
   const nextNode = parseDocument(rendered).get(key, true);
-  if (!isSeq(nextNode) || !nextNode.range) throw new Error("无法写入全局名单。");
+  if (!isSeq(nextNode) || !nextNode.range) throw new Error($t("lib.master-config.text_9c92156a62"));
   const [newStart, newEnd] = nextNode.range;
   const value = rendered.slice(newStart, newEnd);
   const eol = text.includes("\r\n") ? "\r\n" : "\n";
@@ -221,10 +224,10 @@ function editAccessList(root: URL, key: HostAccessList, target: number, remove: 
   isCurrent: () => boolean, owner?: string): Promise<ListResult>;
 function editAccessList(root: URL, key: HostAccessList, target: number, remove: boolean,
   isCurrent: () => boolean, owner?: string): Promise<ListResult> {
-  if (!isId(target)) throw new Error("全局名单须指定有效的 QQ 账号或群号。");
+  if (!isId(target)) throw new Error($t("lib.master-config.text_2ffc298e74"));
   return editOtherConfig<ListResult>(root, ({ document, values, config, text }) => {
     if (owner && !valuesOf(config.master).some(entry => typeof entry === "string" && entry.trim() === owner)) {
-      throw new Error("当前操作者未获得这台机器人的主人授权。");
+      throw new Error($t("lib.master-config.text_4dd06df728"));
     }
     if (key === "blackUser" && !remove && (valuesOf(config.masterQQ).some(entry => configuredId(entry) === target) ||
         valuesOf(config.master).some(entry => typeof entry === "string" && ownerPair.test(entry.trim()) &&
@@ -235,7 +238,7 @@ function editAccessList(root: URL, key: HostAccessList, target: number, remove: 
     const entries = valuesOf(config[key]);
     if (!isDeepStrictEqual(values.get(key), config[key]) ||
         !entries.every(entry => configuredId(entry) !== undefined)) {
-      throw new Error(`other.yaml 的 ${key} 包含无效账号或引用。`);
+      throw new Error($t("lib.master-config.text_cb26b281db", { "key": key }));
     }
     const remaining = entries.filter(entry => configuredId(entry) !== target);
     if (remove && remaining.length === entries.length) return { result: "missing" };
@@ -254,7 +257,7 @@ function editAccessList(root: URL, key: HostAccessList, target: number, remove: 
         sequence.spaceBefore = node.spaceBefore;
         document.set(key, sequence);
       } else {
-        throw new Error("无法安全修改全局名单的 YAML 引用。");
+        throw new Error($t("lib.master-config.text_48a6298fc3"));
       }
     } else {
       append(document, key, entries, target);
@@ -267,7 +270,7 @@ function editAccessList(root: URL, key: HostAccessList, target: number, remove: 
     if (!isDeepStrictEqual(otherFields(values), otherFields(next.values)) ||
         !isDeepStrictEqual(next.values.get(key), next.config[key]) ||
         !isDeepStrictEqual(next.config[key], remove ? remaining : [...entries, target])) {
-      throw new Error("写入全局黑名单将改变其他 YAML 字段或引用。");
+      throw new Error($t("lib.master-config.text_96e359181a"));
     }
     return { result: remove ? "removed" : "added", yaml };
   }, isCurrent);
@@ -279,7 +282,7 @@ export function appendBlackUser(root: URL, user: number, isCurrent: () => boolea
 
 export function updateHostAccessList(root: URL, key: HostAccessList, target: number, remove: boolean,
   actor: { botId: number; userId: number } | "stdin", isCurrent: () => boolean) {
-  if (actor !== "stdin" && (!isId(actor.botId) || !isId(actor.userId))) throw new Error("主人会话无效。");
+  if (actor !== "stdin" && (!isId(actor.botId) || !isId(actor.userId))) throw new Error($t("lib.master-config.text_2a04f8e58b"));
   const owner = actor === "stdin" ? "stdin:stdin" : `${actor.botId}:${actor.userId}`;
   return editAccessList(root, key, target, remove, isCurrent, owner);
 }
@@ -311,18 +314,18 @@ export function saveHostIngressSettings(root: URL, previous: HostIngressSettings
     const legacy = files[0] === undefined && files[1] !== undefined;
     const withEditedConfig = (changed: Readonly<Record<string, unknown>>): OtherPolicyFiles =>
       legacy ? [undefined, changed] : [changed, files[1]];
-    if (!isDeepStrictEqual(files[0] ?? files[1], config)) throw new HostIngressSettingsError("conflict", "配置已变更，请重新载入。");
+    if (!isDeepStrictEqual(files[0] ?? files[1], config)) throw new HostIngressSettingsError("conflict", $t("lib.master-config.text_25e15da9b2"));
     const current = hostIngressSettings(files);
-    if (!isDeepStrictEqual(current, previous)) throw new HostIngressSettingsError("conflict", "配置已变更，请重新载入。");
+    if (!isDeepStrictEqual(current, previous)) throw new HostIngressSettingsError("conflict", $t("lib.master-config.text_25e15da9b2"));
     if (legacy && next.autoGroup === "off") {
-      throw new HostIngressSettingsError("invalid", "旧配置的自动群邀请支持仅同意主人或同意所有人。");
+      throw new HostIngressSettingsError("invalid", $t("lib.master-config.text_f3ac6a4040"));
     }
     const blocked = next.blackUser.filter(id => !current.blackUser.includes(id));
     if (blocked.length && (
       [...configuredIds(config.masterQQ)].some(id => blocked.includes(String(id))) ||
       valuesOf(config.master).some(entry => typeof entry === "string" && ownerPair.test(entry.trim()) &&
         blocked.some(id => entry.trim().endsWith(`:${id}`)))
-    )) throw new HostIngressSettingsError("invalid", "不能把已配置的主人加入用户黑名单。");
+    )) throw new HostIngressSettingsError("invalid", $t("lib.master-config.text_4dc8e6c941"));
 
     const changed = hostIngressKeys.filter(key => !isDeepStrictEqual(current[key], next[key]));
     if (!changed.length) return { result: { values: current, legacy } };
@@ -348,12 +351,12 @@ export function saveHostIngressSettings(root: URL, previous: HostIngressSettings
     if (!isDeepStrictEqual(untouched(values), untouched(saved.values)) ||
         !isDeepStrictEqual(runtime(config), runtime(saved.config)) ||
         !isDeepStrictEqual(hostIngressSettings(withEditedConfig(saved.config)), next)) {
-      throw new Error("配置保存会改变其它 YAML 字段或引用。");
+      throw new Error($t("lib.master-config.text_a3440b0dc2"));
     }
     const changedPatterns = changed.includes("disableAdopt");
     if (changedPatterns || changed.includes("disablePrivate")) {
       try { privateAccessPolicy(changedPatterns ? { ...saved.config, disablePrivate: true } : saved.config); }
-      catch { throw new HostIngressSettingsError("invalid", "现有私聊放行规则无法解析，请先修正配置。"); }
+      catch { throw new HostIngressSettingsError("invalid", $t("lib.master-config.text_f78286ecaf")); }
     }
     return { result: { values: next, legacy }, yaml };
   }, isCurrent);

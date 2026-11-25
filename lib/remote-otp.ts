@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { Database } from "bun:sqlite";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { lstatSync, mkdirSync, openSync, closeSync, readFileSync } from "node:fs";
@@ -21,7 +24,7 @@ function state(root: string, create: boolean): Database | undefined {
   const dir = lstatSync(directory, { throwIfNoEntry: false });
   if (!dir) return;
   if (!dir.isDirectory() || (process.platform !== "win32" && (dir.mode & 0o077) !== 0)) {
-    throw new Error("远程身份验证目录必须仅当前系统用户可读写。");
+    throw new Error($t("lib.remote-otp.text_12591da8dd"));
   }
   if (windows && !create) protectWindowsRemoteAuth(directory, false, true);
   const path = join(directory, "otp.sqlite");
@@ -33,7 +36,7 @@ function state(root: string, create: boolean): Database | undefined {
   const file = lstatSync(path, { throwIfNoEntry: false });
   if (!file) return;
   if (!file.isFile() || (process.platform !== "win32" && (file.mode & 0o077) !== 0)) {
-    throw new Error("远程身份验证数据库必须是当前系统用户专用的普通文件。");
+    throw new Error($t("lib.remote-otp.text_dfc6002494"));
   }
 
   if (windows && !create) protectWindowsRemoteAuth(path, false, false);
@@ -70,11 +73,11 @@ function base32(secret: Buffer) {
 
 function saveSecret(root: string, secret: Buffer, replace: boolean, counter: number) {
   const database = state(root, true);
-  if (!database) throw new Error("无法打开远程身份验证数据库。");
+  if (!database) throw new Error($t("lib.remote-otp.text_9a96d1f7f1"));
   try {
     database.transaction(() => {
       if (!replace && database.query("SELECT 1 FROM remote_otp WHERE id = 1").get()) {
-        throw new Error("远程身份验证已配对。更换验证器请使用 reset。");
+        throw new Error($t("lib.remote-otp.text_d352a35dd7"));
       }
       database.run("INSERT OR REPLACE INTO remote_otp (id, secret, last_counter) VALUES (1, ?, ?)", [secret, counter]);
     }).immediate();
@@ -98,15 +101,15 @@ export function rotateRemoteOtp(root: string, replace: boolean) {
 
 export function importLegacyRemoteOtp(root: string, path: string, now = Date.now()) {
   const file = lstatSync(path);
-  if (!file.isFile() || file.size < 1 || file.size > 4_096) throw new Error("旧配对文件无效。");
+  if (!file.isFile() || file.size < 1 || file.size > 4_096) throw new Error($t("lib.remote-otp.text_f4680ce918"));
   const source = readFileSync(path);
   try {
-    if (source.length > 4_096) throw new Error("旧配对文件无效。");
+    if (source.length > 4_096) throw new Error($t("lib.remote-otp.text_f4680ce918"));
     const parsed: unknown = Bun.YAML.parse(source.toString("utf8"));
     if (!parsed || typeof parsed !== "object" || !("version" in parsed) || parsed.version !== 1 ||
-        !("secret" in parsed) || typeof parsed.secret !== "string") throw new Error("旧配对文件无效。");
+        !("secret" in parsed) || typeof parsed.secret !== "string") throw new Error($t("lib.remote-otp.text_f4680ce918"));
     const text = parsed.secret.replace(/\s+/gu, "").replace(/=+$/u, "").toUpperCase();
-    if (!/^[A-Z2-7]{32}$/u.test(text)) throw new Error("旧配对密钥无效。");
+    if (!/^[A-Z2-7]{32}$/u.test(text)) throw new Error($t("lib.remote-otp.text_303146cccc"));
     const secret = Buffer.alloc(20);
     let bits = 0;
     let pending = 0;

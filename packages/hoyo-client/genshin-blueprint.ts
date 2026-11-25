@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { normalizeProfileRoleArtworkUrl, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -26,7 +29,7 @@ export interface GenshinBlueprint {
 }
 
 function invalid(): never {
-  throw new HoyoRequestError("response", "官方尘歌壶模数响应中的摆设或材料无效。");
+  throw new HoyoRequestError("response", $t("genshin-blueprint.text_c7bcc8d301"));
 }
 
 function rows(data: Json) {
@@ -59,9 +62,9 @@ export function createGenshinBlueprintReader() {
     const { uid } = source.role;
     const region = genshinCnRecordRegion(source.role);
     if (source.game !== "gs" || !region) {
-      throw new HoyoRequestError("invalid-input", "尘歌壶模数计算仅支持当前档案中已确认的国服原神角色。");
+      throw new HoyoRequestError("invalid-input", $t("genshin-blueprint.text_8552020fa7"));
     }
-    if (!/^\d{10,15}$/u.test(code)) throw new HoyoRequestError("invalid-input", "尘歌壶模数须为 10 到 15 位数字。");
+    if (!/^\d{10,15}$/u.test(code)) throw new HoyoRequestError("invalid-input", $t("genshin-blueprint.text_1b5e488ddf"));
     if (!verified || verified.code !== code || verified.uid !== uid || verified.region !== region) {
       const query = new URLSearchParams({ share_code: code, region });
       const blueprint = await requestGenshinCalculator(source, transport, kind, "v1/furniture/blueprint", { query, signal, verifyProfile });

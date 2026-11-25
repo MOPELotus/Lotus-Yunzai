@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("storage", messageCatalog.messages);
 import { createClient } from "redis";
 
 export { createRoleJsonArchive, type AcquireRoleArchiveLock } from "./role-json-archive.ts";
@@ -22,12 +25,12 @@ interface StorageSession {
 let session: StorageSession | undefined;
 
 export async function connectStorage(connection: string | StorageConnectionOptions): Promise<RedisClient> {
-  if (session) throw new Error("Valkey 已配置或正在关闭。");
+  if (session) throw new Error($t("index.text_96ddf52dec"));
 
   if (typeof connection === "string") {
     const protocol = URL.parse(connection)?.protocol;
     if (protocol !== "redis:" && protocol !== "rediss:") {
-      throw new Error("LOTUS_VALKEY_URL 须为有效的 redis:// 或 rediss:// 地址。");
+      throw new Error($t("index.text_c2a67d60e9"));
     }
   }
 
@@ -36,7 +39,7 @@ export async function connectStorage(connection: string | StorageConnectionOptio
   session = current;
   try {
     const client = await current.ready;
-    if (current.closing) throw new Error("Valkey 正在关闭。");
+    if (current.closing) throw new Error($t("index.text_9b762f9623"));
     current.client = client;
     return client;
   } catch (error) {
@@ -49,14 +52,14 @@ async function open(connection: string | StorageConnectionOptions, socketSignal:
   let redis: RedisClient | undefined;
   try {
     redis = createStorageClient(connection, socketSignal);
-    redis.on("error", () => console.warn("[存储] Valkey 连接异常。"));
+    redis.on("error", () => console.warn($t("index.text_ef485ac630")));
     await redis.connect();
     await redis.ping();
     return redis;
   } catch {
     if (redis?.isOpen) await redis.disconnect().catch(() => undefined);
-    throw new Error(typeof connection === "string" ? "Valkey 连接失败，请检查服务状态和 LOTUS_VALKEY_URL。"
-      : "Valkey 连接失败，请检查服务状态和连接配置。");
+    throw new Error(typeof connection === "string" ? $t("index.text_f85a63af87")
+      : $t("index.text_c0aa39e7ee"));
   }
 }
 
@@ -81,7 +84,7 @@ export function createStorageClient(connection: string | StorageConnectionOption
  * listener can otherwise unlink an already-completed command during shutdown. */
 export function readStorageCommand<T = unknown>(redis: Pick<RedisClient, "sendCommand">,
   args: readonly string[], signal?: AbortSignal): Promise<T> {
-  if (!["INFO", "PING"].includes(args[0]?.toUpperCase() ?? "")) return Promise.reject(new Error("只读存储探测仅支持 INFO 或 PING。"));
+  if (!["INFO", "PING"].includes(args[0]?.toUpperCase() ?? "")) return Promise.reject(new Error($t("index.text_5a06284717")));
   if (signal?.aborted) return Promise.reject(signal.reason);
   const pending = redis.sendCommand<T>([...args]);
   if (!signal) return pending;
@@ -109,7 +112,7 @@ export function closeStorage(): Promise<void> {
             // Abort the transport, never command queue nodes. This also closes a
             // blocked QUIT after node-redis has already marked isOpen=false.
             current.socketLifetime.abort();
-            reject(new Error("Valkey 关闭超时，仍有在途命令或服务未响应。"));
+            reject(new Error($t("index.text_7b511db9f0")));
           }, 5_000);
         }),
       ]);
@@ -128,20 +131,20 @@ export type StorageWrite =
 
 export function storage(namespace: string) {
   if (!/^[a-z0-9][a-z0-9-]*$/u.test(namespace)) {
-    throw new Error("存储模块名须由小写字母、数字和连字符组成。");
+    throw new Error($t("index.text_61fea6f3ed"));
   }
   const redis = session?.closing ? undefined : session?.client;
-  if (!redis) throw new Error("存储未配置，请设置 LOTUS_VALKEY_URL 或 redis.yaml。");
+  if (!redis) throw new Error($t("index.text_64c85d0fd0"));
 
   function keyFor(key: string): string {
-    if (key.length === 0) throw new Error("存储键不能为空。");
+    if (key.length === 0) throw new Error($t("index.text_4e3278238c"));
     return `lotus-yunzai:${namespace}:${key}`;
   }
   function expiration(ttlSeconds?: number) {
     if (ttlSeconds === undefined) return undefined;
     if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds <= 0 ||
         ttlSeconds > Math.floor(Number.MAX_SAFE_INTEGER / 1000)) {
-      throw new Error("存储过期时间须为有效的正整数秒数。");
+      throw new Error($t("index.text_9cc662eb3b"));
     }
     return { EX: ttlSeconds };
   }

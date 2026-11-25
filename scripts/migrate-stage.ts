@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -121,11 +125,11 @@ export async function stageMigration(source: string, target: string, signal?: Ab
 if (import.meta.main) {
   const selected = migrationArguments(Bun.argv.slice(2), Bun.env.LOTUS_GENSHIN_TRSS_WISH_SNAPSHOT_URL);
   if (!selected) {
-    console.error("用法：bun run migrate:stage <旧安装快照路径> [--trss-wish-authorization 授权JSON]");
+    console.error($t("scripts.migrate-stage.text_1a94bcad5b"));
     process.exitCode = 2;
   } else {
     const controller = new AbortController();
-    const interrupt = () => controller.abort(new Error("迁移暂存已中止。"));
+    const interrupt = () => controller.abort(new Error($t("scripts.migrate-stage.text_e86f0eca13")));
     process.on("SIGINT", interrupt);
     process.on("SIGTERM", interrupt);
     try {
@@ -133,7 +137,7 @@ if (import.meta.main) {
       console.log(JSON.stringify(result, null, 2));
     } catch (error) {
       if (error instanceof Error && !("code" in error)) console.error(error.message);
-      else console.error("迁移暂存无法读取或保存所需文件。");
+      else console.error($t("scripts.migrate-stage.text_bcfefe06aa"));
       process.exitCode = 1;
     } finally {
       process.off("SIGINT", interrupt);

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { MessageEvent, QuotedMessage, RecallResult } from "./messages.ts";
 import type { QuotedGroupFileRemoval } from "./adapters/quoted-group-file.ts";
 
@@ -50,10 +53,10 @@ export const quotedRecallSessions = new WeakMap<MessageEvent, QuotedRecall>();
 export function groupRecallPermission(required: Permission, master: boolean, role: GroupRecallRole | undefined) {
   if (master || (role && (required === "all" || (role === "owner" && required !== "master") ||
       (role === "admin" && required === "admin")))) return true;
-  if (required === "master") return "该命令仅限主人可用。";
-  if (required === "owner") return "该命令仅限群主可用。";
-  if (required === "admin") return "该命令仅限群管理员可用。";
-  return "无法核实本群成员身份。";
+  if (required === "master") return $t("lib.quoted-recall.text_7f200c398c");
+  if (required === "owner") return $t("lib.quoted-recall.text_9dfb994097");
+  if (required === "admin") return $t("lib.quoted-recall.text_6e1d69a26d");
+  return $t("lib.quoted-recall.text_5b726e1593");
 }
 
 export function createQuotedRecall() {
@@ -92,7 +95,7 @@ export function createQuotedRecall() {
       try {
         const source = await scope.readQuote();
         if (!permitted()) return;
-        if (!source) return "无法核实当前会话的引用消息。";
+        if (!source) return $t("lib.quoted-recall.text_a47d8f7b72");
         if (imageMessageOnly && (!source.message.length || !source.message.every(part => part.type === "image"))) return;
         const bot = source.user_id === account;
         if (!group && !bot) return;
@@ -101,23 +104,23 @@ export function createQuotedRecall() {
         if (!permitted()) return;
         if (group && source.message[0]?.type === "file") {
           const file = scope.groupFile?.(source);
-          if (!file) return "无法核实引用的群文件。";
+          if (!file) return $t("lib.quoted-recall.text_111d15b7fb");
           const fileKey = `${chat}:${file.id}`;
           if (groupFiles.has(fileKey)) return;
           groupFiles.add(fileKey);
           try {
             const remove = await file.locate(permitted);
             if (!permitted()) return;
-            if (!remove) return "当前群文件目录没有可核实的对应文件。";
+            if (!remove) return $t("lib.quoted-recall.text_5f31cadf17");
             const currentAuthority = await authorize(bot, scope.readRole);
             if (!permitted()) return;
             if (currentAuthority !== true) return currentAuthority;
             const deleted = await remove();
             if (!permitted()) return;
-            if (deleted === "unknown") return "群文件删除结果未确认。";
-            if (deleted === "rejected") return "未能删除群文件。";
+            if (deleted === "unknown") return $t("lib.quoted-recall.text_30f427617b");
+            if (deleted === "rejected") return $t("lib.quoted-recall.text_cd6cac544f");
             const cleanup = await scope.recall(command);
-            if (permitted() && cleanup !== "confirmed") return "群文件已删除，撤回命令未获确认。";
+            if (permitted() && cleanup !== "confirmed") return $t("lib.quoted-recall.text_fc59070af9");
             return;
           } finally {
             groupFiles.delete(fileKey);

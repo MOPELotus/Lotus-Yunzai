@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat } from "node:fs/promises";
 import { dirname } from "node:path";
 import { readPanelJson } from "./panel.ts";
@@ -33,7 +36,7 @@ export function webMountPage({ directory, socket }: WebMountSettings, signal: Ab
   }));
   return {
     plugin: "web-mount", directory, apis, servicePreview: true,
-    definition: { id: "web-mount", title: "端口挂载", icon: "mdi:lan-connect", priority: 60,
+    definition: { id: "web-mount", title: $t("lib.panel-web-mount.text_95d22549ef"), icon: "mdi:lan-connect", priority: 60,
       src: "dashboard.html", style: "dashboard.css", script: "dashboard.js" },
   };
 }

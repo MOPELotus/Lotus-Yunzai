@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { MAX_PROFILE_ID, profileCookieAccountId, type createProfileStore, type Game, type GameCommandProfiles } from "@lotus-yunzai/account";
 import { createRoleJsonArchive, type AcquireRoleArchiveLock } from "@lotus-yunzai/storage";
@@ -28,7 +31,7 @@ function decode(value: unknown): Defaults {
 
 export function createGameProfileDefaults(directory: string, profiles: Profiles, lockFile: AcquireRoleArchiveLock) {
   const saved = createRoleJsonArchive(directory, lockFile, {
-    subject: "游戏默认档案", lockSuffix: "game-profile-defaults", maxBytes: 2048, rejectNull: true,
+    subject: $t("lib.game-profile-defaults.text_5dae846e28"), lockSuffix: "game-profile-defaults", maxBytes: 2048, rejectNull: true,
   });
   async function readBinding(qq: string, id: number, game: Game) {
     const source = await profiles.requestSelectedContext(qq, id, game).catch(() => undefined);
@@ -58,7 +61,7 @@ export function createGameProfileDefaults(directory: string, profiles: Profiles,
       const verify = async () => {
         const latest = active() && await readBinding(qq, profileId, game);
         if (!latest || latest.revision !== revision || latest.uid !== uid || latest.account !== current.account || !active()) {
-          throw new DOMException("游戏默认档案或会话已变化。", "AbortError");
+          throw new DOMException($t("lib.game-profile-defaults.text_3ad8080e35"), "AbortError");
         }
       };
       return saved.update({ qq, uid: "1" }, verify, snapshot => {

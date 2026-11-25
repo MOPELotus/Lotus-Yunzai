@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isPanelOwnerCommand } from "./panel-owner-command.ts";
 import { forGameCommandSender } from "@lotus-yunzai/account";
 import type { LegacyPanelRecoveryOffer } from "./legacy-panel-recovery-flow.ts";
@@ -121,7 +124,7 @@ export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forw
       try {
         if (await (recall ? event.forward(nodes, reply.senderName, recall) : event.forward(nodes, reply.senderName))) continue;
       } catch {
-        await event.reply("合并转发结果未确认，请在聊天中核对。");
+        await event.reply($t("lib.commands.text_f1baf57ee7"));
         return;
       }
     }
@@ -229,12 +232,12 @@ function commandContext(context: CommandContext, module?: string): CommandContex
 function commandFeatureNames(module: string, command: string): readonly string[] {
   if (module === "@lotus-yunzai/group" &&
       /^#(?:全部赞我|(?:我要|给我)?(?:资料卡)?点赞|[赞超操草抄吵炒](?:我|他|她|它|ta))$/iu.test(command)) {
-    return ["[group] 资料卡点赞"];
+    return [$t("lib.commands.text_4ce8260126")];
   }
-  if (module === "@lotus-yunzai/system" && /^#状态(?:[Pp]ro)?$/u.test(command)) return ["[system] 状态"];
-  if (module === "@lotus-yunzai/system" && command === "#统计") return ["[system] 消息统计"];
-  if (module === "@lotus-yunzai/system" && command === "#版本") return ["版本"];
-  if (module === "@lotus-yunzai/group" && command === "#更新群名片") return ["自动群名片"];
+  if (module === "@lotus-yunzai/system" && /^#状态(?:[Pp]ro)?$/u.test(command)) return [$t("lib.commands.text_d8679affb4")];
+  if (module === "@lotus-yunzai/system" && command === "#统计") return [$t("lib.commands.text_1cf4898bea")];
+  if (module === "@lotus-yunzai/system" && command === "#版本") return [$t("lib.commands.text_5f76b2bf82")];
+  if (module === "@lotus-yunzai/group" && command === "#更新群名片") return [$t("lib.commands.text_7473450ca8")];
   return [];
 }
 
@@ -257,10 +260,10 @@ export class CommandRegistry {
     { trustedLegacyPanelRecovery = false }: { readonly trustedLegacyPanelRecovery?: boolean } = {}): () => void {
     const { name, fallback, fallbackFeatures } = module;
     if (this.hasModule(name)) {
-      throw new Error(`模块已注册：${name}`);
+      throw new Error($t("lib.commands.text_3dd00da3a0", { "name": name }));
     }
     if (fallback !== undefined && typeof fallback !== "function") {
-      throw new Error(`模块 ${name} 的 fallback 须为消息处理函数。`);
+      throw new Error($t("lib.commands.text_2aaadb1510", { "name": name }));
     }
 
     const commands = Object.entries(module.commands);
@@ -268,18 +271,18 @@ export class CommandRegistry {
     for (const [command, handler] of commands) {
       this.#checkCommand(command);
       if (typeof handler !== "function") {
-        throw new Error(`模块 ${name} 的指令 ${command} 缺少处理函数。`);
+        throw new Error($t("lib.commands.text_d791670931", { "name": name, "command": command }));
       }
       local.set(command, { handler, names: [name, label, ...commandFeatureNames(name, command)] });
     }
 
     for (const [alias, target] of Object.entries(module.aliases ?? {})) {
       if (!/^#?[^\s#]+$/u.test(alias) || this.#handlers.has(alias) || local.has(alias)) {
-        throw new Error(`无效或重复的指令别名：${alias}`);
+        throw new Error($t("lib.commands.text_377aaf8388", { "alias": alias }));
       }
       const command = local.get(target);
       if (!command || !Object.hasOwn(module.commands, target)) {
-        throw new Error(`指令别名 ${alias} 的目标不在当前模块中。`);
+        throw new Error($t("lib.commands.text_ca121755a4", { "alias": alias }));
       }
       local.set(alias, command);
     }
@@ -289,9 +292,9 @@ export class CommandRegistry {
     }
     if (fallback) {
       const names = [name, label];
-      if (name === "@lotus-yunzai/meme") names.push("[meme] 表情合成");
+      if (name === "@lotus-yunzai/meme") names.push($t("lib.commands.text_228df78800"));
       if (!fallbackFeatures && ["@lotus-yunzai/genshin", "@lotus-yunzai/starrail", "@lotus-yunzai/zzz"].includes(name)) {
-        names.push("[gacha] 抽卡记录");
+        names.push($t("lib.commands.text_5f636b7036"));
       }
       this.#fallbacks.set(name, { handler: fallback, names, features: fallbackFeatures, trustedLegacyPanelRecovery });
     }
@@ -313,11 +316,11 @@ export class CommandRegistry {
 
   #checkCommand(name: string): void {
     if (!/^#[^\s#]+$/u.test(name)) {
-      throw new Error(`无效的指令名：${name}`);
+      throw new Error($t("lib.commands.text_bda8500a1f", { "name": name }));
     }
 
     if (this.#handlers.has(name)) {
-      throw new Error(`指令已注册：${name}`);
+      throw new Error($t("lib.commands.text_1d107a8c0f", { "name": name }));
     }
   }
 

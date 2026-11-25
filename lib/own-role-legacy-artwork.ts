@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,7 +56,7 @@ async function sourceArt(directory: string | undefined, game: Game, name: string
     typeof elem === "string" && elements.has(elem) ? elem : undefined;
   const image = safeName(name) ? read(name, "imgs", "face.webp") : undefined;
   const banner = game === "gs" && safeName(name)
-    ? await (travelerElement ? read("旅行者", travelerElement, "imgs", "banner.webp") : read(name, "imgs", "banner.webp"))
+    ? await (travelerElement ? read($t("lib.own-role-legacy-artwork.text_4bf6868aa0"), travelerElement, "imgs", "banner.webp") : read(name, "imgs", "banner.webp"))
     : undefined;
   return { image: await image, banner: banner ?? await read("common", "imgs", "banner.webp") };
 }

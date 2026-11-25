@@ -1,17 +1,20 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 export const douyinQualities = [
-  ["adapt", "按发送大小选择"], ["4k", "4K"], ["2k", "2K"], ["1080p", "1080P"],
+  ["adapt", $t("lib.panel-douyin-schema.text_c72b064d52")], ["4k", "4K"], ["2k", "2K"], ["1080p", "1080P"],
   ["720p", "720P"], ["540p", "540P"], ["360p", "360P"],
 ] as const;
 
 export const douyinPagePolicies = [
-  ["zip", "打包发送"], ["all", "逐项发送"], ["first", "只处理第一项"],
+  ["zip", $t("lib.panel-douyin-schema.text_f53576eaf9")], ["all", $t("lib.panel-douyin-schema.text_08d4a800f6")], ["first", $t("lib.panel-douyin-schema.text_0efad62762")],
 ] as const;
 
 export const douyinDownloadNumbers = [
-  { key: "duration_limit_seconds", label: "视频时长限制（秒）", min: 0 },
-  { key: "video_size_limit_mb", label: "视频消息体积上限（MiB）", min: 1 },
-  { key: "max_estimated_size_mb", label: "作品下载体积上限（MiB）", min: 0 },
-  { key: "timeout_ms", label: "下载超时（毫秒）", min: 1 },
+  { key: "duration_limit_seconds", label: $t("lib.panel-douyin-schema.text_d08c662b98"), min: 0 },
+  { key: "video_size_limit_mb", label: $t("lib.panel-douyin-schema.text_69d8e8941e"), min: 1 },
+  { key: "max_estimated_size_mb", label: $t("lib.panel-douyin-schema.text_63ddf23342"), min: 0 },
+  { key: "timeout_ms", label: $t("lib.panel-douyin-schema.text_d724a1074b"), min: 1 },
 ] as const;
 
 export interface DouyinPanelSettings {

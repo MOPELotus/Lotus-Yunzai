@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { decodeChatFileBytes, encodeChatFile, readQqChatFile, type ChatFile, type ChatFileResult } from "../chat-files.ts";
 import { readExportedGroupMembers } from "../group-member-export.ts";
 import { notifyReplyDelivery, type GroupMembership, type GroupRequestType, type RecallResult, type ReplyOptions } from "../messages.ts";
@@ -55,7 +58,7 @@ export class OneBotCalls {
   #closed = false;
 
   async #request(send: Send, action: string, params: object, signal?: AbortSignal, timeout = 5_000): Promise<unknown> {
-    if (this.#closed) throw new OneBotNotSentError("QQ 协议连接已关闭。");
+    if (this.#closed) throw new OneBotNotSentError($t("lib.adapters.onebot-calls.text_b43e418521"));
     signal?.throwIfAborted();
     const echo = crypto.randomUUID();
     const { promise, resolve } = Promise.withResolvers<ResponseValue>();
@@ -64,12 +67,12 @@ export class OneBotCalls {
     signal?.addEventListener("abort", abort, { once: true });
     this.#requests.set(echo, resolve);
     try {
-      if (!send({ action, params, echo })) throw new OneBotNotSentError("QQ 协议连接已关闭。");
+      if (!send({ action, params, echo })) throw new OneBotNotSentError($t("lib.adapters.onebot-calls.text_b43e418521"));
       const result = await promise;
       signal?.throwIfAborted();
-      if (!result) throw new Error("未收到 QQ 协议端确认。");
-      if (result.status === "failed") throw new OneBotRejectedError("QQ 协议端未接受请求。");
-      if (result.status !== "ok" || result.retcode !== 0) throw new Error("QQ 协议端返回了未确认的请求结果。");
+      if (!result) throw new Error($t("lib.adapters.onebot-calls.text_16eaffa3f7"));
+      if (result.status === "failed") throw new OneBotRejectedError($t("lib.adapters.onebot-calls.text_8a666fcff5"));
+      if (result.status !== "ok" || result.retcode !== 0) throw new Error($t("lib.adapters.onebot-calls.text_b19d911f04"));
       return result.data;
     } finally {
       clearTimeout(timer);
@@ -80,7 +83,7 @@ export class OneBotCalls {
 
   async likeSelf(send: Send, userId: number, count: number, signal?: AbortSignal): Promise<number> {
     if (!Number.isInteger(count) || count < 1 || count > 10) {
-      throw new RangeError("单次点赞次数须为 1 至 10。");
+      throw new RangeError($t("lib.adapters.onebot-calls.text_7f105965d4"));
     }
     try {
       await this.#request(send, "send_like", { user_id: userId, times: count }, signal);
@@ -93,7 +96,7 @@ export class OneBotCalls {
 
   async readFriendProfiles(send: Send, signal?: AbortSignal): Promise<readonly unknown[]> {
     const friends = await this.#request(send, "get_friend_list", {}, signal);
-    if (!Array.isArray(friends)) throw new Error("QQ 协议端未返回好友列表。");
+    if (!Array.isArray(friends)) throw new Error($t("lib.adapters.onebot-calls.text_ab4aa708eb"));
     return friends;
   }
 
@@ -498,11 +501,11 @@ export class OneBotCalls {
 
   async listGroups(send: Send, signal?: AbortSignal) {
     const groups = await this.#request(send, "get_group_list", {}, signal);
-    if (!Array.isArray(groups)) throw new Error("QQ 协议端未返回群列表。");
+    if (!Array.isArray(groups)) throw new Error($t("lib.adapters.onebot-calls.text_6228a9cec5"));
     return groups.map((entry: unknown) => {
       if (typeof entry !== "object" || entry === null || !("group_id" in entry) ||
           typeof entry.group_id !== "number" || !Number.isSafeInteger(entry.group_id) || entry.group_id < 1) {
-        throw new Error("QQ 协议端返回无效的群列表。");
+        throw new Error($t("lib.adapters.onebot-calls.text_f8346898bf"));
       }
       const name = "group_name" in entry && typeof entry.group_name === "string" ? entry.group_name : undefined;
       return { id: entry.group_id, name };
@@ -532,14 +535,14 @@ export class OneBotCalls {
   }
 
   async listMemberDisplay(send: Send, groupId: number, fresh = false, signal?: AbortSignal): Promise<readonly MemberRosterEntry[]> {
-    if (!isPositiveInteger(groupId)) throw new RangeError("群号无效。");
+    if (!isPositiveInteger(groupId)) throw new RangeError($t("lib.adapters.onebot-calls.text_eecfc48be1"));
     const members = await this.#request(send, "get_group_member_list", { group_id: groupId, ...(fresh ? { no_cache: true } : {}) }, signal);
-    if (!Array.isArray(members) || members.length > 10_000) throw new Error("QQ 协议端返回无效的群成员列表。");
+    if (!Array.isArray(members) || members.length > 10_000) throw new Error($t("lib.adapters.onebot-calls.text_3416fe69bd"));
     const seen = new Set<number>();
     return Array.from(members, (member: unknown) => {
       if (!isRecord(member) || !isPositiveInteger(member.user_id) ||
           ((fresh || "group_id" in member) && member.group_id !== groupId) || seen.has(member.user_id)) {
-        throw new Error("QQ 协议端返回无效的群成员列表。");
+        throw new Error($t("lib.adapters.onebot-calls.text_3416fe69bd"));
       }
       const id = member.user_id;
       seen.add(id);
@@ -671,7 +674,7 @@ export class OneBotCalls {
       message_type: "group", group_id: groupId, message, auto_escape: true,
     });
     const id = this.#messageId(result);
-    if (id === undefined) throw new Error("QQ 协议端未返回发送消息的编号。");
+    if (id === undefined) throw new Error($t("lib.adapters.onebot-calls.text_2066a704a2"));
     return id;
   }
 
@@ -818,7 +821,7 @@ export class OneBotCalls {
       const messages = new Set(original === undefined ? [id] : [id, original]);
       for (const messageId of messages) {
         void this.deleteMessage(send, messageId).catch(() => {
-          if (!this.#closed) console.warn("OneBot 消息撤回未获确认。");
+          if (!this.#closed) console.warn($t("lib.adapters.onebot-calls.text_0ab6f2fcdd"));
         });
       }
     }, seconds * 1_000);

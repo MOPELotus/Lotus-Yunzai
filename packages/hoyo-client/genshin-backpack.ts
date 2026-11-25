@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { createHash, randomInt } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import { addRecordFingerprint } from "./record-fingerprint.ts";
@@ -66,6 +69,14 @@ export interface GenshinGrowthSnapshot {
 type Json = Record<string, unknown>;
 type GenshinCalculation = "原神背包" | "原神养成计算" | "尘歌壶模数";
 type Calculation = GenshinCalculation | "星铁养成计算";
+// These are dispatch keys. Only their presentation is translated.
+const calculationMessages: Record<Calculation, string> = {
+  原神背包: "genshin-backpack.text_2a3c6b8bff",
+  原神养成计算: "genshin-backpack.text_d3694c2333",
+  星铁养成计算: "genshin-backpack.text_2957fe507f",
+  尘歌壶模数: "genshin-blueprint.text_16b3d8035b",
+};
+const calculationLabel = (kind: Calculation) => $t(calculationMessages[kind]);
 type Material = GenshinGrowthSnapshot["items"][number];
 const calculator = "https://api-takumi.mihoyo.com/event/e20200928calculate/";
 type CalculatorPath = "v3/batch_compute" | "v1/furniture/blueprint" | "v1/furniture/compute";
@@ -95,7 +106,7 @@ function decimalId(value: unknown): string | undefined {
 
 function probeError(kind: Calculation = "原神背包"): never {
   throw new HoyoRequestError("invalid-input", kind === "原神背包"
-    ? "原神背包的养成计算配方无效。" : "原神养成计算的目标等级或配方无效。");
+    ? $t("genshin-backpack.text_3985e7b035") : $t("genshin-backpack.text_126e2a3c5f"));
 }
 
 function probeNumber(value: unknown, min: number, max: number, kind?: Calculation): number {
@@ -161,7 +172,7 @@ function requestHeaders(source: ProfileRequestContext, query: string, body: stri
     typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(value);
   if (!cookie.includes("=") || /[^\x20-\x7E]/u.test(account.cookie) || cookie.length > 16_384 ||
       !validDeviceField(device.id) || (device.fp && !validDeviceField(device.fp))) {
-    throw new HoyoRequestError("invalid-input", `${kind}的 Cookie 或设备信息无效，请检查当前档案。`);
+    throw new HoyoRequestError("invalid-input", $t("genshin-backpack.text_0418cc4709", { "kind": calculationLabel(kind) }));
   }
   const time = Math.round(Date.now() / 1000);
   const nonce = randomInt(100000, 1000000);
@@ -180,11 +191,11 @@ function requestHeaders(source: ProfileRequestContext, query: string, body: stri
 }
 
 function responseError(kind: Calculation): never {
-  throw new HoyoRequestError("response", `官方${kind}响应格式或角色身份无效。`);
+  throw new HoyoRequestError("response", $t("genshin-backpack.text_3fcddb2f58", { "kind": calculationLabel(kind) }));
 }
 
 function transportError(kind: Calculation): never {
-  throw new HoyoRequestError("transport", `官方${kind}请求未完成。`);
+  throw new HoyoRequestError("transport", $t("genshin-backpack.text_a38207a01f", { "kind": calculationLabel(kind) }));
 }
 
 async function readPayload(response: Response, signal: AbortSignal, kind: Calculation,
@@ -272,7 +283,7 @@ export function requestStarRailCalculator(source: ProfileRequestContext, transpo
 
 async function requestCalculator(source: ProfileRequestContext, transport: HoyoTransport,
   kind: Calculation, endpoint: URL, { query, body, signal, verifyProfile }: CalculatorOptions): Promise<Json> {
-  const subject = kind === "原神背包" ? "原神背包查询" : kind;
+  const subject = kind === "原神背包" ? $t("genshin-backpack.text_42c50e3155") : calculationLabel(kind);
   if (query) endpoint.search = query.toString();
   const headers = requestHeaders(source, endpoint.search.slice(1), body, kind);
   const guard = async () => {
@@ -317,7 +328,7 @@ async function requestCalculator(source: ProfileRequestContext, transport: HoyoT
     if (deadline.aborted) transportError(kind);
     if (status === 429) throw new GameRecordRequestError(subject, "rate-limited", "http", status);
     if (needsChallenge) throw new GameRecordRequestError(subject, "risk", apiCode, status);
-    throw new HoyoRequestError("http", `官方${kind}接口返回 HTTP 错误。`, status);
+    throw new HoyoRequestError("http", $t("genshin-backpack.text_af8d452502", { "kind": calculationLabel(kind) }), status);
   }
   const payload = await readPayload(response, deadline, kind, error => diagnostics.stream(response, error));
   await guard();
@@ -336,7 +347,7 @@ async function requestCalculator(source: ProfileRequestContext, transport: HoyoT
     throw new GameRecordRequestError(subject, "expired", apiCode, status, retcode);
   }
   if (status === 401 || (retcode !== undefined && retcode !== 0)) {
-    throw new HoyoRequestError(apiCode, `官方${kind}接口拒绝请求。`, status, retcode);
+    throw new HoyoRequestError(apiCode, $t("genshin-backpack.text_5a46ba7be9", { "kind": calculationLabel(kind) }), status, retcode);
   }
   const data = object(payload?.data);
   if (retcode !== 0 || !data) responseError(kind);
@@ -348,12 +359,12 @@ async function calculate(source: ProfileRequestContext, transport: HoyoTransport
   const uid = source.role.uid;
   const region = genshinCnRecordRegion(source.role);
   if (source.game !== "gs" || !region) {
-    throw new HoyoRequestError("invalid-input", `${kind}仅支持当前档案中已确认的国服原神角色。`);
+    throw new HoyoRequestError("invalid-input", $t("genshin-backpack.text_79836ab0b2", { "kind": calculationLabel(kind) }));
   }
   const body = JSON.stringify({ items: items(), uid, region });
   const data = await requestGenshinCalculator(source, transport, kind, "v3/batch_compute", { body, signal, verifyProfile });
   if (data.has_user_info !== true) {
-    throw new HoyoRequestError("response", "官方养成计算器未返回账号背包，请在米游社核对当前角色绑定后重试。");
+    throw new HoyoRequestError("response", $t("genshin-backpack.text_c2122ca5f3"));
   }
   return normalize(data, uid, region, kind);
 }

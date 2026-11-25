@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { spawn } from "node:child_process";
 import { windowsRemoteAdministrator, windowsRemoteJob } from "./remote-win32.ts";
 
@@ -27,7 +30,7 @@ const windowsShellWorker = `
 export async function remoteShell(root: string, shell: RemoteShell, command: string, signal: AbortSignal, timeout: number) {
   signal.throwIfAborted();
   const executable = Bun.which(shell);
-  if (!executable) return "系统未安装所选 Shell。";
+  if (!executable) return $t("lib.remote-shell.text_80b6ef3e4c");
   const windows = process.platform === "win32";
   const powershell = shell === "pwsh" || shell === "powershell";
   const script = powershell && windows ? Buffer.from(
@@ -55,7 +58,7 @@ export async function remoteShell(root: string, shell: RemoteShell, command: str
       child.stdin?.end();
       child.once("error", () => {});
       child.kill();
-      return "无法建立 Windows 远程进程作业。";
+      return $t("lib.remote-shell.text_3cb5f0d0f6");
     }
   }
   const maxBytes = 12_000;
@@ -94,14 +97,14 @@ export async function remoteShell(root: string, shell: RemoteShell, command: str
       if (windows) child.once("exit", () => terminateWindowsJob?.());
       child.once("close", code => resolve({ code }));
     });
-    if (!result) return "无法启动所选 Shell。";
-    if (timedOut) return "远程命令超时，已终止进程。";
+    if (!result) return $t("lib.remote-shell.text_4d06506dff");
+    if (timedOut) return $t("lib.remote-shell.text_1c15d44607");
     const summary = Buffer.concat(output).toString("utf8")
       .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/gu, "")
       .replace(/(?:cookie|authorization|password|passwd|stoken|secret|token)[\t ]*[:=][\t ]*[^\r\n]+/giu, "[已隐藏凭据]")
       .slice(0, 220);
-    return [`命令已结束，退出码 ${result.code ?? "未知"}。`, summary,
-      truncated ? "输出超过限制，已截断。" : undefined].filter(Boolean).join("\n");
+    return [$t("lib.remote-shell.text_0b6aae72a3", { "value1": result.code ?? $t("lib.remote-shell.text_4d8c1c5b42") }), summary,
+      truncated ? $t("lib.remote-shell.text_e28337b7bf") : undefined].filter(Boolean).join("\n");
   } finally {
     clearTimeout(timer);
     stop();

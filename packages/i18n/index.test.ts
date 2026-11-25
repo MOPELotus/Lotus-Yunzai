@@ -83,3 +83,19 @@ test("language names normalize, selection notifies once and unsubscribed observe
   expect(() => i18n.registerLanguage("../../en", {})).toThrow("language tag");
   expect(() => i18n.registerLanguage("en", { "": {} })).toThrow("namespace");
 });
+
+test("replacing and removing a language drops obsolete entries without removing bundled Chinese", () => {
+  const i18n = createI18n();
+  const t = i18n.createTranslator("plugin", { ready: "就绪", stopped: "停止" });
+  i18n.registerLanguage("en", { plugin: { ready: "Ready", stopped: "Stopped" } });
+  i18n.setLanguage("en");
+  i18n.replaceLanguage("en", { plugin: { ready: "Available" } });
+  expect(t("ready")).toBe("Available");
+  expect(t("stopped")).toBe("停止");
+  i18n.removeLanguage("en");
+  expect(i18n.getLanguage()).toBe("zh-CN");
+  expect(i18n.listLanguages()).toEqual(["zh-CN"]);
+  i18n.registerLanguage("zh-CN", { plugin: { ready: "更改" } });
+  i18n.removeLanguage("zh-CN");
+  expect(t("ready")).toBe("就绪");
+});

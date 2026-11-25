@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -104,7 +105,7 @@ globalThis.fetch = Object.assign(async (input, options) => {
 `;
   const persisted = await mkdtemp(join(tmpdir(), "lotus-game-default-restart-"));
   const prepare = async (root: string) => {
-    await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+    await linkHostPackages(root);
     for (const name of ["genshin", "starrail", "zzz"]) {
       const source = join(import.meta.dir, "../plugins", name), target = join(root, "plugins", name);
       await cp(source, target, { recursive: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });

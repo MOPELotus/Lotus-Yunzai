@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { delegationSession } from "./command-delegation.ts";
 import type { MessageEvent, MessageReply } from "./messages.ts";
 
@@ -23,7 +26,7 @@ export function qqAvatarReply(event: MessageEvent, command: AvatarCommand): Mess
   const mention = typeof event.message === "string" ? undefined : event.message.find(part => part.type === "at")?.qq;
   const fallback = command.group ? event.group_id : event.at ?? mention ?? event.user_id;
   const id = avatarId(command.id || fallback);
-  if (id === undefined) return "❎ 获取头像错误";
+  if (id === undefined) return $t("lib.qq-avatar.text_2393f69882");
 
   const url = command.group ? `https://p.qlogo.cn/gh/${id}/${id}/0` : `https://q.qlogo.cn/g?b=qq&s=0&nk=${id}`;
   return command.linkOnly ? url : { type: "image", file: url };

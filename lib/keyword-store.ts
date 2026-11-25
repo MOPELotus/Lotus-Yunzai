@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { link, mkdir, mkdtemp, open, realpath, rename, rm, stat } from "node:fs/promises";
@@ -28,7 +31,7 @@ function isSegment(value: unknown): value is InboundSegment {
 }
 
 function filename(scope: Scope): string {
-  if (scope !== "global" && (!Number.isSafeInteger(scope) || scope < 1)) throw new Error("词条作用域无效。");
+  if (scope !== "global" && (!Number.isSafeInteger(scope) || scope < 1)) throw new Error($t("lib.keyword-store.text_cb3d4263cf"));
   return `${scope}.json`;
 }
 
@@ -42,7 +45,7 @@ async function snapshot(file: string) {
   }
   try {
     const info = await handle.stat();
-    if (!info.isFile()) throw new Error("词条数据须为普通 JSON 文件。");
+    if (!info.isFile()) throw new Error($t("lib.keyword-store.text_588e88a16b"));
     return { bytes: await handle.readFile(), info };
   } finally {
     await handle.close();
@@ -63,7 +66,7 @@ function decode(bytes?: Uint8Array): Map<string, Versions> {
     }
     return result;
   } catch {
-    throw new Error("词条 JSON 格式无效。");
+    throw new Error($t("lib.keyword-store.text_2659a2516d"));
   }
 }
 
@@ -97,7 +100,7 @@ async function save(directory: string, file: string, current: Awaited<ReturnType
     if (!latest || current.info.ino !== latest.info.ino || current.info.dev !== latest.info.dev ||
         current.info.mode !== latest.info.mode || current.info.uid !== latest.info.uid ||
         current.info.gid !== latest.info.gid || !current.bytes.equals(latest.bytes)) {
-      throw new Error("词条数据已变更，请重试。");
+      throw new Error($t("lib.keyword-store.text_39f2f5bd8a"));
     }
     signal?.throwIfAborted();
     await rename(pending, file);
@@ -111,7 +114,7 @@ async function archiveDirectory(parent: string, name: string): Promise<string> {
   await mkdir(path, { mode: 0o700 }).catch((error: unknown) => {
     if (errno(error) !== "EEXIST") throw error;
   });
-  if (await realpath(path) !== path || !(await stat(path)).isDirectory()) throw new Error("词条媒体目录无效。");
+  if (await realpath(path) !== path || !(await stat(path)).isDirectory()) throw new Error($t("lib.keyword-store.text_04f7dc97b7"));
   return path;
 }
 
@@ -130,7 +133,7 @@ async function archiveMedia(directory: string, scope: Scope, type: MediaType, by
     } finally {
       await handle.close();
     }
-    if (await realpath(parent) !== parent) throw new Error("词条媒体目录已变化。");
+    if (await realpath(parent) !== parent) throw new Error($t("lib.keyword-store.text_c1d79cef59"));
     signal?.throwIfAborted();
     try {
       await link(pending, path);
@@ -141,7 +144,7 @@ async function archiveMedia(directory: string, scope: Scope, type: MediaType, by
       try {
         const info = await existing.stat();
         if (!info.isFile() || info.size !== bytes.byteLength || !bytes.equals(await existing.readFile())) {
-          throw new Error("词条媒体归档内容不一致。");
+          throw new Error($t("lib.keyword-store.text_4f62c93fbf"));
         }
       } finally {
         await existing.close();
@@ -222,7 +225,7 @@ export function createKeywordStore(root: URL) {
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const actual = await realpath(directory);
     const file = join(actual, name);
-    const database = await lockFile(join(actual, ".lotus-keywords.sqlite"), "词条数据");
+    const database = await lockFile(join(actual, ".lotus-keywords.sqlite"), $t("lib.keyword-store.text_67deafd20d"));
     const created: string[] = [];
     try {
       signal?.throwIfAborted();
@@ -241,13 +244,13 @@ export function createKeywordStore(root: URL) {
 
   async function append(scope: Scope, key: string, parts: readonly InboundSegment[], signal?: AbortSignal): Promise<number> {
     if (typeof key !== "string" || !key.trim() || !Array.isArray(parts) || !parts.length || !parts.every(isSegment)) {
-      throw new Error("词条名称或消息内容无效。");
+      throw new Error($t("lib.keyword-store.text_62d822ec6f"));
     }
     let total = 0;
     const pending = parts.map(part => {
       if (!isKeywordMedia(part.type) || !(part.file instanceof Uint8Array)) return part;
       total += part.file.byteLength;
-      if (!part.file.byteLength || total > maxChatFileBytes) throw new Error("词条媒体总大小须在 1 字节到 16 MiB 之间。");
+      if (!part.file.byteLength || total > maxChatFileBytes) throw new Error($t("lib.keyword-store.text_d05760ad7f"));
       return { type: part.type, file: Buffer.from(part.file) };
     });
     return update(scope, async (entries, actual, created) => {

@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, symlink } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -20,7 +21,7 @@ async function prepare(root: string) {
     await cp(source, target, { recursive: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });
     await symlink(join(source, "node_modules"), join(target, "node_modules"), "dir");
   }
-  await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+  await linkHostPackages(root);
 }
 
 test("紧连的已知原神角色展板经正常业务路由，保留星铁及仓库更新", async () => {

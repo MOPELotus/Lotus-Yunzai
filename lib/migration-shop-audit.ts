@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
@@ -24,8 +27,8 @@ const stages = ["refresh", "precheck", "runner", "checkin", "schedule"] as const
 const countKeys = ["signed", "already", "first-bind", "unconfirmed", "failed", "skipped", "community-accepted", "community-already"] as const;
 const statuses = ["scheduled", "preparing", "submitting", "unknown", "cancelled", "missed", "succeeded", "failed"] as const;
 const terminal = ["cancelled", "missed", "succeeded", "failed"] as const;
-const frozen = "旧版预约缺少账号绑定核验，请重新确认商品后预约。";
-const awaiting = "兑换结果待确认，请查米游社兑换记录。请勿在确认前重新兑换。";
+const frozen = $t("lib.migration-shop-audit.text_b5ccbdf88f");
+const awaiting = $t("lib.migration-shop-audit.text_5aed717c7d");
 
 function valid(value: unknown, pattern: RegExp): value is string {
   return typeof value === "string" && pattern.test(value);
@@ -67,14 +70,14 @@ async function readFrozen(path: string, max: number, inventories: Map<string, St
   const info = await state(path);
   if (!info) return;
   if (!info.isFile() || info.nlink !== 1 || info.size > max || await realpath(path) !== path) {
-    throw new Error("旧商城或签到审计须为安装副本内未链接的普通文件。");
+    throw new Error($t("lib.migration-shop-audit.text_176845705c"));
   }
   const input = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    if (!sameFile(info, await input.stat())) throw new Error("旧商城或签到审计在读取期间发生变化。");
+    if (!sameFile(info, await input.stat())) throw new Error($t("lib.migration-shop-audit.text_497b7f3621"));
     const bytes = await input.readFile();
     if (!sameFile(info, await input.stat()) || bytes.byteLength !== info.size) {
-      throw new Error("旧商城或签到审计在读取期间发生变化。");
+      throw new Error($t("lib.migration-shop-audit.text_497b7f3621"));
     }
     inventories.set(path, info);
     return bytes;
@@ -105,7 +108,7 @@ function auditRow(line: string) {
     counts = values;
   }
   return { time: new Date(time).toISOString(), qq, profileId: data.profileId, ok: data.ok, stage, source,
-    ...(counts && { counts }), message: "旧签到状态。" };
+    ...(counts && { counts }), message: $t("lib.migration-shop-audit.text_b0f9000340") };
 }
 
 function normalizeRole(value: unknown) {
@@ -117,7 +120,7 @@ function normalizeRole(value: unknown) {
 function shopIdentity(value: unknown) {
   const row = record(value);
   if (!row || !valid(row.id, trackerId) || !valid(row.qq, numericId) || !valid(row.accountId, numericId) ||
-      !profileId(row.profileId)) throw new Error("旧商城记录缺少有效的档案或唯一标识。");
+      !profileId(row.profileId)) throw new Error($t("lib.migration-shop-audit.text_0476a03d29"));
   return { row, id: row.id, qq: row.qq, profileId: row.profileId, accountId: row.accountId };
 }
 
@@ -126,7 +129,7 @@ function planFrom(value: unknown) {
   const status = statuses.find(item => item === row.status);
   if (!status || !valid(row.goodsId, numericId) || (row.type !== 1 && row.type !== 2) ||
       !natural(row.price) || !natural(row.createdAt) || !natural(row.opensAt) || !natural(row.attempts) ||
-      typeof row.immediate !== "boolean" || typeof row.goodsName !== "string") throw new Error("旧商城预约记录的格式不受支持。");
+      typeof row.immediate !== "boolean" || typeof row.goodsName !== "string") throw new Error($t("lib.migration-shop-audit.text_219fcb8781"));
   const plan: MiyousheShopPlan = {
     ...identity, botId: valid(row.botId, numericId) ? row.botId : "", goodsId: row.goodsId,
     goodsName: safeText(row.goodsName, 240), type: row.type, price: row.price,
@@ -172,7 +175,7 @@ function trackerFrom(value: unknown) {
 
 function collect<T extends { id: string }>(items: Map<string, T>, value: T) {
   const earlier = items.get(value.id);
-  if (earlier && !isDeepStrictEqual(earlier, value)) throw new Error("不同迁移来源中的旧商城记录有冲突。");
+  if (earlier && !isDeepStrictEqual(earlier, value)) throw new Error($t("lib.migration-shop-audit.text_d91fa93b02"));
   if (!earlier) items.set(value.id, value);
 }
 
@@ -183,15 +186,15 @@ async function dataDirectory(path: string) {
     await mkdir(path, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "EEXIST") throw error;
     });
-  } else if (!known.isDirectory()) throw new Error("商城或审计暂存目录必须为实体目录。");
-  if (await realpath(path) !== path) throw new Error("商城或审计暂存目录须位于暂存根目录内。");
+  } else if (!known.isDirectory()) throw new Error($t("lib.migration-shop-audit.text_f2bd732f65"));
+  if (await realpath(path) !== path) throw new Error($t("lib.migration-shop-audit.text_15aa9a2ffc"));
 }
 
 export async function stageLegacyShopAudit(sourcePath: string, stagePath: string, signal?: AbortSignal) {
   signal?.throwIfAborted();
   const source = await realpath(sourcePath);
   const stage = await realpath(stagePath);
-  if (within(source, stage) || within(stage, source)) throw new Error("旧安装副本与商城审计暂存目录必须分离。");
+  if (within(source, stage) || within(stage, source)) throw new Error($t("lib.migration-shop-audit.text_d2eb07a017"));
   const inventory = new Map<string, Stats>();
   const output = new Map<string, string>();
   const profiles = createProfileStore(join(stage, "data", "users"));
@@ -260,7 +263,7 @@ export async function stageLegacyShopAudit(sourcePath: string, stagePath: string
       try { data = record(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))); } catch {}
       if (!data || (data.version !== 1 && data.version !== 2) || !Array.isArray(data.plans) ||
           (data.version === 2 && !Array.isArray(data.trackers)) || (data.trackers !== undefined && !Array.isArray(data.trackers))) {
-        throw new Error("旧商城文件格式不受支持。");
+        throw new Error($t("lib.migration-shop-audit.text_c86e87bf54"));
       }
       if (id) imported.add(id);
       if (!id && Array.isArray(data.importedLegacy)) {
@@ -270,13 +273,13 @@ export async function stageLegacyShopAudit(sourcePath: string, stagePath: string
       const localTrackers = new Set<string>();
       for (const value of data.plans) {
         const result = planFrom(value);
-        if (localPlans.has(result.plan.id)) throw new Error("旧商城文件内有重复预约标识。");
+        if (localPlans.has(result.plan.id)) throw new Error($t("lib.migration-shop-audit.text_27a5f72705"));
         localPlans.add(result.plan.id);
         collect(plans, { id: result.plan.id, ...result });
       }
       for (const value of data.trackers ?? []) {
         const result = trackerFrom(value);
-        if (localTrackers.has(result.fields.id)) throw new Error("旧商城文件内有重复追踪标识。");
+        if (localTrackers.has(result.fields.id)) throw new Error($t("lib.migration-shop-audit.text_2279cd9b85"));
         localTrackers.add(result.fields.id);
         collect(trackers, { id: result.fields.id, ...result });
       }
@@ -310,7 +313,7 @@ export async function stageLegacyShopAudit(sourcePath: string, stagePath: string
         reasons[preview ? "trackerPreview" : !validOriginal ? "trackerInvalid" : !verified ? "trackerBinding" : "trackerAccountPending"]++;
       }
       trackRows.push({ ...raw, ...(!validOriginal && { maxPrice: undefined }), enabled,
-        ...(verified && { confirmation }), message: enabled ? "" : "持续追踪已暂停。" });
+        ...(verified && { confirmation }), message: enabled ? "" : $t("lib.migration-shop-audit.text_4260e08276") });
     }
     for (const { plan, sessionExpected } of plans.values()) {
       signal?.throwIfAborted();
@@ -329,8 +332,8 @@ export async function stageLegacyShopAudit(sourcePath: string, stagePath: string
         summary.activePlans++;
       } else {
         plan.status = "cancelled";
-        plan.message = reason === "sessionEnded" ? "发起立即兑换的网页会话已结束，未提交兑换。"
-          : reason === "accountPending" ? "该账号此商品有兑换结果待确认，请先核对米游社兑换记录再预约。" : frozen;
+        plan.message = reason === "sessionEnded" ? $t("lib.migration-shop-audit.text_6327bf1d6b")
+          : reason === "accountPending" ? $t("lib.migration-shop-audit.text_c8bdd66b9e") : frozen;
         summary.frozen++;
         reasons[reason]++;
       }
@@ -345,7 +348,7 @@ export async function stageLegacyShopAudit(sourcePath: string, stagePath: string
   const plans = await shop(activeShopFile, false);
   const preview = await shop(previewShopFile, true);
   for (const [path, expected] of inventory) {
-    if (!sameFile(expected, await state(path)) || await realpath(path) !== path) throw new Error("旧商城或签到审计在暂存期间发生变化。");
+    if (!sameFile(expected, await state(path)) || await realpath(path) !== path) throw new Error($t("lib.migration-shop-audit.text_81b2cfe1a9"));
   }
   const created: string[] = [];
   try {

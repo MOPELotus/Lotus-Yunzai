@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { nativeImageRasterScale } from "@lotus-yunzai/skia";
 import { renderStatusCard } from "@lotus-yunzai/skia/status-card";
 import { accountScopePolicies } from "./account-scope-policy.ts";
@@ -14,11 +17,11 @@ interface PermissionCommandOptions {
   readonly render?: (...args: Parameters<typeof renderStatusCard>) => Promise<{ readonly png: Uint8Array }>;
 }
 
-const title = "权限配置";
-const denied = "只有机器人主人可以查看或修改业务权限。";
+const title = $t("lib.permission-commands.text_2ee4406b48");
+const denied = $t("lib.permission-commands.text_3f9649de2c");
 const listPattern = /^#(?:权限(?:列表|名单|配置)|签到[黑白]名单列表)$/u;
 const labels: Record<GlobalPermissionList, string> = {
-  "users.allow": "用户白名单", "users.deny": "用户黑名单", "groups.allow": "群白名单", "groups.deny": "群黑名单",
+  "users.allow": $t("lib.permission-commands.text_8c4715253c"), "users.deny": $t("lib.permission-commands.text_6ae2ab05a0"), "groups.allow": $t("lib.permission-commands.text_f1578eca20"), "groups.deny": $t("lib.permission-commands.text_cd309a726c"),
 };
 
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
@@ -26,9 +29,9 @@ function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
 }
 
 function summarize(ids: readonly string[]) {
-  if (!ids.length) return "空";
+  if (!ids.length) return $t("lib.permission-commands.text_2f8267a89a");
   const shown = ids.slice(0, 8).join("、");
-  return shown + (ids.length > 8 ? ` 等 ${ids.length} 项` : "");
+  return shown + (ids.length > 8 ? $t("lib.permission-commands.text_1420097019", { "length": ids.length }) : "");
 }
 
 export function permissionCommands({ root, terminalOwner, activeSignal, render = renderStatusCard }: PermissionCommandOptions): CommandModule {
@@ -52,16 +55,17 @@ export function permissionCommands({ root, terminalOwner, activeSignal, render =
       if (!access || !access.allowed()) return denied;
       const { signal, allowed } = access;
       if (signal.aborted) return [];
-      if (edit === "invalid") return "权限指令格式错误，或该作用域不接受此策略。";
-      if (edit === "unsupported") return "该业务作用域当前不可通过聊天配置。";
-      let description = "查看\n当前权限配置如下。";
+      if (edit === "invalid") return $t("lib.permission-commands.text_480d526e88");
+      if (edit === "unsupported") return $t("lib.permission-commands.text_3fe48071de");
+      let description = $t("lib.permission-commands.text_f3f9a009b4");
       if (edit) {
         const outcome = await editChatPermissions(root, edit, {
           active: () => !signal.aborted && allowed(), signal, actor: String(context.user_id ?? "stdin"), group: context.group_id,
         });
         if (signal.aborted || !allowed()) return [];
         if (typeof outcome === "string") return outcome;
-        description = `${outcome.changed ? "已更新" : "无需更新"}\n${outcome.note}`;
+        description = `${outcome.changed ? $t("lib.permission-commands.text_434203a723") : $t("lib.permission-commands.text_025122f1c5")}
+${outcome.note}`;
       }
       try {
         const { current: { settings }, effective } = await readGlobalPermissions(root);
@@ -72,11 +76,11 @@ export function permissionCommands({ root, terminalOwner, activeSignal, render =
           const value = accountScopePolicies.find(policy => policy === record(entry)?.policy) ?? "inherit";
           return [`${scope}:${value}`];
         });
-        const shownScopes = configured.slice(0, 12).join(" / ") + (configured.length > 12 ? ` 等 ${configured.length} 项` : "");
+        const shownScopes = configured.slice(0, 12).join(" / ") + (configured.length > 12 ? $t("lib.permission-commands.text_1420097019", { "length": configured.length }) : "");
         const rows = [
-          `默认策略　${settings.default_policy}`,
+          $t("lib.permission-commands.text_17854f7ba3", { "default_policy": settings.default_policy }),
           ...Object.entries(labels).map(([field, label]) => `${label}　${summarize(settings[field as GlobalPermissionList])}`),
-          `作用域　${shownScopes || "未配置"}`,
+          $t("lib.permission-commands.text_bb3c736145", { "value1": shownScopes || $t("lib.permission-commands.text_80a57e03f0") }),
         ];
         if (context.message_type !== "terminal") {
           try {
@@ -95,7 +99,7 @@ export function permissionCommands({ root, terminalOwner, activeSignal, render =
         }
         return signal.aborted || !allowed() ? [] : [title, description, ...rows].join("\n");
       } catch {
-        return signal.aborted || !allowed() ? [] : "暂时无法读取业务权限配置。";
+        return signal.aborted || !allowed() ? [] : $t("lib.permission-commands.text_f1b15f121f");
       }
     },
   };

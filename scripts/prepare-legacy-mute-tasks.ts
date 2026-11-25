@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { basename, dirname, join, sep } from "node:path";
@@ -25,7 +29,7 @@ async function readSnapshot(path: string): Promise<Buffer> {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await file.stat();
-    if (!stat.isFile() || stat.size > snapshotLimit) throw new Error("定时群禁言副本格式或大小无效。");
+    if (!stat.isFile() || stat.size > snapshotLimit) throw new Error($t("scripts.prepare-legacy-mute-tasks.text_1687b02d10"));
     const buffer = Buffer.alloc(stat.size + 1);
     let offset = 0;
     while (offset < buffer.length) {
@@ -33,7 +37,7 @@ async function readSnapshot(path: string): Promise<Buffer> {
       if (bytesRead === 0) break;
       offset += bytesRead;
     }
-    if (offset !== stat.size) throw new Error("定时群禁言副本读取期间发生变化。");
+    if (offset !== stat.size) throw new Error($t("scripts.prepare-legacy-mute-tasks.text_9b85714183"));
     return buffer.subarray(0, offset);
   } finally {
     await file.close();
@@ -43,19 +47,19 @@ async function readSnapshot(path: string): Promise<Buffer> {
 async function applyHandoff(expected: string | null, value: string | null): Promise<boolean> {
   const directory = await realpath(fileURLToPath(new URL("../", import.meta.url)));
   const base = join(dirname(directory), `.${basename(directory)}`);
-  const startup = await lockFile(`${base}.lotus-startup.sqlite`, "启动操作", 0, "安装目录正在启动或停止，请稍后再试。");
+  const startup = await lockFile(`${base}.lotus-startup.sqlite`, $t("scripts.prepare-legacy-mute-tasks.text_837c8d2798"), 0, $t("scripts.prepare-legacy-mute-tasks.text_0ae91b1d2b"));
   try {
-    const host = await lockFile(`${base}.lotus-host.sqlite`, "托管宿主", 0, "请先停止托管宿主再交还定时任务。");
+    const host = await lockFile(`${base}.lotus-host.sqlite`, $t("scripts.prepare-legacy-mute-tasks.text_e533bb7ee6"), 0, $t("scripts.prepare-legacy-mute-tasks.text_4a72890a59"));
     try {
       const connection = await readStorageConnection(pathToFileURL(directory + sep), Bun.env.LOTUS_VALKEY_URL);
-      if (!connection) throw new Error("未配置待交还的 Valkey。");
+      if (!connection) throw new Error($t("scripts.prepare-legacy-mute-tasks.text_543f4d3ab6"));
       const redis = await connectStorage(connection);
       try {
         const result = await redis.eval(compareAndApply, {
           keys: [legacyKey], arguments: [expected === null ? "missing" : "present", expected ?? "", value ?? ""],
         });
-        if (result === -1) throw new Error("旧定时群禁言键已变化，请重新保存原值副本后再试。");
-        if (result !== 0 && result !== 1) throw new Error("旧定时群禁言交还结果无法确认。");
+        if (result === -1) throw new Error($t("scripts.prepare-legacy-mute-tasks.text_e0aa3546e9"));
+        if (result !== 0 && result !== 1) throw new Error($t("scripts.prepare-legacy-mute-tasks.text_1e6219c02b"));
         return result === 1;
       } finally {
         await closeStorage();
@@ -72,7 +76,7 @@ const args = process.argv.slice(2);
 const apply = args[0] === "--apply";
 const [modern, previous, ...extra] = apply ? args.slice(1) : args;
 if (!modern || !previous || extra.length || modern.startsWith("--") || previous.startsWith("--")) {
-  console.error("用法：bun scripts/prepare-legacy-mute-tasks.ts [--apply] <新版任务文件副本> <旧 Valkey 键值副本>");
+  console.error($t("scripts.prepare-legacy-mute-tasks.text_efe1963515"));
   process.exit(2);
 }
 
@@ -84,11 +88,11 @@ try {
     expected = snapshot.length ? new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(snapshot) : null;
     prepared = prepareLegacyMuteHandoff(state, expected);
   } catch {
-    throw new Error("新旧定时群禁言副本格式无效。");
+    throw new Error($t("scripts.prepare-legacy-mute-tasks.text_a407c37c0d"));
   }
   const changed = apply ? await applyHandoff(expected, prepared.value) : false;
   console.log(JSON.stringify({ mode: apply ? "apply" : "dry-run", removed: prepared.removed, changed }));
 } catch (error) {
-  console.error(error instanceof Error && !("code" in error) ? error.message : "无法处理定时群禁言副本或交还旧键。");
+  console.error(error instanceof Error && !("code" in error) ? error.message : $t("scripts.prepare-legacy-mute-tasks.text_379acb4e1a"));
   process.exitCode = 1;
 }

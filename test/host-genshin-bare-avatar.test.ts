@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -35,7 +36,7 @@ async function prepare(root: string) {
     await cp(source, target, { recursive: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });
     await symlink(join(source, "node_modules"), join(target, "node_modules"), "dir");
   }
-  await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+  await linkHostPackages(root);
   await mkdir(join(root, "config", "config"), { recursive: true });
   await writeFile(join(root, "config/config/group.yaml"),
     'default: { groupCD: 0, singleCD: 0, onlyReplyAt: 0 }\n"79": { disable: ["[genshin] 角色卡片"] }\n');

@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -18,7 +22,7 @@ async function directory(path: string, optional = false) {
     if (!optional || error.code !== "ENOENT") throw error;
   });
   if (!stat) return;
-  if (!stat.isDirectory() || await realpath(path) !== path) throw new Error("交还须使用不含目录链接的实体副本。");
+  if (!stat.isDirectory() || await realpath(path) !== path) throw new Error($t("scripts.prepare-legacy-write-state.text_7fec74927d"));
   return path;
 }
 
@@ -39,14 +43,14 @@ const [out, modernInput, oldInput, version] = exporting ? args.slice(1) : [undef
 const target = checkinHandbackVersions.find(candidate => candidate === version);
 if (!modernInput || !oldInput || !target || args.length !== (exporting ? 5 : 3) ||
     [out, modernInput, oldInput].some(path => path?.startsWith("--"))) {
-  console.error("用法：bun scripts/prepare-legacy-write-state.ts [--export <独立导出目录>] <新版安装副本> <旧荷花插件副本> <e28c6df|5aa3a70>");
+  console.error($t("scripts.prepare-legacy-write-state.text_4919cf8ea1"));
   process.exitCode = 2;
 } else {
   try {
     const [modern, old, parent] = await Promise.all([realpath(modernInput), realpath(oldInput), out ? realpath(out) : undefined]);
     const roots = parent ? [modern, old, parent] : [modern, old];
     if (roots.some((left, index) => roots.some((right, other) => other !== index && containsPath(left, right)))) {
-      throw new Error("新旧副本和导出目录须彼此独立。");
+      throw new Error($t("scripts.prepare-legacy-write-state.text_1923b3911b"));
     }
     await Promise.all(roots.map(root => directory(root)));
     await Promise.all([modern, old].flatMap(root => ["data", "data/coinShop", "data/redeemCodes"]
@@ -60,7 +64,7 @@ if (!modernInput || !oldInput || !target || args.length !== (exporting ? 5 : 3) 
     async function read(root: string, file: string) {
       const source = await readMigrationSourceFile(root, join(root, file), maximumFile);
       readBytes += source?.bytes.byteLength ?? 0;
-      if (readBytes > maximumTotal) throw new Error("交还副本超过单批读取上限。");
+      if (readBytes > maximumTotal) throw new Error($t("scripts.prepare-legacy-write-state.text_a3d01ef7cb"));
       const sha256 = source ? hash(source.bytes) : null;
       inventory.push({ root, file, sha256 });
       return { sha256, state: source ? parseWriteStateJson(source.bytes) : undefined };
@@ -71,7 +75,7 @@ if (!modernInput || !oldInput || !target || args.length !== (exporting ? 5 : 3) 
       if (!candidate.sha256 && !previous.sha256) return;
       const { data, ...counts } = await transform(candidate.state, previous.state);
       const serialized = JSON.stringify(data);
-      if (Buffer.byteLength(serialized) > maximumFile) throw new Error("交还输出超过目标账本大小上限。");
+      if (Buffer.byteLength(serialized) > maximumFile) throw new Error($t("scripts.prepare-legacy-write-state.text_7aacdf3495"));
       output.set(file, data);
       manifest[file] = { modern: candidate.sha256, legacy: previous.sha256, output: hash(serialized) };
       return counts;
@@ -85,7 +89,7 @@ if (!modernInput || !oldInput || !target || args.length !== (exporting ? 5 : 3) 
       const report = await prepare(`data/schedules/${date}.json`, async (current, legacy) => {
         const previous = legacy === undefined ? undefined : parseCheckinSchedulePlan(legacy);
         const source = current === undefined ? previous! : parseCheckinSchedulePlan(current);
-        if (source.date !== date || (previous && previous.date !== date)) throw new Error("签到计划日期与文件名不一致。");
+        if (source.date !== date || (previous && previous.date !== date)) throw new Error($t("scripts.prepare-legacy-write-state.text_85efcc73e6"));
         const { plan, counts } = await prepareLegacyCheckinSchedule(source, previous, target, { now });
         return { data: plan, ...counts };
       });
@@ -107,10 +111,10 @@ if (!modernInput || !oldInput || !target || args.length !== (exporting ? 5 : 3) 
         }
         for (const { root, file, sha256 } of inventory) {
           const source = await readMigrationSourceFile(root, join(root, file), maximumFile);
-          if ((source ? hash(source.bytes) : null) !== sha256) throw new Error("交还副本在导出期间发生变化。");
+          if ((source ? hash(source.bytes) : null) !== sha256) throw new Error($t("scripts.prepare-legacy-write-state.text_c2212330fe"));
         }
         const checkedDates = [...new Set((await Promise.all([dates(modern), dates(old)])).flat())].sort();
-        if (checkedDates.join() !== schedules.join()) throw new Error("签到计划在导出期间发生变化。");
+        if (checkedDates.join() !== schedules.join()) throw new Error($t("scripts.prepare-legacy-write-state.text_569d0907bd"));
         await syncDirectory(join(stage, "data"));
         await writeJournal(join(stage, "manifest.json"), result, true);
         written = join(parent, "legacy-write-state-" + randomUUID());
@@ -123,7 +127,7 @@ if (!modernInput || !oldInput || !target || args.length !== (exporting ? 5 : 3) 
       redeem: redeemReport, shop: shopReport, schedules: checkinReports, path: written }));
   } catch (error) {
     console.error(error instanceof Error && !(error instanceof SyntaxError) && !("code" in error)
-      ? error.message : "无法核验交还副本或写入独立目录。");
+      ? error.message : $t("scripts.prepare-legacy-write-state.text_eca9de7312"));
     process.exitCode = 1;
   }
 }

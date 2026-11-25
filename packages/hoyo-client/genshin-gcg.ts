@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { genshinResponseRegion } from "./genshin-response-region.ts";
 import { normalizeProfileRoleArtworkUrl, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
@@ -36,14 +39,14 @@ export interface GenshinDeckList {
 
 function verify(data: Json, uid: string, region: string) {
   if (Object.hasOwn(data, "role") && data.role !== null && !record(data.role)) {
-    throw new HoyoRequestError("response", "七圣召唤响应的角色信息无效。");
+    throw new HoyoRequestError("response", $t("genshin-gcg.text_9dbabc8b64"));
   }
   for (const row of [data, record(data.role)]) {
     if (!row) continue;
     if (["uid", "role_id", "game_uid"].some(key => Object.hasOwn(row, key) && String(row[key]) !== uid) ||
         ["server", "region"].some(key => Object.hasOwn(row, key) && genshinResponseRegion(row[key]) !== region) ||
         (Object.hasOwn(row, "game_biz") && row.game_biz !== "hk4e_cn")) {
-      throw new HoyoRequestError("response", "七圣召唤响应的账号角色或区服与已选档案不一致。");
+      throw new HoyoRequestError("response", $t("genshin-gcg.text_526cbdd718"));
     }
   }
 }
@@ -64,11 +67,11 @@ function card(row: Json): GenshinDeckCard {
 function cards(value: unknown, max: number): readonly GenshinDeckCard[] | undefined {
   if (value == null) return;
   if (!Array.isArray(value) || value.length > max) {
-    throw new HoyoRequestError("response", "七圣召唤牌组的卡牌列表格式无效。");
+    throw new HoyoRequestError("response", $t("genshin-gcg.text_4d7a4f23ec"));
   }
   return value.map(entry => {
     const row = record(entry);
-    if (!row) throw new HoyoRequestError("response", "七圣召唤牌组的卡牌格式无效。");
+    if (!row) throw new HoyoRequestError("response", $t("genshin-gcg.text_2a4b4c6b6a"));
     return card(row);
   });
 }
@@ -79,13 +82,13 @@ export async function readGenshinDecks(source: ProfileRequestContext, transport:
   const { uid } = source.role;
   verify(data, uid, region);
   if (!Array.isArray(data.deck_list) || data.deck_list.length > 100) {
-    throw new HoyoRequestError("response", "七圣召唤响应缺少有效的牌组列表。");
+    throw new HoyoRequestError("response", $t("genshin-gcg.text_a2cefc4926"));
   }
   const ids = new Set<number>();
   const decks = data.deck_list.map((value): GenshinDeck => {
     const row = record(value);
     const id = whole(row?.id, 99);
-    if (!row || id === undefined || ids.has(id)) throw new HoyoRequestError("response", "七圣召唤牌组编号缺失或重复。");
+    if (!row || id === undefined || ids.has(id)) throw new HoyoRequestError("response", $t("genshin-gcg.text_71808bfbd1"));
     ids.add(id);
     return { id, characters: cards(row.avatar_cards, 3), actions: cards(row.action_cards, 30) };
   });
@@ -140,13 +143,13 @@ export async function readGenshinGcgCollection(source: ProfileRequestContext, tr
     const { data: result, region } = await readCnGameRecord(source, transport, { kind: "genshin-gcg-cards", collection, signal }, verifyProfile);
     verify(result, summary.uid, region);
     if (!Array.isArray(result.card_list) || result.card_list.length > 999 || result.has_more === true) {
-      throw new HoyoRequestError("response", "七圣召唤收藏响应未返回完整卡牌列表。");
+      throw new HoyoRequestError("response", $t("genshin-gcg.text_e2c87f1dcc"));
     }
     return result.card_list.flatMap(value => {
       const row = record(value);
       if (row && row.num == null) return [];
       const copies = whole(row?.num, 9999);
-      if (!row || copies === undefined) throw new HoyoRequestError("response", "七圣召唤收藏的持有张数格式无效。");
+      if (!row || copies === undefined) throw new HoyoRequestError("response", $t("genshin-gcg.text_80a3559bc3"));
       return copies > 0 ? [{ ...card(row), copies, wins: whole(row.proficiency, 9999), uses: whole(row.use_count, 9999) }] : [];
     });
   }

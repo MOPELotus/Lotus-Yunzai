@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { compatibleBilibiliDownload } from "./bilibili-download-compat.ts";
 
 type Fields = Readonly<Record<string, unknown>>;
@@ -35,7 +38,7 @@ export function projectLegacyMediaConfig(current: Fields, legacy: readonly Field
     if (key === "tuneweave" && !currentHasSection) {
       const configured = history.filter(item => endpoint(item.api_url));
       const urls = new Set(configured.map(item => endpoint(item.api_url).replace(/\/+$/u, "")));
-      if (urls.size > 1) throw new Error("两处旧 TuneWeave 服务地址不一致，请先核对迁移来源。");
+      if (urls.size > 1) throw new Error($t("lib.migration-media-config.text_8152bfd88d"));
       source = configured[0] ?? source;
     }
 
@@ -61,7 +64,7 @@ export function projectLegacyMediaConfig(current: Fields, legacy: readonly Field
           const url = URL.parse(address);
           if (!url || !["http:", "https:"].includes(url.protocol) || url.username || url.password ||
               url.search || url.hash || address.trim() !== address) {
-            throw new Error("旧 TuneWeave 服务地址无法安全沿用，请先核对迁移来源。");
+            throw new Error($t("lib.migration-media-config.text_27fbcdcdf2"));
           }
           result.api_url = address;
         }

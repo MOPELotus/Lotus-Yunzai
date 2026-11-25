@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { genshinSummaryOptions, quantityText, summaryBox, summaryIcon, type GenshinSummaryCardOptions } from "./genshin-summary-elements.ts";
 import { drawInfoText, infoCardColors, measureInfoText, renderInfoCard } from "./info-card.ts";
 
@@ -14,7 +17,7 @@ export type GenshinWorldBossRankingCardOptions = GenshinSummaryCardOptions;
 
 export async function renderGenshinWorldBossRankingCard(model: GenshinWorldBossRankingCardModel,
   options: GenshinWorldBossRankingCardOptions = {}) {
-  return renderInfoCard({ title: "原神 BOSS 击杀排行" }, ({ x: left, y, width, measure }) => {
+  return renderInfoCard({ title: $t("genshin-world-boss-ranking-card.text_c864250a93") }, ({ x: left, y, width, measure }) => {
     const rows = model.rows.map(entry => {
       const label = measureInfoText(measure, entry.name, width - 237, 22);
       const uid = measureInfoText(measure, "UID " + entry.uid, width - 237, 18);
@@ -28,7 +31,7 @@ export async function renderGenshinWorldBossRankingCard(model: GenshinWorldBossR
       height: rows.reduce((sum, row) => sum + row.height + 12, 0) || 30,
       async draw(ctx) {
         let top = y;
-        if (!rows.length) drawInfoText(ctx, ["暂无排行记录"], left, top, { size: 20, color: infoCardColors.muted });
+        if (!rows.length) drawInfoText(ctx, [$t("genshin-world-boss-ranking-card.text_d2db835805")], left, top, { size: 20, color: infoCardColors.muted });
         for (const row of rows) {
           summaryBox(ctx, left, top, width, row.height);
           await summaryIcon(ctx, row.image, left + 12, top + (row.height - 58) / 2, 58, "BOSS");
@@ -37,7 +40,7 @@ export async function renderGenshinWorldBossRankingCard(model: GenshinWorldBossR
             { size: 18, leading: 26, color: infoCardColors.muted });
           drawInfoText(ctx, row.number, left + width - 18, top + 12,
             { size: 22, leading: 27, color: infoCardColors.gold, align: "right" });
-          drawInfoText(ctx, ["击杀次数"], left + width - 18, top + 12 + row.number.length * 27,
+          drawInfoText(ctx, [$t("genshin-world-boss-ranking-card.text_486a874965")], left + width - 18, top + 12 + row.number.length * 27,
             { size: 16, color: infoCardColors.muted, align: "right" });
           top += row.height + 12;
         }

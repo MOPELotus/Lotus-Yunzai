@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { mkdtemp, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -18,7 +22,7 @@ function report(options: RecoveryOptions, event: SkiaProgress) {
 async function readArchive(stream: ReadableStream<Uint8Array>, options: RecoveryOptions, total?: number): Promise<Uint8Array<ArrayBuffer>> {
   const chunks: Uint8Array[] = [];
   let completed = 0;
-  const update = () => report(options, { stage: "skia-download", message: "正在下载 Skia 原生库", completed, total, unit: "bytes" });
+  const update = () => report(options, { stage: "skia-download", message: $t("scripts.skia-binary.text_ea0f2e2c37"), completed, total, unit: "bytes" });
   update();
   const reader = stream.getReader();
   try {
@@ -38,7 +42,7 @@ async function readArchive(stream: ReadableStream<Uint8Array>, options: Recovery
 async function downloadArchive(url: string, options: RecoveryOptions): Promise<Uint8Array<ArrayBuffer>> {
   const deadline = AbortSignal.timeout(90_000);
   for (let attempt = 1; ; attempt++) {
-    report(options, { stage: "skia-request", message: `正在获取 Skia 原生库（尝试 ${attempt}/3）` });
+    report(options, { stage: "skia-request", message: $t("scripts.skia-binary.text_7538305ef8", { "attempt": attempt }) });
     let retryable = true;
     let failure: unknown;
     try {
@@ -53,7 +57,7 @@ async function downloadArchive(url: string, options: RecoveryOptions): Promise<U
 
       await response.body?.cancel().catch(() => undefined);
       retryable = response.status >= 500 || response.status === 408 || response.status === 429;
-      failure = new Error(`Skia 发布资源返回 HTTP ${response.status}。`);
+      failure = new Error($t("scripts.skia-binary.text_f347e875b6", { "status": response.status }));
     } catch (error) {
       failure = error;
       if (attempt === 3 || deadline.aborted) {
@@ -61,7 +65,7 @@ async function downloadArchive(url: string, options: RecoveryOptions): Promise<U
         if (!curl) throw error;
 
         // The same release asset is still verified against the package digest before installation.
-        report(options, { stage: "skia-fallback", message: "正在使用备用下载方式获取 Skia 原生库" });
+        report(options, { stage: "skia-fallback", message: $t("scripts.skia-binary.text_c8c025360e") });
         const download = Bun.spawn([
           curl, "--disable", "--fail", "--silent", "--location",
           "--proto", "=https", "--proto-redir", "=https",
@@ -78,7 +82,7 @@ async function downloadArchive(url: string, options: RecoveryOptions): Promise<U
 }
 
 export async function recoverSkiaBinary(root: URL, options: RecoveryOptions = {}): Promise<boolean> {
-  report(options, { stage: "skia-check", message: "正在核对 Skia 原生库" });
+  report(options, { stage: "skia-check", message: $t("scripts.skia-binary.text_1a15e30f5a") });
   for (const path of ["packages/skia/node_modules/skia-canvas/", "node_modules/skia-canvas/"]) {
     const directory = new URL(path, root);
     const metadata = new URL("package.json", directory);
@@ -97,12 +101,12 @@ export async function recoverSkiaBinary(root: URL, options: RecoveryOptions = {}
 
     const url = `https://github.com/samizdatco/skia-canvas/releases/download/v${version}/${artifact}`;
     const bytes = await downloadArchive(url, options);
-    report(options, { stage: "skia-verify", message: "正在校验 Skia 发布资源 SHA-256", completed: 0, total: bytes.byteLength, unit: "bytes" });
+    report(options, { stage: "skia-verify", message: $t("scripts.skia-binary.text_a4dc68607c"), completed: 0, total: bytes.byteLength, unit: "bytes" });
     if (`sha256:${createHash("sha256").update(bytes).digest("hex")}` !== digest) {
-      throw new Error("Skia 发布资源的 SHA-256 校验失败。");
+      throw new Error($t("scripts.skia-binary.text_79dc4798d6"));
     }
-    report(options, { stage: "skia-verify", message: "Skia 发布资源 SHA-256 校验通过", completed: bytes.byteLength, total: bytes.byteLength, unit: "bytes" });
-    report(options, { stage: "skia-extract", message: "正在解压并安装已校验的 Skia 原生库" });
+    report(options, { stage: "skia-verify", message: $t("scripts.skia-binary.text_6d50584a17"), completed: bytes.byteLength, total: bytes.byteLength, unit: "bytes" });
+    report(options, { stage: "skia-extract", message: $t("scripts.skia-binary.text_14b3acbd77") });
     const temp = await mkdtemp(fileURLToPath(new URL("lib/.lotus-skia-", directory)));
     try {
       const staged = join(temp, "skia.node");
@@ -111,7 +115,7 @@ export async function recoverSkiaBinary(root: URL, options: RecoveryOptions = {}
     } finally {
       await rm(temp, { recursive: true, force: true });
     }
-    report(options, { stage: "skia-ready", message: "Skia 原生库下载、校验及安装完成" });
+    report(options, { stage: "skia-ready", message: $t("scripts.skia-binary.text_6aba55dc65") });
     return true;
   }
   return false;

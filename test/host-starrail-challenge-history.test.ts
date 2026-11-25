@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { appendFile, cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -86,7 +87,7 @@ test("星铁历史超过三期完整转发，双协议读简易前期、空页�
     const installed = join(root, "plugins/starrail");
     await cp(plugin, installed, { recursive: true, filter: file => ![".git", "node_modules", "test"].includes(basename(file)) });
     await symlink(join(plugin, "node_modules"), join(installed, "node_modules"), "dir");
-    await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+    await linkHostPackages(root);
     const evidence = Bun.env.LOTUS_SR_CHALLENGE_EVIDENCE;
     if (evidence && await Bun.file(join(evidence, "theme/floor12.png")).exists()) {
       await cp(join(evidence, "theme"), join(root, "data/starrail/challenge-theme"), { recursive: true });

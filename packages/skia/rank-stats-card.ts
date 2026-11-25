@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback } from "./builtin-fonts.ts";
 // Ark's graph layout is based on e81b5ef9111294c17b2b489aee9a94e4ebc0c9c6. See lib/rank-statistics.LICENSE.
@@ -23,12 +26,12 @@ const cyan = "#67e8f9";
 const format = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
 const date = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", dateStyle: "short", timeStyle: "short" });
 
-function label(ctx: Context, value: string, x: number, y: number, size: number, color: string, max = 1080) {
+function label(ctx: Context, value: string, x: number, y: number, size: number, color: string, max = 1080, footer = false) {
   ctx.fillStyle = color;
   ctx.font = `600 ${size}px ${font}`;
   const width = ctx.measureText(value).width;
   if (width > max) ctx.font = `600 ${Math.floor(size * max / width)}px ${font}`;
-  if (value.includes("Lotus-Yunzai")) ctx.fillStyle = brandTextColor(ctx, value, x, y);
+  if (footer) ctx.fillStyle = brandTextColor(ctx, value, x, y);
   ctx.fillText(value, x, y);
 }
 
@@ -61,7 +64,7 @@ async function readBackground(game: Game, themeDirectory: string) {
 }
 
 export async function renderDamageRankStatsCard(game: Game, name: string, stats: DamageRankStats, {
-  mode = "auto", now = new Date(), themeDirectories = [], footer = "Lotus-Yunzai",
+  mode = "auto", now = new Date(), themeDirectories = [], footer = $t("rank-stats-card.text_3867834e77"),
 }: { readonly mode?: RenderMode; readonly now?: Date; readonly themeDirectories?: readonly string[]; readonly footer?: string } = {}) {
   prepareFont();
   let background: Awaited<ReturnType<typeof readBackground>>;
@@ -97,12 +100,12 @@ export async function renderDamageRankStatsCard(game: Game, name: string, stats:
 
     ctx.textAlign = "center";
     label(ctx, name, 600, 66, 40, "#ffffff");
-    label(ctx, `排名趋势 · ${stats.title}`, 600, 99, 19, "#efd6a0");
+    label(ctx, $t("rank-stats-card.text_ba837c6601", { "title": stats.title }), 600, 99, 19, "#efd6a0");
     block(ctx, 390, 115, 420, 34, 17, "#263e6a9b");
-    label(ctx, `统计样本 ${format.format(stats.total)} 个 UID  ·  生成时间 ${date.format(now)}`, 600, 137, 14, "#e9f1fd", 392);
+    label(ctx, $t("rank-stats-card.text_27fde30335", { "value1": format.format(stats.total), "value2": date.format(now) }), 600, 137, 14, "#e9f1fd", 392);
     block(ctx, 34, 166, 1132, 485, 16, "#0d132aa8");
-    label(ctx, "伤害", 92, 197, 13, "#b4c4e3");
-    label(ctx, "排名百分比", 600, 619, 14, "#c5d2e6");
+    label(ctx, $t("rank-stats-card.text_30e1196888"), 92, 197, 13, "#b4c4e3");
+    label(ctx, $t("rank-stats-card.text_7a12fd90d1"), 600, 619, 14, "#c5d2e6");
     for (let tick = 0; tick <= 6; tick++) {
       const value = maximum * tick / 6;
       const y = chart.bottom - (chart.bottom - chart.top) * tick / 6;
@@ -114,7 +117,7 @@ export async function renderDamageRankStatsCard(game: Game, name: string, stats:
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.textAlign = "right";
-      label(ctx, value >= 10_000 ? `${(value / 10_000).toFixed(1)}万` : format.format(value), chart.left - 12, y + 5, 12, "#aebdda", 76);
+      label(ctx, value >= 10_000 ? $t("rank-stats-card.text_b2e8dfa288", { "value1": (value / 10_000).toFixed(1) }) : format.format(value), chart.left - 12, y + 5, 12, "#aebdda", 76);
     }
 
     const gradient = ctx.createLinearGradient(chart.left, chart.top, chart.right, chart.top);
@@ -165,6 +168,6 @@ export async function renderDamageRankStatsCard(game: Game, name: string, stats:
       label(ctx, `TOP ${rankPercentiles[index]}%`, x + 52, 694, 12, "#c9d6e9", 93);
       label(ctx, format.format(value), x + 52, 723, 17, index < 3 ? cyan : "#ffffff", 99);
     }
-    label(ctx, footer, 600, 772, 12, "#fff");
+    label(ctx, footer, 600, 772, 12, "#fff", 1080, true);
   }, mode, { allowHalfScale: scale === 4 });
 }

@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { cp, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { copyHost, disableMemberPrewarm } from "./host-fixture.ts";
+import { copyHost, disableMemberPrewarm, linkHostPackages } from "./host-fixture.ts";
 
 type Inbound = string | { type: string; data: Record<string, string> }[];
 interface Action {
@@ -535,7 +535,7 @@ test("本机表情经真实 OneBot 保留群禁用与引用行为，戳一戳不
       await cp(source, plugin, { recursive: true, filter: path => ![".git", "node_modules", "resources"].includes(basename(path)) });
       await symlink(join(source, "node_modules"), join(plugin, "node_modules"), "dir");
       await symlink(join(source, "resources"), join(plugin, "resources"), "dir");
-      await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+      await linkHostPackages(root);
       const config = join(root, "config/config");
       const memeConfig = join(root, "data/meme/config");
       await Promise.all([mkdir(config, { recursive: true }), mkdir(memeConfig, { recursive: true })]);
@@ -635,7 +635,7 @@ test("原神删面板经真实网关抢先于旧会话和关键词，尊重功�
     const destination = join(root, "plugins", "genshin");
     await cp(source, destination, { recursive: true, filter: path => ![".git", "node_modules"].includes(path.split("/").at(-1)!) });
     await symlink(join(source, "node_modules"), join(destination, "node_modules"), "dir");
-    await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+    await linkHostPackages(root);
     const profiles = join(root, "data", "profile");
     const old = join(root, "data", "panel-legacy");
     await Promise.all([mkdir(profiles, { recursive: true }), mkdir(old, { recursive: true }),

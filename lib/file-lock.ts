@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { Database } from "bun:sqlite";
 import { lstat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -11,9 +14,9 @@ export function managedStartupLockPath(root: string): string {
   return join(dirname(root), `.${basename(root)}.lotus-startup.sqlite`);
 }
 
-export async function lockFile(file: string, subject: string, waitMs = 2_000, busy = `${subject}正在更新，请稍后重试。`): Promise<Database> {
+export async function lockFile(file: string, subject: string, waitMs = 2_000, busy = $t("lib.file-lock.text_c9361e98dc", { "subject": subject })): Promise<Database> {
   try {
-    if (!(await lstat(file)).isFile()) throw new Error(`${subject}锁须为普通文件。`);
+    if (!(await lstat(file)).isFile()) throw new Error($t("lib.file-lock.text_3a9204dbc4", { "subject": subject }));
   } catch (error) {
     if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
   }

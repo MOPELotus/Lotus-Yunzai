@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isAbsolute } from "node:path";
 import { devNull } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -6,8 +9,8 @@ type RunResult = { status: "ok"; output: string } | { status: "failed" | "timeou
 
 export const localOcrImageBytes = 8 * 1024 * 1024;
 export const localOcrOutputBytes = 32 * 1024;
-const missingEngine = "本机 OCR 未安装 Tesseract 5 原生库，请联系管理员。";
-const missingModel = "本机 OCR 缺少简体中文或英语模型（chi_sim、eng），请联系管理员。";
+const missingEngine = $t("lib.local-ocr.text_26c653646b");
+const missingModel = $t("lib.local-ocr.text_7b42d5bc2d");
 const worker = fileURLToPath(new URL("./local-ocr-worker.ts", import.meta.url));
 
 async function runLocalOcr(image: Uint8Array | undefined, signal: AbortSignal,
@@ -75,21 +78,21 @@ export function createLocalOcr(timeoutMs = 12_000) {
       const probe = await runLocalOcr(undefined, signal, 2_000, env);
       if (probe.status === "missing-engine") return { failure: missingEngine };
       if (probe.status === "missing-model") return { failure: missingModel };
-      if (probe.status !== "ok") return { failure: "本机 OCR 暂时无法检查语言模型，请联系管理员。" };
+      if (probe.status !== "ok") return { failure: $t("lib.local-ocr.text_0597503d76") };
       readyUntil = performance.now() + 30_000;
       return { ready: true as const };
     },
     async recognize(image: Uint8Array, signal: AbortSignal) {
-      if (image.byteLength === 0 || image.byteLength > localOcrImageBytes) return "无法读取这张图片，请重新发送。";
+      if (image.byteLength === 0 || image.byteLength > localOcrImageBytes) return $t("lib.local-ocr.text_281d121795");
       const result = await runLocalOcr(image, signal, timeoutMs, env);
-      if (result.status === "timeout") return "图片文字识别超时，请缩小图片后重试。";
+      if (result.status === "timeout") return $t("lib.local-ocr.text_0cba453fd5");
       if (result.status !== "ok") {
         readyUntil = 0;
         if (result.status === "missing-engine") return missingEngine;
         if (result.status === "missing-model") return missingModel;
-        return "本机图片文字识别失败，请换一张图片后重试。";
+        return $t("lib.local-ocr.text_df5a99ef4f");
       }
-      return result.output.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/gu, "").trim().slice(0, 4_000).toWellFormed() || "未识别到文字。";
+      return result.output.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/gu, "").trim().slice(0, 4_000).toWellFormed() || $t("lib.local-ocr.text_05d39a014d");
     },
   };
 }

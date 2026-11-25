@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { setTimeout as wait } from "node:timers/promises";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
@@ -22,12 +25,12 @@ function tuningQueue(transport: HoyoTransport): TuningQueue {
 }
 
 export const zzzTuningPools = {
-  GACHA_TYPE_WEAPON_UP: { id: 3, name: "音擎频段" },
-  GACHA_TYPE_WEAPON_RETURN: { id: 103, name: "音擎回响" },
-  GACHA_TYPE_CHARACTER_UP: { id: 2, name: "独家频段" },
-  GACHA_TYPE_CHARACTER_RETURN: { id: 102, name: "独家重映" },
-  GACHA_TYPE_PERMANENT: { id: 1, name: "常驻频段" },
-  GACHA_TYPE_BANGBOO: { id: 5, name: "邦布频段" },
+  GACHA_TYPE_WEAPON_UP: { id: 3, name: $t("zzz-tuning.text_3ea1ef49dc") },
+  GACHA_TYPE_WEAPON_RETURN: { id: 103, name: $t("zzz-tuning.text_3e77093711") },
+  GACHA_TYPE_CHARACTER_UP: { id: 2, name: $t("zzz-tuning.text_9ca71e998a") },
+  GACHA_TYPE_CHARACTER_RETURN: { id: 102, name: $t("zzz-tuning.text_f6dbc05fda") },
+  GACHA_TYPE_PERMANENT: { id: 1, name: $t("zzz-tuning.text_e0b2744a47") },
+  GACHA_TYPE_BANGBOO: { id: 5, name: $t("zzz-tuning.text_c9f8671eae") },
 } as const;
 
 const tickets = {
@@ -107,7 +110,7 @@ export interface ZzzTuningSnapshot {
 
 export class ZzzTuningRateLimitError extends HoyoRequestError {
   constructor(status: number, retcode?: number, readonly retryAfterMs?: number) {
-    super(status === 429 ? "http" : "api", "绝区零官方调频接口请求过于频繁。", status, retcode);
+    super(status === 429 ? "http" : "api", $t("zzz-tuning.text_1fdfaa413c"), status, retcode);
   }
 }
 
@@ -146,7 +149,7 @@ function uint(value: unknown): number | null {
 
 function versionOf(value: unknown): string {
   const version = text(value);
-  if (!version || /[,\r\n\0]/u.test(version)) invalid("绝区零官方调频期次编号无效。");
+  if (!version || /[,\r\n\0]/u.test(version)) invalid($t("zzz-tuning.text_f20ecb2204"));
   return version;
 }
 
@@ -164,17 +167,17 @@ function recordOf(row: Json, version: string): ZzzTuningRecord {
 }
 
 function recordList(value: unknown, version: string): ZzzTuningRecord[] {
-  return list(value ?? [], "绝区零官方调频期次明细格式无效。").flatMap((entry) => {
+  return list(value ?? [], $t("zzz-tuning.text_ccdd412151")).flatMap((entry) => {
     const row = object(entry);
-    if (!row || row.item_id == null || !text(row.item_id)) invalid("绝区零官方调频明细缺少有效物品编号。");
+    if (!row || row.item_id == null || !text(row.item_id)) invalid($t("zzz-tuning.text_dfea447d04"));
     return text(row.item_id) === "0" ? [] : [recordOf(row, version)];
   });
 }
 
 function periodsOf(data: Json): ZzzTuningPeriod[] {
-  return list(data.list, "绝区零官方调频响应缺少期次列表。").map((entry) => {
+  return list(data.list, $t("zzz-tuning.text_bc19b1116f")).map((entry) => {
     const row = object(entry);
-    if (!row) invalid("绝区零官方调频期次格式无效。");
+    if (!row) invalid($t("zzz-tuning.text_a4013274c6"));
     const version = versionOf(row.version);
     const firstUp = object(row.first_up);
     return {
@@ -188,7 +191,7 @@ function periodsOf(data: Json): ZzzTuningPeriod[] {
 
 function inventoryOf(index: Json): ZzzTuningInventory {
   const result: ZzzTuningInventory = {};
-  for (const entry of list(index.cur_tickets ?? [], "绝区零官方调频库存列表格式无效。")) {
+  for (const entry of list(index.cur_tickets ?? [], $t("zzz-tuning.text_7ba978f27e"))) {
     const row = object(entry);
     const type = text(row?.ticket_type);
     if (!Object.hasOwn(tickets, type)) continue;
@@ -196,7 +199,7 @@ function inventoryOf(index: Json): ZzzTuningInventory {
     if (amount == null || (typeof amount === "string" && !amount.trim())) continue;
     const count = uint(amount);
     const key = tickets[type as keyof typeof tickets];
-    if (count === null || (result[key] !== undefined && result[key] !== count)) invalid("绝区零官方调频库存数值无效。");
+    if (count === null || (result[key] !== undefined && result[key] !== count)) invalid($t("zzz-tuning.text_31a4180cb7"));
     result[key] = count;
   }
   return result;
@@ -225,7 +228,7 @@ function poolOf(type: Pool, band: Json, periods: ZzzTuningPeriod[]): ZzzTuningPo
   const checked = unique.length === totalS ? unique : records;
   if (totalDraws === null || totalS === null || totalDraws < totalS || checked.length !== totalS ||
       checked.some((row) => row.rarity !== "S" || !row.time || !row.count)) {
-    invalid(`绝区零官方调频「${name}」汇总与 S 级明细不一致。`);
+    invalid($t("zzz-tuning.text_44d1a27a4a", { "name": name }));
   }
   return {
     type, name, totalDraws, totalS, upCount: uint(band.up_count), averageUp: decimal(band.avr_up_count),
@@ -239,7 +242,7 @@ export function resolveZzzTuningRegion(source: Pick<ProfileRequestContext, "game
   const region = source.role.region.trim() || (/^[1-9]\d{7,8}$/u.test(uid) ? "prod_gf_cn" : "");
   if (source.game !== "zzz" || !/^[1-9]\d{7,9}$/u.test(uid) || (gameBiz && gameBiz !== "nap_cn") ||
       /^(?:10|13|15|17)\d{8}$/u.test(uid) || (region !== "prod_gf_cn" && region !== "prod_qd_cn")) {
-    throw new HoyoRequestError("invalid-input", "绝区零官方调频仅支持已确认的国服绝区零档案。");
+    throw new HoyoRequestError("invalid-input", $t("zzz-tuning.text_127f09cf84"));
   }
   return region;
 }
@@ -263,9 +266,9 @@ function apiError(payload: Json, status: number, retcode: number): HoyoRequestEr
   const blocked = captchaOrRisk.has(retcode) || /验证码|captcha|geetest|challenge|风控/iu.test(message);
   if (!blocked && (expiredCodes.has(retcode) ||
       /cookie.{0,16}(?:失效|过期|expired|invalid)|(?:expired|invalid).{0,16}cookie|请(?:先|重新)?登[录陆]|(?:未登[录陆]|please (?:log in|login)|登录(?:状态)?(?:失效|过期))/iu.test(message))) {
-    return new CookieExpired("api", "绝区零官方调频 Cookie 已失效。", status, retcode);
+    return new CookieExpired("api", $t("zzz-tuning.text_5004d886da"), status, retcode);
   }
-  return new HoyoRequestError("api", "绝区零官方调频接口拒绝请求。", status, retcode);
+  return new HoyoRequestError("api", $t("zzz-tuning.text_c6435a050f"), status, retcode);
 }
 
 function tuningRequest(source: ProfileRequestContext, transport: HoyoTransport, options: ZzzTuningOptions, guard?: Guard) {
@@ -278,10 +281,10 @@ function tuningRequest(source: ProfileRequestContext, transport: HoyoTransport, 
   const cookie = source.account.cookie;
   if (!cookie.trim() || !cookie.includes("=") || /[\r\n\0]/u.test(cookie) ||
       !Number.isSafeInteger(intervalMs) || intervalMs < 0 || intervalMs > 2_147_483_647) {
-    throw new HoyoRequestError("invalid-input", "绝区零官方调频档案 Cookie 或请求间隔无效。");
+    throw new HoyoRequestError("invalid-input", $t("zzz-tuning.text_83123df61a"));
   }
 
-  const canceled = () => new HoyoRequestError("transport", "绝区零官方调频请求已取消。");
+  const canceled = () => new HoyoRequestError("transport", $t("zzz-tuning.text_9c705789b8"));
   function checkSignal() {
     if (signal?.aborted) throw canceled();
   }
@@ -366,26 +369,26 @@ function tuningRequest(source: ProfileRequestContext, transport: HoyoTransport, 
       });
     } catch {
       await check();
-      throw new HoyoRequestError("transport", "绝区零官方调频请求未完成。");
+      throw new HoyoRequestError("transport", $t("zzz-tuning.text_3d61b75b23"));
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       await check();
       if (response.status === 429) throw new ZzzTuningRateLimitError(429, undefined, retryAfter(response, now));
-      throw new HoyoRequestError("http", "绝区零官方调频接口返回 HTTP 错误。", response.status);
+      throw new HoyoRequestError("http", $t("zzz-tuning.text_2ab769470e"), response.status);
     }
     const payload = object(await response.json().catch(() => undefined));
     await check();
     const rawCode = text(payload?.retcode);
     const retcode = Number(rawCode);
     if (!payload || !/^-?\d+$/u.test(rawCode) || !Number.isSafeInteger(retcode)) {
-      invalid("绝区零官方调频接口响应格式有误。");
+      invalid($t("zzz-tuning.text_00ca9fd8a4"));
     }
     if (retcode !== 0) throw apiError(payload, response.status, retcode);
     const data = object(payload.data);
-    if (!data) invalid("绝区零官方调频接口没有返回数据。");
+    if (!data) invalid($t("zzz-tuning.text_8763ccd035"));
     if ((data.uid != null && text(data.uid) !== uid) || (data.region != null && text(data.region) !== region)) {
-      invalid("绝区零官方调频响应与当前档案角色的 UID 或分区不一致。");
+      invalid($t("zzz-tuning.text_042c6ef9ba"));
     }
     return data;
   }
@@ -409,20 +412,20 @@ export async function readZzzTuning(
   const currentVersion = versionOf(index.cur_ver);
   const totalDraws = uint(index.total_gacha_count);
   const totalS = uint(index.total_s_count);
-  if (totalDraws === null || totalS === null || totalDraws < totalS) invalid("绝区零官方调频总览抽数无效。");
+  if (totalDraws === null || totalS === null || totalDraws < totalS) invalid($t("zzz-tuning.text_b09f99a850"));
   const byType = new Map<Pool, Json>();
-  for (const row of list(index.type_stats, "绝区零官方调频总览缺少频段。")) {
+  for (const row of list(index.type_stats, $t("zzz-tuning.text_1f0503de86"))) {
     const band = object(row);
     const type = text(band?.gacha_type);
-    if (!band || !type) invalid("绝区零官方调频总览频段格式无效。");
+    if (!band || !type) invalid($t("zzz-tuning.text_48a6610cd3"));
     if (!Object.hasOwn(zzzTuningPools, type)) continue;
     const poolType = type as Pool;
-    if (byType.has(poolType)) invalid("绝区零官方调频总览返回重复频段。");
+    if (byType.has(poolType)) invalid($t("zzz-tuning.text_e9d285f473"));
     byType.set(poolType, band);
   }
 
   const types = Object.keys(zzzTuningPools) as Pool[];
-  if (byType.size !== types.length) invalid("绝区零官方调频总览未返回全部六个频段。");
+  if (byType.size !== types.length) invalid($t("zzz-tuning.text_2ab9667838"));
   const inventory = inventoryOf(index);
   const pools: ZzzTuningPool[] = [];
   for (const type of types) {
@@ -436,7 +439,7 @@ export async function readZzzTuning(
       const history = periodsOf(await request("hist_pool_stat", { gacha_type, vers: batch.join(",") }));
       const returned = new Set(history.map(({ version }) => version));
       if (returned.size !== batch.length || batch.some((version) => !returned.has(version))) {
-        invalid("绝区零官方调频历史期次返回不全或与请求期次不一致。");
+        invalid($t("zzz-tuning.text_ac9680b223"));
       }
       periods.push(...history);
     }
@@ -446,7 +449,7 @@ export async function readZzzTuning(
   const main = pools.filter(({ type }) => type !== "GACHA_TYPE_BANGBOO");
   if (main.reduce((sum, pool) => sum + pool.totalDraws, 0) !== totalDraws ||
       main.reduce((sum, pool) => sum + pool.totalS, 0) !== totalS) {
-    invalid("绝区零官方调频总览与分频段汇总不一致。");
+    invalid($t("zzz-tuning.text_ed1b37a28a"));
   }
   await check();
   return { version: 1, uid, region, profileId: source.profileId, currentVersion,

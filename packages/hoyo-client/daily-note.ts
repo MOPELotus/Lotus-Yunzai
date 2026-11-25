@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { normalizeProfileRoleArtworkUrl, type Game, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -114,7 +117,7 @@ function parseExpeditions(data: Json, game: "gs" | "sr"): DailyNoteSnapshot["exp
   }
   const entries = game === "sr" && active?.slice(0, 8).map((row, index) => {
     const name = typeof row.name === "string" ? row.name.replace(/[\p{Cc}\p{Cf}]/gu, "").trim().slice(0, 80) : "";
-    return { name: name || `委托 ${index + 1}`, remainingSeconds: expeditionRemaining(row, now),
+    return { name: name || $t("daily-note.text_26d2b74fe7", { "value1": index + 1 }), remainingSeconds: expeditionRemaining(row, now),
       avatars: Array.isArray(row.avatars) ? row.avatars.slice(0, 4).map(normalizeProfileRoleArtworkUrl) : [] };
   });
   if (current !== undefined || max !== undefined || remainingSeconds !== undefined || (entries && entries.length)) return {
@@ -176,12 +179,12 @@ function parseScratchCard(value: unknown): boolean | undefined {
 function normalize(data: Json, game: Game, uid: string, region: string, gameBiz: string = noteBiz[game]): DailyNoteSnapshot {
   for (const identity of [data.role_id, data.uid, data.game_uid]) {
     if (identity !== undefined && identity !== uid && identity !== Number(uid)) {
-      throw new HoyoRequestError("response", "体力响应的角色与档案不一致。");
+      throw new HoyoRequestError("response", $t("daily-note.text_ebad213c04"));
     }
   }
   if ((data.server !== undefined && data.server !== region) || (data.region !== undefined && data.region !== region) ||
       (data.game_biz !== undefined && data.game_biz !== gameBiz)) {
-    throw new HoyoRequestError("response", "体力响应的游戏或区服与档案不一致。");
+    throw new HoyoRequestError("response", $t("daily-note.text_b45863fd07"));
   }
 
   const energy = object(data.energy);
@@ -189,7 +192,7 @@ function normalize(data: Json, game: Game, uid: string, region: string, gameBiz:
   const stamina = game === "gs" ? recovery(data.current_resin, data.max_resin, data.resin_recovery_time)
     : game === "sr" ? recovery(data.current_stamina, data.max_stamina, data.stamina_recover_time)
     : recovery(energyProgress?.current, energyProgress?.max, energy?.restore);
-  if (!stamina) throw new HoyoRequestError("response", "官方体力响应缺少有效的当前值或上限。");
+  if (!stamina) throw new HoyoRequestError("response", $t("daily-note.text_4794ac2548"));
   const base = { game, uid, region, stamina };
 
   if (game === "gs") return { ...base,

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { importProfiles } from "../packages/account/index.ts";
@@ -16,7 +19,7 @@ export async function stageLegacyProfiles(source: string, stateDirectory: string
     const directory = join(source, ...parts);
     try {
       if (await realpath(directory) !== directory || !(await lstat(directory)).isDirectory()) {
-        throw new Error("旧档案目录必须位于安装快照的实体目录内。");
+        throw new Error($t("lib.migration-profiles.text_e3a411e257"));
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
@@ -24,7 +27,7 @@ export async function stageLegacyProfiles(source: string, stateDirectory: string
     }
     const migrated = await importProfiles(directory, target, true);
     if (migrated.conflict || migrated.invalid) {
-      throw new Error(`旧档案暂存遇到 ${migrated.conflict} 个冲突和 ${migrated.invalid} 个无效文件。`);
+      throw new Error($t("lib.migration-profiles.text_1482d351f8", { "conflict": migrated.conflict, "invalid": migrated.invalid }));
     }
     result.sources++;
     result.imported += migrated.imported;

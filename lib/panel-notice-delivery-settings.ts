@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isDeepStrictEqual } from "node:util";
 import type { NoticeRedis } from "../plugins/notice/store.ts";
 import { readPanelJson } from "./panel.ts";
@@ -8,16 +11,16 @@ type Document = Record<string, unknown>;
 type Channel = { key: string; label: string; storage: string };
 
 const channels: Channel[] = Object.entries(panelMysNoticeGames).flatMap(([game, name]) =>
-  [["announce", "公告", "targets"], ["info", "资讯", "info-targets"],
-    ...(panelMysActivityGames.some(active => active === game) ? [["activity", "活动到期", "activity-targets"]] : [])].map(([kind, label, suffix]) => ({
-    key: game + kind, label: name + label + "群内订阅覆盖", storage: `lotus-yunzai:notice:mys:${game}:${suffix}`,
+  [["announce", $t("lib.panel-notice-delivery-settings.text_069c0ecbf8"), "targets"], ["info", $t("lib.panel-notice-delivery-settings.text_71d9a93075"), "info-targets"],
+    ...(panelMysActivityGames.some(active => active === game) ? [["activity", $t("lib.panel-notice-delivery-settings.text_3c28e111e2"), "activity-targets"]] : [])].map(([kind, label, suffix]) => ({
+    key: game + kind, label: name + label + $t("lib.panel-notice-delivery-settings.text_8b1587b7f0"), storage: `lotus-yunzai:notice:mys:${game}:${suffix}`,
   })));
 const fields = [
-  { key: "whitelist", label: "公告全局白名单", type: "list" },
-  { key: "blacklist", label: "公告全局黑名单", type: "list" },
-  { key: "accounts", label: "在线机器人的公告推送配置", type: "json",
-    hint: "以机器人 QQ 为键。enabled 为开关，pushInterval 为毫秒（500–10000），whitelist 和 blacklist 为群号数组。retryCount 是兼容旧配置保留的字段，当前投递只尝试一次。" },
-  ...channels.map(({ key, label }) => ({ key, label, type: "json", hint: "以“机器人QQ:群号”为键。on 强制启用，off 强制停用，删掉该项后按 YAML 基础名单。" })),
+  { key: "whitelist", label: $t("lib.panel-notice-delivery-settings.text_2d26c33661"), type: "list" },
+  { key: "blacklist", label: $t("lib.panel-notice-delivery-settings.text_e9159ce5da"), type: "list" },
+  { key: "accounts", label: $t("lib.panel-notice-delivery-settings.text_661b96b2e9"), type: "json",
+    hint: $t("lib.panel-notice-delivery-settings.text_6b4f8bfd6f") },
+  ...channels.map(({ key, label }) => ({ key, label, type: "json", hint: $t("lib.panel-notice-delivery-settings.text_f78398cadf") })),
 ] as const;
 
 const globalKeys = ["notice:whitelist", "notice:blacklist"];
@@ -99,7 +102,7 @@ function overrides(value: unknown) {
 }
 
 function accountSnapshot(raw: unknown) {
-  if (!Array.isArray(raw) || raw.length !== 5) throw new Error("公告账号配置无效");
+  if (!Array.isArray(raw) || raw.length !== 5) throw new Error($t("lib.panel-notice-delivery-settings.text_adbc9d11b5"));
   const [whitelist, blacklist, enabled, delay, retry] = raw;
   const bounded = (value: unknown, field: keyof typeof limits, fallback: number) => {
     const parsed = Number(value);
@@ -107,7 +110,7 @@ function accountSnapshot(raw: unknown) {
     return value !== false && Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
   };
   if (enabled !== false && enabled !== "true" && enabled !== "false" &&
-      (typeof enabled !== "string" || !/^-?\d+$/u.test(enabled))) throw new Error("公告账号开关无效");
+      (typeof enabled !== "string" || !/^-?\d+$/u.test(enabled))) throw new Error($t("lib.panel-notice-delivery-settings.text_b558403329"));
   return {
     enabled: enabled === false || enabled === "true" || enabled !== "false" && Number(enabled) !== 0,
     pushInterval: bounded(delay, "pushInterval", 2000),
@@ -131,9 +134,9 @@ export function panelNoticeDeliverySettings(getRedis: () => Redis | undefined, o
     const keys = [...globalKeys, ...accounts.map(qq => `notice:account:${qq}:config`), ...channels.map(({ storage }) => storage)];
     try {
       const raw = await redis.eval(atomic, { keys, arguments: [String(accounts.length)] });
-      if (typeof raw !== "string") throw new Error("公告配置快照无效");
+      if (typeof raw !== "string") throw new Error($t("lib.panel-notice-delivery-settings.text_33f73f78d7"));
       const snapshot: unknown = JSON.parse(raw);
-      if (!Array.isArray(snapshot) || snapshot.length !== keys.length) throw new Error("公告配置快照无效");
+      if (!Array.isArray(snapshot) || snapshot.length !== keys.length) throw new Error($t("lib.panel-notice-delivery-settings.text_33f73f78d7"));
       const values = {
         whitelist: groupIds(Array.isArray(snapshot[0]) ? snapshot[0] : []),
         blacklist: groupIds(Array.isArray(snapshot[1]) ? snapshot[1] : []),

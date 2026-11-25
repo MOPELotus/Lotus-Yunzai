@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 // Battle record request contract adapted from MOPELotus/Lotus-ReFactor eaf7675
 // services/starRailChallenge/service.js.
 import { createHash, randomInt } from "node:crypto";
@@ -41,7 +44,7 @@ function requestHeaders(source: Source, cookie: string, query: URLSearchParams) 
   const { device } = source;
   const printable = (value: string) => !/[^\x20-\x7e]/u.test(value);
   if (!cookie.includes("=") || !printable(cookie) || !printable(device.id) || !printable(device.fp)) {
-    throw new HoyoRequestError("invalid-input", "当前档案的战绩 Cookie 或设备字段无效。");
+    throw new HoyoRequestError("invalid-input", $t("starrail-challenge.text_a9e2b58042"));
   }
   const appVersion = "2.118.1";
   const salt = "xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs";
@@ -70,12 +73,12 @@ function requestHeaders(source: Source, cookie: string, query: URLSearchParams) 
 
 class ChallengeUnavailable extends HoyoRequestError {
   constructor(status: number, code: number) {
-    super("api", "官方星铁战绩未公开、角色未绑定或未开放此项详细战绩。", status, code);
+    super("api", $t("starrail-challenge.text_df83a69be3"), status, code);
   }
 }
 
 function apiError(status: number, retcode: number | undefined, challenge: boolean): HoyoRequestError {
-  const subject = "星铁挑战战绩";
+  const subject = $t("starrail-challenge.text_16c751a316");
   const code = status === 401 || status === 429 ? "http" : "api";
   if (status === 429) return new GameRecordRequestError(subject, "rate-limited", code, status, retcode);
   if (retcode === 10041) return new GameRecordRequestError(subject, "account", code, status, retcode);
@@ -86,7 +89,7 @@ function apiError(status: number, retcode: number | undefined, challenge: boolea
     return new GameRecordRequestError(subject, "expired", code, status, retcode);
   }
   if (retcode === 10102 || retcode === 5003) return new ChallengeUnavailable(status, retcode);
-  return new HoyoRequestError("api", "官方星铁挑战战绩拒绝请求。", status, retcode);
+  return new HoyoRequestError("api", $t("starrail-challenge.text_dba87bf902"), status, retcode);
 }
 
 function verifyResult(data: Json, { uid }: Source["role"], region: string) {
@@ -95,12 +98,12 @@ function verifyResult(data: Json, { uid }: Source["role"], region: string) {
     if (!identity) continue;
     for (const name of ["role_id", "game_uid"] as const) {
       if (Object.hasOwn(identity, name) && String(identity[name]) !== uid) {
-        throw new HoyoRequestError("response", "官方星铁战绩返回的角色与当前档案不一致。");
+        throw new HoyoRequestError("response", $t("starrail-challenge.text_82bbd1f73d"));
       }
     }
     for (const name of ["region", "server"] as const) {
       if (Object.hasOwn(identity, name) && identity[name] !== region) {
-        throw new HoyoRequestError("response", "官方星铁战绩返回的区服与当前档案不一致。");
+        throw new HoyoRequestError("response", $t("starrail-challenge.text_476f451d7b"));
       }
     }
   }
@@ -109,16 +112,16 @@ function verifyResult(data: Json, { uid }: Source["role"], region: string) {
 export async function readStarRailChallenge(source: ProfileRequestContext, transport: HoyoTransport,
   options: StarRailChallengeOptions, verifyProfile?: () => Promise<void>) {
   const detectedRegion = starRailChallengeRegion(source.role);
-  if (!detectedRegion) throw new HoyoRequestError("invalid-input", "请核对档案中的星铁角色与国服区服。");
+  if (!detectedRegion) throw new HoyoRequestError("invalid-input", $t("starrail-challenge.text_594b1c433e"));
   const region: string = detectedRegion;
   const { kinds, simple, period, signal } = options;
   if (source.game !== "sr" || kinds.length < 1 || kinds.length > 4 || kinds.some(kind => !Object.hasOwn(routes, kind))) {
-    throw new HoyoRequestError("invalid-input", "星铁挑战战绩查询类型无效。");
+    throw new HoyoRequestError("invalid-input", $t("starrail-challenge.text_f1e28e5bcc"));
   }
   const origin = "https://api-takumi-record.mihoyo.com";
   const timeout = AbortSignal.timeout(25_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
-  const interrupted = () => new HoyoRequestError("transport", "官方星铁挑战战绩请求未完成。");
+  const interrupted = () => new HoyoRequestError("transport", $t("starrail-challenge.text_83db12b536"));
   async function guard() {
     if (deadline.aborted) throw interrupted();
     await verifyProfile?.();
@@ -161,7 +164,7 @@ export async function readStarRailChallenge(source: ProfileRequestContext, trans
         (!response.ok && response.status !== 401 && response.status !== 429)) {
       void response.body?.cancel().catch(() => undefined);
       await guard();
-      throw new HoyoRequestError("http", "官方星铁挑战战绩返回 HTTP 错误。", response.status);
+      throw new HoyoRequestError("http", $t("starrail-challenge.text_633d6200dd"), response.status);
     }
     const aigis = response.headers.get("x-rpc-aigis")?.trim();
     const challenge = Boolean(aigis && aigis !== "{}");
@@ -174,10 +177,10 @@ export async function readStarRailChallenge(source: ProfileRequestContext, trans
     await guard();
     const retcode = retcodeOf(payload?.retcode);
     if (response.status === 401) throw apiError(response.status, retcode, false);
-    if (retcode === undefined) throw new HoyoRequestError("response", "官方星铁挑战战绩响应格式无效。");
+    if (retcode === undefined) throw new HoyoRequestError("response", $t("starrail-challenge.text_b670c6aa4e"));
     if (retcode !== 0) throw apiError(response.status, retcode, false);
     const data = object(payload?.data);
-    if (!data) throw new HoyoRequestError("response", "官方星铁挑战战绩响应缺少有效数据。");
+    if (!data) throw new HoyoRequestError("response", $t("starrail-challenge.text_2f183167d3"));
     verifyResult(data, source.role, region);
     return data;
   }

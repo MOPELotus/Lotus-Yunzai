@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import {
   checkinScheduleClock, checkinScheduleMinute, generateCheckinSchedulePlan, legacyUnconfirmedStage, reconcileCheckinSchedulePlan,
   type CheckinCommunityWriteStatus, type CheckinGameWriteStatus, type CheckinScheduleConfig, type CheckinScheduleEntry, type CheckinScheduleGame, type CheckinScheduleProfile,
@@ -111,13 +114,13 @@ function checkinWriteJournals(initial: CheckinScheduleEntry, update: UpdateJourn
           (previous === "rejected" && manual);
         if ((status === "pending" ? previous !== undefined && !retry : previous !== "pending") ||
             (accountKey && entry.communityWriteAccount && accountKey !== entry.communityWriteAccount)) {
-          throw new Error("社区签到提交记录已变化。");
+          throw new Error($t("lib.checkin-scheduler.text_caa544edcc"));
         }
         return { ...entry, communityWrites: { ...entry.communityWrites, [forum]: status },
           ...(accountKey && { communityWriteAccount: accountKey }) };
       });
     } catch {
-      throw new CheckinScheduleWriteError("无法确认社区签到提交记录已保存。");
+      throw new CheckinScheduleWriteError($t("lib.checkin-scheduler.text_697f87f16f"));
     }
   }
   async function game(target: string, status: CheckinGameWriteStatus, accountKey: string) {
@@ -127,12 +130,12 @@ function checkinWriteJournals(initial: CheckinScheduleEntry, update: UpdateJourn
         const allowed = status === "pending" ? !entry.gameWritesUnknown && (previous === undefined || (previous === "rejected" && manual))
           : previous === "pending" || (status === "confirmed" && previous === "unconfirmed");
         if (!allowed || (entry.gameWriteAccount && entry.gameWriteAccount !== accountKey)) {
-          throw new Error("游戏签到提交记录已变化。");
+          throw new Error($t("lib.checkin-scheduler.text_ef0ae0ed13"));
         }
         return { ...entry, gameWriteAccount: accountKey, gameWrites: { ...entry.gameWrites, [target]: status } };
       });
     } catch {
-      throw new CheckinScheduleWriteError("无法确认游戏签到提交记录已保存。");
+      throw new CheckinScheduleWriteError($t("lib.checkin-scheduler.text_e298d3467d"));
     }
   }
   return {
@@ -154,7 +157,7 @@ export async function withManualCheckinJournals<Result>(
   const { date } = clock;
   function verifyDay() {
     signal.throwIfAborted();
-    if (checkinScheduleClock(now()).date !== date) throw new DOMException("签到日期已切换。", "AbortError");
+    if (checkinScheduleClock(now()).date !== date) throw new DOMException($t("lib.checkin-scheduler.text_769e074f50"), "AbortError");
   }
   return store.withExecutionLock(date, async () => {
     verifyDay();
@@ -162,13 +165,13 @@ export async function withManualCheckinJournals<Result>(
       done: false, gameWrites: {}, manualOnly: true };
     const locate = (entries: readonly CheckinScheduleEntry[]) => entries.find(item => sameProfile(item, dormant));
     const initial = locate((await store.read(date))?.entries ?? []) ?? dormant;
-    if (initial.stage === legacyUnconfirmedStage) throw new CheckinScheduleWriteError("旧版当天签到结果待核对。");
+    if (initial.stage === legacyUnconfirmedStage) throw new CheckinScheduleWriteError($t("lib.checkin-scheduler.text_1dca111258"));
     const journal = checkinWriteJournals(clearRunning(initial), async change => {
       await store.update(date, previous => {
         verifyDay();
         const plan = previous ?? { ...generateCheckinSchedulePlan({ date, now: started }), manualSeed: true as const };
         const stored = locate(plan.entries);
-        if (stored?.stage === legacyUnconfirmedStage) throw new Error("旧版当天签到结果待核对。");
+        if (stored?.stage === legacyUnconfirmedStage) throw new Error($t("lib.checkin-scheduler.text_1dca111258"));
         const entry = stored ?? dormant;
         const next = change(stored?.runningAt && stored.gameWrites === undefined ? { ...entry, gameWritesUnknown: true } : entry);
         const entries = stored ? plan.entries.map(item => item === stored ? next : item) : [...plan.entries, next];
@@ -240,7 +243,7 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
               verifyDay();
               const entry = plan?.entries.find(item => sameProfile(item, claim));
               if (!plan || !entry || entry.runningAt !== claim.runningAt || entry.done) {
-                throw new Error("自动签到档案已失去执行资格。");
+                throw new Error($t("lib.checkin-scheduler.text_4c790b35a6"));
               }
               const next = change(entry);
               return { plan: { ...plan, entries: plan.entries.map(item => item === entry ? next : item) }, result: undefined };
@@ -285,7 +288,7 @@ export function createCheckinScheduler({ store, config, listProfiles, runProfile
                 attempts, nextAt, verifiedUnsent: true, accountKey: requested.accountKey,
                 otherFailure: Boolean(previous?.otherFailure || requested.otherFailure),
               } } : { doneAt: checkinScheduleClock(at).iso }),
-              message: nextAt ? requested?.games?.length ? "签到已安排补跑。" : "社区签到已安排补跑。" : ok ? "自动签到已完成。" : "自动签到有未完成的项目。",
+              message: nextAt ? requested?.games?.length ? $t("lib.checkin-scheduler.text_014eb113d7") : $t("lib.checkin-scheduler.text_6e9def73a6") : ok ? $t("lib.checkin-scheduler.text_a2b66421c0") : $t("lib.checkin-scheduler.text_5aeb802f66"),
             };
             return { plan: { ...plan, entries: plan.entries.map(item => item === entry ? next : item) }, result: next };
           });

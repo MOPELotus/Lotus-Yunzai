@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../../i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("captcha", messageCatalog.messages);
 // Match Pillow's RGB resampling: antialias on reduction, 22-bit coefficients,
 // and an 8-bit intermediate between the horizontal and vertical passes.
 // Reference: Pillow src/libImaging/Resample.c; license in resources/captcha.
@@ -7,7 +10,7 @@ function coefficients(input: number, output: number, kernel: 'linear' | 'cubic' 
   const scale = input / output,
     filterScale = Math.max(1, scale)
   const radius = { linear: 1, cubic: 2, lanczos3: 3 }[kernel]!
-  if (!radius) throw new Error(`不支持的重采样方式：${kernel}`)
+  if (!radius) throw new Error($t("src.infrastructure.resize.text_1c5e95babe", { "kernel": kernel }))
   const filter = (value: number) => {
     const x = Math.abs(value)
     if (kernel === 'linear') return x < 1 ? 1 - x : 0

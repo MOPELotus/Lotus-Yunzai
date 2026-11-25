@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { withDefaultUpdateSchedule } from "./update-schedule-settings.ts";
 import { HandlerScope } from "./plugins/handler.ts";
 import { legacyHostCronTimeZone, LegacyTasks } from "./plugins/tasks.ts";
@@ -13,7 +16,7 @@ function updateInterval(value: unknown): number | undefined {
     const delay = Math.ceil(minutes * 60_000);
     if (delay > 0 && Number.isSafeInteger(delay)) return delay;
   }
-  console.warn("[任务] 跳过 bot.yaml 中无效的 update_time。");
+  console.warn($t("lib.update-schedule.text_f9db2c40b1"));
 }
 
 export function scheduleUpdates(
@@ -34,7 +37,7 @@ export function scheduleUpdates(
     running = Promise.resolve().then(() => {
       if (!stopped) return run();
     }).catch(() => {
-      console.warn("[任务] 定时更新执行失败。");
+      console.warn($t("lib.update-schedule.text_481a292f3f"));
     }).finally(() => {
       running = undefined;
     });
@@ -58,9 +61,9 @@ export function scheduleUpdates(
   for (const expression of Array.isArray(cron) ? cron : [cron]) {
     if (!expression) continue;
     try {
-      tasks.register(owner, { name: "定时更新", task: { cron: expression, fnc: trigger, log: false } });
+      tasks.register(owner, { name: $t("lib.update-schedule.text_5007fd2d8e"), task: { cron: expression, fnc: trigger, log: false } });
     } catch {
-      console.warn("[任务] 跳过 bot.yaml 中无效的 update_cron。");
+      console.warn($t("lib.update-schedule.text_a446332553"));
     }
   }
 

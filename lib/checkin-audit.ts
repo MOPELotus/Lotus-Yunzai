@@ -1,21 +1,24 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, type FileHandle } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { MAX_PROFILE_ID } from "@lotus-yunzai/account";
 
 const stages = {
-  refresh: ["登录信息已刷新。", "签到前刷新登录信息失败。"],
-  precheck: ["签到档案已核实。", "签到档案暂不可用。"],
-  runner: ["签到任务已处理。", "签到任务执行失败。"],
-  checkin: ["签到已完成。", "签到有未完成的项目。"],
-  schedule: ["自动签到已处理。", "自动签到执行失败。"],
+  refresh: [$t("lib.checkin-audit.text_4d916d13ab"), $t("lib.checkin-audit.text_eb4a8584fb")],
+  precheck: [$t("lib.checkin-audit.text_f70dc44dfc"), $t("lib.checkin-audit.text_1b24d2f578")],
+  runner: [$t("lib.checkin-audit.text_2902ff51b1"), $t("lib.checkin-audit.text_f7297452f8")],
+  checkin: [$t("lib.checkin-audit.text_019bcedd50"), $t("lib.checkin-audit.text_0b59f950f2")],
+  schedule: [$t("lib.checkin-audit.text_5bc17638e0"), $t("lib.checkin-audit.text_26ed6ad5da")],
 } as const;
 
 const sources = ["manual", "scheduled", "scheduled_community_retry", "scheduled_retry"] as const;
 const statuses = {
-  signed: "签到成功", already: "已签到", "first-bind": "首次绑定",
-  unconfirmed: "未确认", failed: "失败", skipped: "跳过",
-  "community-accepted": "社区已受理", "community-already": "社区已签到",
+  signed: $t("lib.checkin-audit.text_ac1ea22ab4"), already: $t("lib.checkin-audit.text_21c05833ab"), "first-bind": $t("lib.checkin-audit.text_08fcbb5ef4"),
+  unconfirmed: $t("lib.checkin-audit.text_c098e854e6"), failed: $t("lib.checkin-audit.text_28384d7afd"), skipped: $t("lib.checkin-audit.text_fc50a99caa"),
+  "community-accepted": $t("lib.checkin-audit.text_f8634db887"), "community-already": $t("lib.checkin-audit.text_8ee650a394"),
 } as const;
 type Counts = Readonly<Partial<Record<keyof typeof statuses, number>>>;
 
@@ -129,7 +132,7 @@ async function directoryReady(directory: string, create: boolean): Promise<boole
     });
     actual = await realpath(directory);
   }
-  if (actual !== directory || !(await lstat(directory)).isDirectory()) throw new Error("签到审计目录必须是实际目录。");
+  if (actual !== directory || !(await lstat(directory)).isDirectory()) throw new Error($t("lib.checkin-audit.text_14408eca2e"));
   return true;
 }
 
@@ -144,7 +147,7 @@ async function openAudit(file: string, append: boolean): Promise<FileHandle | un
   try {
     const [opened, named] = await Promise.all([handle.stat(), lstat(file)]);
     if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== named.dev || opened.ino !== named.ino ||
-        await realpath(directory) !== directory) throw new Error("签到审计目标必须是目录下的普通文件。");
+        await realpath(directory) !== directory) throw new Error($t("lib.checkin-audit.text_f676a387a9"));
     return handle;
   } catch (error) {
     await handle.close();
@@ -158,7 +161,7 @@ export async function appendPrivateAuditLine(path: string, row: object): Promise
   const handle = (await openAudit(resolve(path), true))!;
   try {
     const { bytesWritten } = await handle.write(buffer, 0, buffer.length, null);
-    if (bytesWritten !== buffer.length) throw new Error("审计记录未完整写入。");
+    if (bytesWritten !== buffer.length) throw new Error($t("lib.checkin-audit.text_8c45f8b7b0"));
     await handle.sync();
   } finally {
     await handle.close();
@@ -187,7 +190,7 @@ async function readRecent(handle: FileHandle, qq: string | undefined): Promise<r
     const block = Buffer.allocUnsafe(cursor - start);
     for (let offset = 0; offset < block.length;) {
       const { bytesRead } = await handle.read(block, offset, block.length - offset, start + offset);
-      if (!bytesRead) throw new Error("签到审计文件在读取期间发生变化。");
+      if (!bytesRead) throw new Error($t("lib.checkin-audit.text_adb49ddc91"));
       offset += bytesRead;
     }
     let end = block.length;
@@ -207,7 +210,7 @@ async function readRecent(handle: FileHandle, qq: string | undefined): Promise<r
 }
 
 export function createCheckinAudit(path: string, now = () => new Date(), history: readonly string[] = []) {
-  if (typeof path !== "string" || !path.trim()) throw new TypeError("须指定签到审计文件。");
+  if (typeof path !== "string" || !path.trim()) throw new TypeError($t("lib.checkin-audit.text_07324407a5"));
   const file = resolve(path);
   const sources = [...new Set([file, ...history.map(input => resolve(input))])];
 
@@ -224,13 +227,13 @@ export function createCheckinAudit(path: string, now = () => new Date(), history
     async append(input: CheckinAuditEntry): Promise<void> {
       const entry = normalizeEntry(input);
       const time = now();
-      if (!entry || !Number.isFinite(time.getTime())) throw new TypeError("签到审计记录无效。");
+      if (!entry || !Number.isFinite(time.getTime())) throw new TypeError($t("lib.checkin-audit.text_372bffee58"));
       await appendPrivateAuditLine(file, rowFor(time.toISOString(), entry));
     },
     async read(scope: CheckinAuditScope): Promise<readonly CheckinAuditRow[]> {
       const qq = scope?.qq;
       if (!(validQq(qq) && scope.owner === undefined) && !(scope?.owner === true && qq === undefined)) {
-        throw new TypeError("须指定签到审计所属 QQ 或明确请求全局记录。");
+        throw new TypeError($t("lib.checkin-audit.text_4080da0ca9"));
       }
       const batches = (await Promise.all(sources.map(input => readFile(input, qq)))).filter(batch => batch.length);
       if (batches.length <= 1) return batches[0] ?? [];

@@ -1,3 +1,9 @@
+import "./lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "./packages/i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
+import { initializeI18n } from "./lib/i18n.ts";
+import { panelI18n } from "./lib/i18n-settings.ts";
 import { createGeneratedDeviceRefresh } from "./lib/generated-device-runtime.ts";
 import { ensureManagedValkey } from "./lib/managed-valkey.ts";
 import { builtinResourceDirectory } from "./lib/builtin-resources.ts";
@@ -347,7 +353,7 @@ if (import.meta.main) {
     if (stopping || lifecycle.signal.aborted) return false;
     try {
       const candidate = moduleTasks.prepare([{ owner: new HandlerScope(), app: {
-        name: "模块定时任务校验", task: { cron, fnc() {}, log: false },
+        name: $t("app.text_89fd7f6097"), task: { cron, fnc() {}, log: false },
       } }]);
       candidate.cancel();
       return true;
@@ -364,7 +370,7 @@ if (import.meta.main) {
       try {
         moduleTasks.register(owner, { name, task: { cron, fnc: run, log: false } });
       } catch {
-        console.warn(`${name} 定时配置无效。`);
+        console.warn($t("app.text_242958f459", { "name": name }));
         return;
       }
       if (runAtStartup) {
@@ -372,7 +378,7 @@ if (import.meta.main) {
           if (!lifecycle.signal.aborted && handoff.accepting) {
             await (typeof runAtStartup === "function" ? runAtStartup : run)();
           }
-        }).catch(() => console.warn(`${name} 启动检查失败。`));
+        }).catch(() => console.warn($t("app.text_40832b56e7", { "name": name })));
         const finished = startup;
         pending.add(finished);
         void finished.finally(() => pending.delete(finished));
@@ -433,7 +439,7 @@ if (import.meta.main) {
   async function exportSignedPanel(game: "gs" | "sr", uid: string, authorized: () => Promise<boolean>,
     event: MessageEvent, signal: AbortSignal) {
     const { uploadFile } = event;
-    if (!uploadFile || event.user_id === undefined) return "当前会话不支持发送面板文件。";
+    if (!uploadFile || event.user_id === undefined) return $t("app.text_84db7aa2ac");
     const authorize = async (target: string) => target === uid && await authorized();
     try {
       if (game === "gs") {
@@ -449,7 +455,7 @@ if (import.meta.main) {
         qq: String(event.user_id), uid, authorize, uploadFile, signal,
       });
     } catch {
-      if (!signal.aborted) return "当前无法读取签名导出的游戏模块。";
+      if (!signal.aborted) return $t("app.text_34f7c4a9a1");
     }
   }
   const restartPausedAt = readRestartPausedAt();
@@ -458,7 +464,7 @@ if (import.meta.main) {
   const initialPause = recordedPause === undefined ? handoff.pausedAt ?? restartPausedAt : recordedPause ?? undefined;
   const dispatchPower = createDispatchPower(Date.now, initialPause,
     durablePause ? (value) => {
-      if (!handoff.accepting) throw new Error("托管宿主连接已断开。");
+      if (!handoff.accepting) throw new Error($t("app.text_7588a8eb44"));
       durablePause.save(value);
       handoff.reportPower(value);
     } : undefined);
@@ -490,6 +496,7 @@ if (import.meta.main) {
   let consoleInput: ReturnType<typeof createTerminalInput> | undefined;
   const servers: Pick<ReturnType<typeof startOneBot>, "stop">[] = [];
   const root = new URL("./", import.meta.url);
+  const i18nSettings = await initializeI18n(root);
   const previous = !probingUpdate && handoff.managed && !handoff.accepting
     ? await previousUpdateDirectory(fileURLToPath(root)).catch(() => undefined)
     : undefined;
@@ -671,12 +678,12 @@ if (import.meta.main) {
         masterPermissions.isMaster(event.self_id, event.user_id);
     };
     if (!canWrite()) {
-      await event.reply("暂无权限，只有主人才能操作");
+      await event.reply($t("app.text_ee7b348d1b"));
       return;
     }
     const level = requestedLogLevel(event.msg);
     if (!level) {
-      await event.reply(`请输入正确的日志等级，可选：\n${logLevels.join(",")}`);
+      await event.reply($t("app.text_86b8dc08ba", { "value1": logLevels.join(",") }));
       return;
     }
     const signal = session ? AbortSignal.any([session, lifecycle.signal]) : lifecycle.signal;
@@ -685,9 +692,9 @@ if (import.meta.main) {
         runtimeLogRevision++;
         runtimeLogConfig.log_level = level;
       });
-      if (!signal.aborted) await event.reply(changed ? `已将日志等级设置为${level}` : `日志等级已是${level}了`);
+      if (!signal.aborted) await event.reply(changed ? $t("app.text_7894441b12", { "level": level }) : $t("app.text_2fada410f1", { "level": level }));
     } catch {
-      if (!signal.aborted) await event.reply("无法保存日志等级，请检查 bot.yaml 后重试。");
+      if (!signal.aborted) await event.reply($t("app.text_b84db17f0c"));
     }
   }
   const logCommand = createLogCommand(async (kind, query) => {
@@ -738,21 +745,21 @@ if (import.meta.main) {
         (event.adapter !== "milky" || onlineMilkyBotId() === event.self_id));
     if (signal.aborted) return;
     if (!authorize()) {
-      await event.reply("暂无权限，只有主人才能操作");
+      await event.reply($t("app.text_ee7b348d1b"));
       return;
     }
     const cron = change.update_notice_cron === undefined ? undefined : normalizedUpdateNoticeCron(change.update_notice_cron);
     if (change.update_notice_cron !== undefined && (!cron || !validateModuleCron(cron))) {
-      await event.reply("检查更新时间需要有效的五段或六段 Cron 表达式。");
+      await event.reply($t("app.text_68ed859a66"));
       return;
     }
     try {
       const settings = await persistUpdateNoticeSettings(root, cron ? { update_notice_cron: cron } : change,
         signal, authorize, updateNotices.apply, validateModuleCron);
-      if (!signal.aborted) await event.reply(cron ? `检查更新时间已设置为 ${settings.update_notice_cron}（北京时间）。` :
-        `更新推送已${settings.update_notice ? "开启" : "关闭"}。`);
+      if (!signal.aborted) await event.reply(cron ? $t("app.text_e804057834", { "update_notice_cron": settings.update_notice_cron }) :
+        $t("app.text_5d8c169497", { "value1": settings.update_notice ? $t("app.text_8da97ddda9") : $t("app.text_3fd47edce4") }));
     } catch {
-      if (!signal.aborted) await event.reply("无法保存更新推送设置，请检查 bot.yaml 和检查时间。");
+      if (!signal.aborted) await event.reply($t("app.text_a10bf57f6b"));
     }
   }
 
@@ -801,7 +808,7 @@ if (import.meta.main) {
 
   async function reportOldMilkySupervisor(event: MessageEvent): Promise<boolean> {
     if (event.adapter !== "milky" || !handoff.managed || handoff.supportsAdapterReceipts) return false;
-    await event.reply("当前托管器版本不支持 Milky 更新或安装。请在终端重启 bun run start 后重试。");
+    await event.reply($t("app.text_857a28618d"));
     return true;
   }
 
@@ -833,9 +840,9 @@ if (import.meta.main) {
       }
       const result = await progress.promise;
       if (!result || result === "current" || result === "switching" || signal.aborted) return;
-      const reply = `定时更新未完成。${describeUpdateProgress(result)}`;
+      const reply = $t("app.text_56aeb51c82", { "value1": describeUpdateProgress(result) });
       if (terminal) terminalOutput(reply);
-      else console.warn(`[更新] ${reply}`);
+      else console.warn($t("app.text_3976a5d3e5", { "reply": reply }));
       await Promise.all(targets.map((target) => sendProcessMessage(target, reply)));
     } finally {
       signal.removeEventListener("abort", abort);
@@ -937,16 +944,16 @@ if (import.meta.main) {
       const elapsed = formatElapsed(Date.now() - receipt.at);
       let reply: string;
       if (receipt.kind === "update") {
-        if (receipt.result === "rolled-back") reply = "更新失败，已恢复旧版本。";
+        if (receipt.result === "rolled-back") reply = $t("app.text_0e3aef90e0");
         else if (receipt.repositories !== undefined) {
-          reply = `更新成功，本次更新 ${receipt.repositories} 个仓库，宿主提交 ${receipt.revision.slice(0, 12)}`;
+          reply = $t("app.text_fab382b885", { "repositories": receipt.repositories, "value2": receipt.revision.slice(0, 12) });
         } else {
-          reply = `更新成功，提交 ${receipt.revision.slice(0, 12)}`;
+          reply = $t("app.text_f82fe678b6", { "value1": receipt.revision.slice(0, 12) });
         }
-        if (receipt.result === "updated" && receipt.preserved) reply += "。原工作区已保留，位置见宿主日志。";
+        if (receipt.result === "updated" && receipt.preserved) reply += $t("app.text_105c512225");
       } else if (receipt.kind === "install") {
-        reply = receipt.result === "rolled-back" ? `安装 ${receipt.name} 失败，已恢复旧版本。` :
-          `安装 ${receipt.name} 成功，提交 ${receipt.revision.slice(0, 12)}。`;
+        reply = receipt.result === "rolled-back" ? $t("app.text_e54d8ac5d0", { "name": receipt.name }) :
+          $t("app.text_c2abfa19e0", { "name": receipt.name, "value2": receipt.revision.slice(0, 12) });
       } else {
         reply = processReceiptText(receipt.kind, elapsed);
       }
@@ -956,14 +963,14 @@ if (import.meta.main) {
           ? { ...receipt, target: { ...receipt.target, pendingUsers: result.retry.pendingUsers } } : receipt;
         await processReceipts.restore(remaining);
       }
-      if (!result.confirmed) console.warn("[进程管理] 未确认进程操作回执。");
+      if (!result.confirmed) console.warn($t("app.text_a4d75f074b"));
     } catch {
-      console.warn("[进程管理] 无法读取进程操作回执。");
+      console.warn($t("app.text_42d358197b"));
     }
   }
 
   function processReceiptText(kind: "restart" | "stop", elapsed: string) {
-    return kind === "restart" ? `重启成功，用时${elapsed}` : `开机成功，距离上次停止${elapsed}`;
+    return kind === "restart" ? $t("app.text_a60615d78d", { "elapsed": elapsed }) : $t("app.text_32751597f5", { "elapsed": elapsed });
   }
 
   async function deliverLegacyProcessReceipt(botId?: number, adapter?: "milky", signal?: AbortSignal) {
@@ -983,9 +990,9 @@ if (import.meta.main) {
       const reply = processReceiptText(receipt.kind, formatElapsed(Date.now() - receipt.at));
       const result = await sendReceipt(receipt.target, reply, signal);
       if (result.retry) await claim.restore(result.retry);
-      if (!result.confirmed) console.warn("[进程管理] 未确认旧版操作回执。");
+      if (!result.confirmed) console.warn($t("app.text_91868678e0"));
     } catch {
-      console.warn("[进程管理] 无法领取旧版操作回执。");
+      console.warn($t("app.text_38f60d9ad1"));
     }
   }
 
@@ -1093,14 +1100,14 @@ if (import.meta.main) {
 
   async function controlProcess(event: MessageEvent, kind: ProcessAction["kind"]) {
     if (!isProcessMaster(event)) {
-      await event.reply("暂无权限，只有主人才能操作");
+      await event.reply($t("app.text_ee7b348d1b"));
       return;
     }
     const target = sessionTarget(event);
     if (!target) return;
     if (processAction) return;
     if (kind === "restart" && !handoff.managed && !canRestartHost()) {
-      await event.reply("当前运行环境不支持进程内重启。");
+      await event.reply($t("app.text_43e292d493"));
       return;
     }
 
@@ -1113,14 +1120,14 @@ if (import.meta.main) {
     processAction = { kind, at: Date.now(), targets: pausedAt === undefined ? targets : [], pausedAt };
     if (pausedAt === undefined) {
       const elapsed = formatElapsed(process.uptime() * 1000);
-      const operation = kind === "restart" ? "重启" : "停止";
+      const operation = kind === "restart" ? $t("app.text_5628228928") : $t("app.text_ca4d973c0b");
       const online = new Set(groups.onlineBots());
       const milky = onlineMilkyBotId();
       const outcomes = await Promise.all(targets
         .filter((target) => target.type !== "masters" ||
           (target.adapter === "milky" ? target.botId === milky : online.has(target.botId)))
-        .map((target) => sendProcessMessage(target, `开始${operation}，本次运行时长${elapsed}`)));
-      if (outcomes.includes(false)) console.warn("[进程管理] 未确认进程操作开始通知。");
+        .map((target) => sendProcessMessage(target, $t("app.text_d8d48df2f5", { "operation": operation, "elapsed": elapsed }))));
+      if (outcomes.includes(false)) console.warn($t("app.text_fe9a39c0ee"));
     }
     const currentPause = dispatchPower.pausedAt;
     if (kind === "restart" && currentPause !== pausedAt) {
@@ -1164,7 +1171,7 @@ if (import.meta.main) {
       groupDispatch.allowsInbound(event) && groupDispatch.allows(event, features) && (event.adapter === "milky" ? onlineMilkyBotId() === bot : event.boundAccount === true);
     if (!isCurrent()) return;
     return { user, signal, privateFriend, isCurrent,
-      async verifySession() { if (!isCurrent()) throw new DOMException("签到会话已失效。", "AbortError"); },
+      async verifySession() { if (!isCurrent()) throw new DOMException($t("app.text_ff19f48457"), "AbortError"); },
     };
   }
 
@@ -1192,8 +1199,8 @@ if (import.meta.main) {
           }
           if (!active?.aborted) {
             await event.reply(recalled
-              ? "已撤回群里的设备资料。请加机器人好友后，在好友私聊发 #绑定设备。"
-              : "请立即自行撤回群里的设备资料。请加机器人好友后，在好友私聊发 #绑定设备。");
+              ? $t("app.text_ed62433799")
+              : $t("app.text_a0eeffed8f"));
           }
         }
         return;
@@ -1309,11 +1316,11 @@ if (import.meta.main) {
       managedModerationResults.set(selection, handled);
       if (!handled || active.aborted) return handled;
       if (event.post_type === "request") {
-        console.log(result === "confirmed" ? "[group] 已拒绝名单中的入群申请。" : "[group] 名单入群申请的处理结果未确认。");
+        console.log(result === "confirmed" ? $t("app.text_08f0616b18") : $t("app.text_c520735fb5"));
       } else {
-        const reply = result === "unknown" ? "群管理操作结果未确认，请在群内核对。"
-          : event.post_type === "notice" ? `⚠ 检测到黑名单${user}入群，已自动踢出`
-            : `⚠ 已踢出黑名单用户${user}`;
+        const reply = result === "unknown" ? $t("app.text_38ffdbfd56")
+          : event.post_type === "notice" ? $t("app.text_3220ea2ab0", { "user": user })
+            : $t("app.text_5b8ee46e0e", { "user": user });
         try {
           await event.reply(reply);
         } catch {
@@ -1352,7 +1359,7 @@ if (import.meta.main) {
     if (!active() || !await listed() || !active() || !await notice.canModerate(signal) ||
         !active() || !await listed() || !active()) return;
     if (await notice.unmute(signal) === "confirmed" && !signal.aborted) {
-      await notice.reply("已解除白名单用户的禁言");
+      await notice.reply($t("app.text_a695fa0a1a"));
     }
   }
 
@@ -1403,24 +1410,24 @@ if (import.meta.main) {
     const receipts: string[] = [];
     async function apply(label: string, run: () => Promise<GroupModerationResult>) {
       const result = active() ? await run().catch(() => "unknown" as const) : "rejected";
-      receipts.push(result === "confirmed" ? label : `${label}${result === "unknown" ? "结果未确认" : "未执行"}`);
+      receipts.push(result === "confirmed" ? label : `${label}${result === "unknown" ? $t("app.text_e6bedaccc2") : $t("app.text_231fe22042")}`);
       return result === "confirmed";
     }
-    const recall = () => apply("撤回消息", () => memberMessage.recall(signal));
+    const recall = () => apply($t("app.text_acd0006a55"), () => memberMessage.recall(signal));
     const screened = rule.screenedReply !== undefined;
     const recalled = screened && await recall();
     if (rule.action === "kick" || rule.action === "kick-recall" || rule.action === "kick-blacklist") {
-      if (await apply("踢出群聊", () => act(signal)) && rule.action === "kick-blacklist" && active()) {
+      if (await apply($t("app.text_d5586c8693"), () => act(signal)) && rule.action === "kick-blacklist" && active()) {
         try {
           await registration.policy.recordConfirmedKick(user, signal, async () => active() && await memberMessage.botCanAct(signal) && active());
-          receipts.push("加入黑名单");
+          receipts.push($t("app.text_010bbe20df"));
         } catch {
-          receipts.push("黑名单保存失败");
+          receipts.push($t("app.text_fdf6ec9b1a"));
         }
       }
     }
     const muted = (rule.action === "mute" || rule.action === "mute-recall") && isMemberMuteDuration(rule.seconds) && rule.seconds > 0 &&
-      await apply(`禁言${rule.seconds}秒`, () => memberMessage.mute(rule.seconds, signal));
+      await apply($t("app.text_b9f218c503", { "seconds": rule.seconds }), () => memberMessage.mute(rule.seconds, signal));
     if (!screened && (rule.action === "recall" || rule.action === "kick-recall" || rule.action === "mute-recall")) await recall();
     if (screened && recalled && muted) {
       if (active() && rule.screenedReply) {
@@ -1434,7 +1441,7 @@ if (import.meta.main) {
       const name = typeof nickname === "string" ? nickname.replace(/[\r\n]/gu, " ").trim().slice(0, 80) : "";
       const contact = name ? `${name}(${user})` : String(user);
       try {
-        await source.reply(`触发违禁词：${rule.preview}\n触发者：${contact}\n执行：${receipts.join("、")}`, false, { recallMsg: 30 });
+        await source.reply($t("app.text_18f7a24f1b", { "preview": rule.preview, "contact": contact, "value3": receipts.join("、") }), false, { recallMsg: 30 });
       } catch {
         // A reply failure does not retry any moderation action.
       }
@@ -1578,7 +1585,7 @@ if (import.meta.main) {
         event.sub_type === "increase" && event.self_id === event.user_id && allowed(["notice"])) {
       const session = groupModerationSession(event)?.signal;
       if (session && await autoQuit(event, nativeOperationSignal(session))) {
-        console.log(`[自动退群] 已退出群 ${event.group_id}。`);
+        console.log($t("app.text_e412d32680", { "group_id": event.group_id }));
       }
     }
   }
@@ -1618,7 +1625,7 @@ if (import.meta.main) {
   function originalNoticeMedia(message: MessageEvent["message"]) {
     const voice = standaloneVoicePart(message);
     if (voice) return {
-      label: "[语音]", unavailable: "（原音不可用）",
+      label: "[语音]", unavailable: $t("app.text_bea6ccc3d2"),
       async read(signal: AbortSignal): Promise<RecallMedia | undefined> {
         const file = await readOriginalQqVoice(voice, signal);
         if (file) return { type: "record", file };
@@ -1626,7 +1633,7 @@ if (import.meta.main) {
     };
     const video = standaloneVideoPart(message);
     if (video) return {
-      label: "[视频]", unavailable: "（原视频不可用）",
+      label: "[视频]", unavailable: $t("app.text_2a4589fda6"),
       async read(signal: AbortSignal): Promise<RecallMedia | undefined> {
         const file = await readOriginalQqVideo(video, signal);
         if (file) return { type: "video", file };
@@ -1988,10 +1995,10 @@ if (import.meta.main) {
       if (!active.aborted) await reviewManually?.();
     } else if (result === "confirmed") {
       const group = event.group_name?.trim() || event.group_id;
-      if (!active.aborted) await event.replyToApplicant?.(`已同意加群：${group}`);
+      if (!active.aborted) await event.replyToApplicant?.($t("app.text_0d2fb8e9cb", { "group": group }));
     } else if (result === "unknown") {
-      const delivered = active.aborted ? 0 : await event.notifyMasters(`群 ${event.group_id} 的邀请审批结果未确认，请先在 QQ 核对。`);
-      if (delivered === 0) console.warn("[群邀请] 自动审批结果未确认，未能通知主人。");
+      const delivered = active.aborted ? 0 : await event.notifyMasters($t("app.text_439ac3477b", { "group_id": event.group_id }));
+      if (delivered === 0) console.warn($t("app.text_2d34206b83"));
     }
   }
 
@@ -2014,7 +2021,7 @@ if (import.meta.main) {
     if (!isCurrent()) return true;
     const { key, target, remove, label, currentGroup } = command;
     if (target === undefined) {
-      await event.reply(`${label}失败，请指定有效的${key.endsWith("Group") ? "群号" : "QQ 号或单个 @成员"}。`);
+      await event.reply($t("app.text_8aa32457ba", { "label": label, "value2": key.endsWith("Group") ? $t("app.text_27c2162469") : $t("app.text_307af472d8") }));
       return true;
     }
 
@@ -2022,16 +2029,16 @@ if (import.meta.main) {
     try {
       const result = await updateHostAccessList(root, key, target, remove, local ? "stdin" : { botId: botId!, userId: userId! }, isCurrent);
       switch (result) {
-        case "protected": message = "不能拉黑已配置的机器人主人。"; break;
-        case "existing": message = `${target} 已进行过${label}处理。`; break;
-        case "missing": message = `${target} 未在对应名单内。`; break;
+        case "protected": message = $t("app.text_ec70728b95"); break;
+        case "existing": message = $t("app.text_32c6e06ebd", { "target": target, "label": label }); break;
+        case "missing": message = $t("app.text_77e925c9c6", { "target": target }); break;
         default:
           message = await Promise.all([groupDispatch.refreshLists(), otherPolicies.refresh(true)])
-            .then(() => currentGroup ? `已将当前群（${target}）进行${label}处理。` : `已将 ${target} 进行${label}处理。`)
-            .catch(() => "名单已保存，运行时重读失败，请核对 other.yaml。");
+            .then(() => currentGroup ? $t("app.text_87ede9c81a", { "target": target, "label": label }) : $t("app.text_b16eeb203a", { "target": target, "label": label }))
+            .catch(() => $t("app.text_52aa843c61"));
       }
     } catch {
-      message = `${label}未能完成，请核对 other.yaml 和当前主人配置。`;
+      message = $t("app.text_2d93834b61", { "label": label });
     }
     if (isCurrent()) await event.reply(message);
     return true;
@@ -2053,7 +2060,7 @@ if (import.meta.main) {
         const isMaster = () => masterPermissions.isMaster(quoted.account, quoted.actor);
         const role = isMaster() ? undefined : await readRole();
         const settings = await readGroupRecallPermissions(root);
-        if (!settings) return "群聊撤回权限配置无效。";
+        if (!settings) return $t("app.text_77e58bebc7");
         return groupRecallPermission(settings[botMessage ? "bot" : "member"], isMaster(), role);
       },
     });
@@ -2061,7 +2068,7 @@ if (import.meta.main) {
 
   async function replyBotOperation(event: MessageEvent, target: number | undefined, allowNew: boolean) {
     if (!allowNew || dispatchPower.paused || stopping || !handoff.accepting || event.isDelegated || event.attachmentOnly ||
-        !groupDispatch.allows(event, ["botOperate", "机器人操作", "system", "@lotus-yunzai/system"])) return;
+        !groupDispatch.allows(event, ["botOperate", $t("app.text_d0dc300c07"), "system", "@lotus-yunzai/system"])) return;
     const { self_id: botId, user_id: actorId, sender, message_type, adapter } = event;
     const transport = event[delegationSession]?.signal;
     if (botId === undefined || actorId === undefined || !transport || event.message_id === undefined ||
@@ -2074,13 +2081,13 @@ if (import.meta.main) {
     const milky = onlineMilkyBotId();
     if (!(adapter === "milky" ? milky === botId : oneBot.includes(botId))) return;
     if (!canManagePackages(event) || !masterPermissions.isMaster(botId, actorId)) {
-      await event.reply("只有当前机器人的主人才能执行此操作。");
+      await event.reply($t("app.text_8e0ddab11a"));
     } else if (target === undefined || (target !== milky && !oneBot.includes(target))) {
-      await event.reply("Bot 不存在");
+      await event.reply($t("app.text_1d80cac526"));
     } else if (target !== botId) {
-      await event.reply("只能操作当前机器人的账号。");
+      await event.reply($t("app.text_8561a6b11f"));
     } else {
-      await event.reply("暂不支持此操作");
+      await event.reply($t("app.text_5751f41a51"));
     }
   }
 
@@ -2126,11 +2133,11 @@ if (import.meta.main) {
     if (transfer || transferCapability) {
       if (!allowNew || dispatchPower.paused || event.isDelegated || event.attachmentOnly || !transfer) return;
       const module = transfer.game === "gs" ? "@lotus-yunzai/genshin" : "@lotus-yunzai/starrail";
-      if (!allowed(["跨机器人面板交换", module])) return;
+      if (!allowed([$t("app.text_d75ddb785b"), module])) return;
       const connection = event.privateCredentialSignal;
       if (event.message_type !== "private" || event.sub_type !== "friend" || !connection) {
         if (event.message_type === "group" && !transferCapability) {
-          await event.reply("请在机器人好友私聊中交换本人面板数据。");
+          await event.reply($t("app.text_6648a2a4ac"));
         }
         return;
       }
@@ -2146,7 +2153,7 @@ if (import.meta.main) {
     const rankCredentialCommand = [event.msg, event.raw_message].find(isArkRankTokenCommand);
     if (rankCredentialCommand !== undefined) {
       if (!allowNew || dispatchPower.paused || event.isDelegated || event.attachmentOnly ||
-          !allowed(["排行凭据", "@lotus-yunzai/genshin", "@lotus-yunzai/starrail"])) return;
+          !allowed([$t("app.text_7818bb7cc0"), "@lotus-yunzai/genshin", "@lotus-yunzai/starrail"])) return;
       const connection = event.privateCredentialSignal;
       const isBotMaster = (userId: number) => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, userId);
       const reply = await arkRankCredentials.command(rankCredentialCommand, {
@@ -2166,7 +2173,7 @@ if (import.meta.main) {
           (sender?.user_id !== undefined && sender.user_id !== actorId && sender.user_id !== String(actorId))) return;
       const signal = nativeOperationSignal(transport);
       const current = () => !signal.aborted && !stopping && handoff.accepting &&
-        allowed(["远程运维", "system", "@lotus-yunzai/system"]) && canManagePackages(event) &&
+        allowed([$t("app.text_42db987eee"), "system", "@lotus-yunzai/system"]) && canManagePackages(event) &&
         (event.adapter !== "milky" || onlineMilkyBotId() === botId) && masterPermissions.isMaster(botId, actorId);
       if (current()) await remoteControl(event, {
         signal, current,
@@ -2195,7 +2202,7 @@ if (import.meta.main) {
         [event.msg, event.raw_message].some(value => isCloudTokenInput(value) || isHoYoLabCookieInput(value) ||
           isPassportLoginInput(value) || isDeviceBindingInput(value) || isZzzGachaLinkMessage(value) || isStarRailGachaLinkMessage(value)))) return;
     if (dispatchPower.paused) {
-      if (allowNew && event.msg === "#开机" && allowed(["开机", "system", systemModuleName])) {
+      if (allowNew && event.msg === "#开机" && allowed([$t("app.text_da4ea0ec27"), "system", systemModuleName])) {
         await dispatchPower.handle(event);
       }
       return;
@@ -2212,7 +2219,7 @@ if (import.meta.main) {
     }
     if (allowNew && event.msg === "#关机" && allowed(processFeatureNames)) {
       if (isProcessMaster(event)) await dispatchPower.handle(event);
-      else await event.reply("暂无权限，只有主人才能操作");
+      else await event.reply($t("app.text_ee7b348d1b"));
       return;
     }
     if (allowNew && /^#(?:重启|停机|停止)$/u.test(event.msg) && allowed(processFeatureNames)) {
@@ -2220,7 +2227,7 @@ if (import.meta.main) {
       return;
     }
     if (matchesMasterEnrollment(event.msg)) {
-      if (allowNew && allowed(["设置主人", "system", "@lotus-yunzai/system"])) await masterEnrollment(event);
+      if (allowNew && allowed([$t("app.text_f5cb6168cc"), "system", "@lotus-yunzai/system"])) await masterEnrollment(event);
       return;
     }
     const namedShowcase = allowNew && await isCompactGenshinShowcase(event.msg);
@@ -2328,7 +2335,7 @@ if (import.meta.main) {
       if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(features)) return;
       const scope = ownCheckinSession(event, features);
       if (!scope?.privateFriend || event.self_id === undefined) {
-        await event.reply("请在当前机器人的好友私聊中确认恢复本人旧面板。");
+        await event.reply($t("app.text_c3db011d9c"));
         return;
       }
       const session = { ...scope, bot: event.self_id, adapter: event.adapter === "milky" ? "milky" as const : "onebot" as const };
@@ -2355,25 +2362,25 @@ if (import.meta.main) {
         if (publicRoleReference?.action === "登记uid" || publicRoleReference?.action === "登记公开uid") {
           if (!publicRoleReference.value) {
             await publicRoleRegistration.start(session, publicRoleReference.game,
-              () => event.reply("请在两分钟内发送要登记的游戏 UID。发送「取消登记」可取消。"));
+              () => event.reply($t("app.text_2c1d597226")));
             return;
           }
           publicRoleRegistration.clear(session);
         }
         const selection = publicRoleReference ?? (publicRoleFollowup ? publicRoleRegistration.consume(session, publicRoleFollowup) : undefined);
         if (selection) {
-          const reply = "cancelled" in selection ? "已取消公开 UID 登记。" : await publicRoleReferences(selection, scope);
+          const reply = "cancelled" in selection ? $t("app.text_5c1f0aaed5") : await publicRoleReferences(selection, scope);
           if (reply !== undefined && scope.isCurrent()) await sendCommandReply(event, reply);
           return;
         }
       }
       if (publicRoleReference) {
-        if (scope && event.message_type === "group") await event.reply("请私聊机器人管理或查询本人公开 UID 引用。");
+        if (scope && event.message_type === "group") await event.reply($t("app.text_6b5cc7a198"));
         return;
       }
     }
     if (/^#(?:原神)?\s*(?:展板|备用)\s*(?:更新面板|面板更新|更新全部面板|全部面板更新|获取游戏角色详情)$/u.test(gameAccountCommand)) {
-      const features = ["[genshin] 角色面板", "@lotus-yunzai/genshin"];
+      const features = [$t("app.text_81f59af71e"), "@lotus-yunzai/genshin"];
       const scope = allowNew && allowed(features) && allowed(publicRoleReferenceFeatures) ? ownCheckinSession(event, features) : undefined;
       if (scope?.privateFriend && commands.hasModule("@lotus-yunzai/genshin")) {
         const qq = String(scope.user);
@@ -2384,7 +2391,7 @@ if (import.meta.main) {
           const request = { ...event, privateCredentialSignal: scope.signal };
           const reply = await commands.dispatchFallback(request, names => names[0] === "@lotus-yunzai/genshin" && allowed(names),
             user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user),
-            `#原神展板更新面板 ${uid}`, undefined, "@lotus-yunzai/genshin");
+            $t("app.text_06fb255ccb", { "uid": uid }), undefined, "@lotus-yunzai/genshin");
           const current = await publicRoleReferences.catalogue(qq).then(value => value.gs.uid).catch(() => undefined);
           if (reply !== undefined && scope.isCurrent() && allowed(publicRoleReferenceFeatures) && uid === current) await sendCommandReply(event, reply);
           return;
@@ -2397,7 +2404,7 @@ if (import.meta.main) {
       if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(features)) return;
       const scope = ownCheckinSession(event, features);
       if (!scope?.privateFriend) {
-        if (event.message_type === "group" && scope) await event.reply("请在机器人好友私聊中清除本人登录信息。");
+        if (event.message_type === "group" && scope) await event.reply($t("app.text_d794af059d"));
         return;
       }
       const reply = await removeSelectedGameLogin(roleProfiles, gameLoginRemoval, scope);
@@ -2409,7 +2416,7 @@ if (import.meta.main) {
       if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(ownRoleSelectionFeatures)) return;
       const scope = ownCheckinSession(event, ownRoleSelectionFeatures);
       if (!scope?.privateFriend) {
-        if (event.message_type === "group" && scope) await event.reply("请私聊机器人查看或切换本人游戏角色。");
+        if (event.message_type === "group" && scope) await event.reply($t("app.text_a4b11570e9"));
         return;
       }
       const readPublic = allowed(publicRoleReferenceFeatures) ? publicRoleReferences.catalogue : undefined;
@@ -2424,7 +2431,7 @@ if (import.meta.main) {
       if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(features)) return;
       const scope = ownCheckinSession(event, features);
       if (!scope?.privateFriend || event.self_id === undefined) {
-        await event.reply("请在当前机器人的好友私聊中验证本人游戏签名或导出面板。");
+        await event.reply($t("app.text_bdae5bcc73"));
         return;
       }
       const session = { ...scope, bot: event.self_id, adapter: event.adapter === "milky" ? "milky" as const : "onebot" as const };
@@ -2440,7 +2447,7 @@ if (import.meta.main) {
       const authorized = await panelSignatures.authorization(game, uid, session);
       if (!scope.isCurrent()) return;
       if (!authorized) {
-        await event.reply(`请先签名验证本人 UID ${uid}，或使用已登录档案的导出指令。`);
+        await event.reply($t("app.text_ebd5810aa0", { "uid": uid }));
         return;
       }
       const reply = await exportSignedPanel(game, uid, authorized, event, session.signal);
@@ -2466,7 +2473,7 @@ if (import.meta.main) {
     })) return;
     if (event[chatFileRelaySource]?.relayOnly) return;
     if (isLogLevelCommand(event.msg)) {
-      if (allowNew && allowed(["日志等级", "system", systemModuleName])) await setRuntimeLogLevel(event);
+      if (allowNew && allowed([$t("app.text_0f8effe393"), "system", systemModuleName])) await setRuntimeLogLevel(event);
       return;
     }
     const setting = chatSetting(event.msg);
@@ -2498,40 +2505,40 @@ if (import.meta.main) {
     }
     const avatar = qqAvatarCommand(event.msg);
     if (avatar) {
-      if (allowNew && allowed([avatar.group ? "群头像" : "头像", "group", "@lotus-yunzai/group"])) {
+      if (allowNew && allowed([avatar.group ? $t("app.text_9352fee677") : $t("app.text_3ea2d23c90"), "group", "@lotus-yunzai/group"])) {
         const reply = qqAvatarReply(event, avatar);
         if (reply !== undefined) await event.reply(reply, true);
       }
       return;
     }
     if (isQqFaceCommand(event.msg)) {
-      if (allowNew && allowed(["取face", "group", "@lotus-yunzai/group"])) {
+      if (allowNew && allowed([$t("app.text_be7f15d660"), "group", "@lotus-yunzai/group"])) {
         const reply = qqFaceReply(event);
         if (reply !== undefined) await sendCommandReply(event, reply);
       }
       return;
     }
-    const canReadChatImages = () => groupDispatch.allowsInbound(event) && allowed(["取直链", "group", "@lotus-yunzai/group"]);
+    const canReadChatImages = () => groupDispatch.allowsInbound(event) && allowed([$t("app.text_549bd77375"), "group", "@lotus-yunzai/group"]);
     if (allowNew && await quotedImageTools(event, nativeOperationSignal, canReadChatImages,
       active => runQuotedRecall(incoming, active, true) ?? Promise.resolve(undefined))) return;
     if (await chatMediaLinks(event, nativeOperationSignal, allowNew, canReadChatImages)) return;
     const groupToLeave = manualGroupLeaveInput(event.msg);
     if (groupToLeave !== undefined) {
-      const allowedToLeave = () => groupDispatch.allowsInbound(event) && allowed(["退群", "group", "@lotus-yunzai/group"]);
+      const allowedToLeave = () => groupDispatch.allowsInbound(event) && allowed([$t("app.text_78ab4c03df"), "group", "@lotus-yunzai/group"]);
       if (allowNew && allowedToLeave()) await leaveGroup(event, groupToLeave, allowedToLeave, nativeOperationSignal());
       return;
     }
     if (await handleHostAccessList(event, allowNew)) return;
     const contactList = ownerContactListCommand(event.msg);
     if (contactList) {
-      if (allowNew && allowed([`${contactList.kind}列表`, "group", "@lotus-yunzai/group"])) {
+      if (allowNew && allowed([$t("app.text_b7bfc0a2e9", { "kind": contactList.kind }), "group", "@lotus-yunzai/group"])) {
         await replyOwnerContactList(event, contactList, ownerMessageRelay);
       }
       return;
     }
     const cloudWallet = cloudWalletProfile(incoming.msg);
     if (cloudWallet !== undefined) {
-      const features = ["云原神查询", "@lotus-yunzai/cloud-profile"];
+      const features = [$t("app.text_b0bbedb4e0"), "@lotus-yunzai/cloud-profile"];
       if (!allowNew || event.isDelegated || event.attachmentOnly || !allowed(features)) return;
       const { user_id: user, self_id: bot, group_id: groupId, sender } = event;
       const group = event.message_type === "group" && event.sub_type !== "anonymous" && groupId !== undefined && groupId > 0;
@@ -2541,7 +2548,7 @@ if (import.meta.main) {
           bot === undefined || event.message_id === undefined ||
           (sender?.user_id !== undefined && sender.user_id !== user && sender.user_id !== String(user))) return;
       const signal = nativeOperationSignal(connection);
-      const reply = cloudWallet === null ? "档案编号须在 1 到 255 之间。" : await cloudGenshinWallet?.(user, cloudWallet, signal);
+      const reply = cloudWallet === null ? $t("app.text_3dd62228d2") : await cloudGenshinWallet?.(user, cloudWallet, signal);
       if (reply !== undefined && !signal.aborted && allowed(features)) {
         await event.reply(group ? [segment.at(user), "\n" + reply] : reply);
       }
@@ -2549,7 +2556,7 @@ if (import.meta.main) {
     }
     const balanceProfile = miyousheBalanceProfile(event.msg);
     if (balanceProfile !== undefined) {
-      const features = ["米游币查询", "米币查询", "account", "@lotus-yunzai/account"];
+      const features = [$t("app.text_36f7831bca"), $t("app.text_bd73de9617"), "account", "@lotus-yunzai/account"];
       const connection = event[delegationSession]?.signal;
       const user = event.user_id;
       const group = event.message_type === "group" && event.sub_type !== "anonymous";
@@ -2592,7 +2599,7 @@ if (import.meta.main) {
     }
     if (event.msg === unregisterCheckinCommand || event.msg === checkinStatusCommand) {
       const status = event.msg === checkinStatusCommand;
-      const features = status ? ["签到状态", "@lotus-yunzai/checkin-status"] : ["删除签到", "@lotus-yunzai/checkin-registration"];
+      const features = status ? [$t("app.text_389d388d28"), "@lotus-yunzai/checkin-status"] : [$t("app.text_ccf4f493b4"), "@lotus-yunzai/checkin-registration"];
       if (!allowNew) return;
       const scope = ownCheckinSession(event, features);
       if (!scope) return;
@@ -2627,7 +2634,7 @@ if (import.meta.main) {
       handled?.();
       return;
     }
-    const imageOcrNames = ["[group] 图片文字识别", "group", "@lotus-yunzai/group"];
+    const imageOcrNames = [$t("app.text_e3d4f76633"), "group", "@lotus-yunzai/group"];
     if (allowed(imageOcrNames) && await imageOcr(event, {
       allowNew, signal: nativeOperationSignal(),
       permitted: async () => groupDispatch.allowsInbound(event) && allowed(imageOcrNames) && !await privateAccess.blocked(event),
@@ -2656,7 +2663,7 @@ if (import.meta.main) {
       }
     }
     if (!event.isDelegated && (event.message_type === "group" || quotedInvitation) && event.reply_id !== undefined && isGroupJoinReviewInput(event.msg)) {
-      const feature = quotedInvitation ? "[group] 群邀请审核" : "[group] 引用加群审核";
+      const feature = quotedInvitation ? $t("app.text_b107c631f6") : $t("app.text_750680acf9");
       const reply = await commands.dispatchFallback(event,
         names => names[0] === "@lotus-yunzai/group" && names.includes(feature) && allowed(names),
         user => event.self_id !== undefined && masterPermissions.isMaster(event.self_id, user));
@@ -2712,7 +2719,7 @@ if (import.meta.main) {
       return;
     }
     if (isLogCommand(command.msg)) {
-      if (allowed(["发送日志", "system", "@lotus-yunzai/system"])) await logCommand(command);
+      if (allowed([$t("app.text_482462849e"), "system", "@lotus-yunzai/system"])) await logCommand(command);
       return;
     }
     const ownGroupCardAccount = !command.isDelegated && command.msg === "#更新群名片" ? command[ownGroupCardSession]?.() : undefined;
@@ -2845,9 +2852,9 @@ if (import.meta.main) {
         return;
       }
       const confirmed = results.filter((result) => result === "confirmed").length;
-      if (!results.length) await command.reply("没有可撤回的消息。");
-      else if (results.includes("unknown")) await command.reply(`已撤回 ${confirmed} 条，其余撤回结果未确认。`);
-      else if (confirmed < results.length) await command.reply(`已撤回 ${confirmed} 条，其余消息未能撤回。`);
+      if (!results.length) await command.reply($t("app.text_d703a87309"));
+      else if (results.includes("unknown")) await command.reply($t("app.text_f94894b92f", { "confirmed": confirmed }));
+      else if (confirmed < results.length) await command.reply($t("app.text_b7394a8074", { "confirmed": confirmed }));
       return;
     }
     if (/^#(?:通知设置|(?:启用|禁用)全部通知$)/u.test(command.msg)) {
@@ -2962,7 +2969,7 @@ if (import.meta.main) {
     if (stopping) return;
     const report = !handoff.managed;
     stop(0);
-    if (report) console.info(formatTerminalLog("mark", "结束运行"));
+    if (report) console.info(formatTerminalLog("mark", $t("app.text_e5a73c676a")));
   };
   const terminate = () => stop(143);
   if (handoff.managed) {
@@ -2990,7 +2997,7 @@ if (import.meta.main) {
       readGroupDispatch(root, watchConfig),
       readRuntimeVersion(root),
       probingUpdate ? undefined : readMilkySettings(root).catch(() => {
-        console.warn("[Milky] 无法读取有效的适配器配置。");
+        console.warn($t("app.text_0744e5ae6f"));
         return undefined;
       }),
     ]);
@@ -3013,17 +3020,17 @@ if (import.meta.main) {
     try {
       runtimeLog = await attachRuntimeLog(root, botConfig);
       console.info(formatTerminalLog("mark", "----^_^----"));
-      console.info(formatTerminalLog("mark", `Lotus-Yunzai${runtimeVersion.version || runtimeVersion.revision ? " " + (runtimeVersion.version ?? runtimeVersion.revision?.slice(0, 7)) : ""} 启动中...`));
+      console.info(formatTerminalLog("mark", $t("app.text_2cf0e8938c", { "value1": runtimeVersion.version || runtimeVersion.revision ? " " + (runtimeVersion.version ?? runtimeVersion.revision?.slice(0, 7)) : "" })));
     } catch {
-      console.warn("[日志] 无法启用本地日志写入。");
+      console.warn($t("app.text_16acfb44fb"));
     }
     if (watchConfig) watchConfigFiles(watchConfig, async () => {
       const revision = runtimeLogRevision;
       const { log_level } = await readLocalConfig(root, "bot");
       const level = typeof log_level === "string" ? log_level.toLowerCase() : log_level;
-      if (level !== undefined && !isLogLevel(level)) throw new Error("无效的日志等级。");
+      if (level !== undefined && !isLogLevel(level)) throw new Error($t("app.text_b5cc563776"));
       if (!watchConfig.aborted && revision === runtimeLogRevision) runtimeLogConfig.log_level = level;
-    }, () => console.warn("[日志] bot.yaml 日志等级重载失败，保留上次有效设置。"));
+    }, () => console.warn($t("app.text_ae1f3eeec4")));
     autoFriend = await readFriendRequests(root, undefined, requestPolicies);
     otherPolicies = requestPolicies;
     groupDispatch = routing;
@@ -3068,11 +3075,11 @@ if (import.meta.main) {
     counts = createMessageCounts(() => globalThis.redis, segmentCounts);
     if (valkey !== undefined) {
       globalThis.redis = await connectStorage(valkey);
-      console.log("[存储] Valkey 已连接。");
+      console.log($t("app.text_46b2c5c839"));
     }
     const legacyPause = globalThis.redis && recordedPause === undefined && !dispatchPower.paused
       ? await readLegacyDispatchPause(globalThis.redis).catch(() => {
-        console.warn("[进程管理] 无法读取旧版关机状态。");
+        console.warn($t("app.text_ec36e0f6d7"));
       })
       : undefined;
     if (legacyPause) dispatchPower.restorePaused(legacyPause.pausedAt);
@@ -3080,7 +3087,7 @@ if (import.meta.main) {
       const { renderStatusCard } = await import("@lotus-yunzai/skia/status-card");
       if (args[0] === "登录列表") {
         const themeDirectory = Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || fileURLToPath(new URL("./data/atlas/theme/", root));
-        if (!await Bun.file(`${themeDirectory}/bg/bg-hydro.webp`).exists()) throw new Error("登录列表原版背景不可用。");
+        if (!await Bun.file(`${themeDirectory}/bg/bg-hydro.webp`).exists()) throw new Error($t("app.text_3f9d31c539"));
         return renderStatusCard(...args, { themeDirectory });
       }
       return renderStatusCard(...args);
@@ -3118,8 +3125,8 @@ if (import.meta.main) {
       signal: AbortSignal.any([lifecycle.signal, handoffSession.signal]) });
     if (!probingUpdate) {
       const prepared = await generatedDevices.prepare();
-      if (prepared.generated) console.info(`[设备] 已补齐 ${prepared.generated} 个档案的自动设备参数。`);
-      if (prepared.failed) console.warn(`[设备] ${prepared.failed} 个档案的自动设备检查未完成。`);
+      if (prepared.generated) console.info($t("app.text_42f948913b", { "generated": prepared.generated }));
+      if (prepared.failed) console.warn($t("app.text_20e1cfd731", { "failed": prepared.failed }));
       whenModuleTasksActive(() => generatedDevices.start());
     }
     if (!probingUpdate) {
@@ -3130,10 +3137,10 @@ if (import.meta.main) {
             const userId = Number(qq);
             if (!Number.isSafeInteger(userId) || userId < 1 || signal.aborted || stopping || !handoff.accepting) return false;
             const message = event.type === "manual"
-              ? `档案 ${profileId} 需要人工验证，请在有效期内打开链接：\n${event.link}`
-              : event.type === "automatic" ? `档案 ${profileId} 正在自动验证。`
-              : event.type === "accepted" ? `档案 ${profileId} 验证已通过，继续处理原请求。`
-              : `档案 ${profileId} 验证未通过，请稍后重新发送原指令。`;
+              ? $t("app.text_f5b87c817a", { "profileId": profileId, "link": event.link })
+              : event.type === "automatic" ? $t("app.text_92fc95a61f", { "profileId": profileId })
+              : event.type === "accepted" ? $t("app.text_3a8adb64ce", { "profileId": profileId })
+              : $t("app.text_19ed2fc608", { "profileId": profileId });
             const candidates = [...groups.checkinNotifications(), ...(milkyOnline ? [milkyOnline.checkinNotify] : [])]
               .filter((transport): transport is NonNullable<typeof transport> => transport !== undefined);
             for (const transport of candidates) {
@@ -3145,12 +3152,12 @@ if (import.meta.main) {
             return false;
           },
           report({ provider, round, attempt, reason }) {
-            console.info(`[验证码] ${provider} 第${round}轮第${attempt}次：${reason}`);
+            console.info($t("app.text_9027c66a53", { "provider": provider, "round": round, "attempt": attempt, "reason": reason }));
           },
         });
         setDefaultCaptchaSolver(captchaService);
       } catch {
-        console.warn("[验证码] 配置无效，自动验证链暂不可用。");
+        console.warn($t("app.text_31bad54ac6"));
       }
     }
 
@@ -3226,7 +3233,7 @@ if (import.meta.main) {
           return {
             accountId, roles: result.roles, selectedUid: account.selectedUid,
             submit: (code, role, active) => submitPreviewCode(account, game, role, code, fetch, active, async () => {
-              if (!await checkBinding()) throw new Error("前瞻兑换档案已变更。");
+              if (!await checkBinding()) throw new Error($t("app.text_8d9a71e17f"));
             }),
             async notify(reply, active) {
               const settings = await checkinProfiles.previewRedeemSettings(qq, profileId);
@@ -3244,8 +3251,8 @@ if (import.meta.main) {
       commands.registerModule(redeemCodeCommands(previewOptions, publicPreview, {
         profiles: checkinProfiles, signal: previewSignal, canRegister: canRegisterCheckin, hasHistory: preview.hasHistory,
       }, manualRedeem));
-      registerModuleTask("[前瞻兑换]", "0 */5 * * * *",
-        () => preview.scan(previewSignal, diagnostic => console.warn(`[前瞻兑换] ${diagnostic}`)));
+      registerModuleTask($t("app.text_8041e6891b"), "0 */5 * * * *",
+        () => preview.scan(previewSignal, diagnostic => console.warn($t("app.text_c664cebfcc", { "diagnostic": diagnostic }))));
       previewSettings = {
         async read({ qq, profileId }, signal, verifyLogin) {
           await verifyLogin();
@@ -3257,8 +3264,8 @@ if (import.meta.main) {
         },
         async save(target, patch, signal, verifyLogin) {
           const current = await this.read(target, signal, verifyLogin);
-          if (current.revision !== patch.revision) throw new MiyoushePreviewSettingsError(409, "档案设置已变化，请重新读取。");
-          if (patch.enabled && !current.canEnable) throw new MiyoushePreviewSettingsError(403, "当前会话无权注册前瞻码自动兑换。");
+          if (current.revision !== patch.revision) throw new MiyoushePreviewSettingsError(409, $t("app.text_0173552aba"));
+          if (patch.enabled && !current.canEnable) throw new MiyoushePreviewSettingsError(403, $t("app.text_933a5a70a9"));
           let saved;
           try {
             saved = await checkinProfiles.setPreviewRedeemSettings(
@@ -3267,12 +3274,12 @@ if (import.meta.main) {
           } catch (error) {
             if (error instanceof ProfileError && error.code === "changed") {
               await verifyLogin();
-              throw new MiyoushePreviewSettingsError(409, "档案设置已变化，请重新读取。");
+              throw new MiyoushePreviewSettingsError(409, $t("app.text_0173552aba"));
             }
             throw error;
           }
           const updated = await this.read(target, signal, verifyLogin);
-          if (updated.revision !== saved.revision) throw new MiyoushePreviewSettingsError(409, "档案设置已变化，请重新读取。");
+          if (updated.revision !== saved.revision) throw new MiyoushePreviewSettingsError(409, $t("app.text_0173552aba"));
           return updated;
         },
       };
@@ -3281,7 +3288,7 @@ if (import.meta.main) {
     const shopSettings = miyousheWebSettings(globalConfig.coin_shop, milkyWebhookPath);
     const readWebLoginConfig = async () => (await readLotusGlobalConfig(root)).coin_shop;
     if (!probingUpdate && shopSettings.enabled) {
-      if (shopSettings.mountConflict) console.warn(`[米游社网页] 原挂载路径与 Milky Webhook 冲突，已使用 ${shopSettings.path}。`);
+      if (shopSettings.mountConflict) console.warn($t("app.text_e1194f9fe5", { "path": shopSettings.path }));
       const plans = checkinScheduleStore;
       const scheduler = globalConfig.scheduler as CheckinScheduleConfig | undefined;
       const catalog = createMiyousheShopCatalog({ profileDirectory });
@@ -3320,7 +3327,7 @@ if (import.meta.main) {
               for (const good of catalogPage.goods) {
                 if (!goods.has(good.id)) goods.set(good.id, good);
               }
-              if (goods.size === previous) throw new MiyousheShopPlanError(503, "商城分页未前进，请稍后重试。");
+              if (goods.size === previous) throw new MiyousheShopPlanError(503, $t("app.text_03251595a3"));
               if (page >= catalogPage.totalPages) break;
             }
             return [...goods.values()];
@@ -3337,7 +3344,7 @@ if (import.meta.main) {
           const { good, roles } = await catalog.detail(target, goodsId, signal, verifyBinding);
           const account = await checkinProfiles.accountContext(target.qq, target.profileId);
           await verifyBinding?.();
-          if (good.price === null) throw new MiyousheShopPlanError(503, "暂时无法核对商品价格。");
+          if (good.price === null) throw new MiyousheShopPlanError(503, $t("app.text_9d56385bc0"));
           const { balance, addresses } = await shopClient.fetchMiyousheShopAccount(account, {
             signal, verifyBinding, includeAddresses: good.type === 1,
           });
@@ -3392,9 +3399,9 @@ if (import.meta.main) {
           async save(target, patch, signal, verifyLogin) {
             const { qq, profileId } = target;
             const current = await this.read(target, signal, verifyLogin);
-            const conflict = () => new MiyousheSettingsError(409, "档案设置已变化，请重新读取。");
+            const conflict = () => new MiyousheSettingsError(409, $t("app.text_0173552aba"));
             if (current.revision !== patch.revision) throw conflict();
-            if (patch.enabled && !current.canEnable) throw new MiyousheSettingsError(403, "当前会话无权注册自动签到。");
+            if (patch.enabled && !current.canEnable) throw new MiyousheSettingsError(403, $t("app.text_94faea8ae1"));
             let saved;
             try {
               saved = await checkinProfiles.setWebCheckinSettings(qq, profileId, patch.revision, patch, signal, verifyLogin);
@@ -3417,7 +3424,7 @@ if (import.meta.main) {
                   }
                 } else await runtime.reconcileExistingPlans();
               } catch {
-                console.warn("[签到计划] 网页设置已保存，计划等待重新检查。");
+                console.warn($t("app.text_559c5a04da"));
               }
             }
             return updated;
@@ -3470,21 +3477,21 @@ if (import.meta.main) {
           async onComplete(entry, result, attempt) {
             if (!result.reply || !result.revision || lifecycle.signal.aborted) return;
             const forumNames = (ids: readonly string[]) => ids.map(id => Object.hasOwn(bbsCheckinForums, id)
-              ? bbsCheckinForums[id as BbsCheckinForum] : `分区 ${id}`).join("、");
+              ? bbsCheckinForums[id as BbsCheckinForum] : $t("app.text_2f18947d6a", { "id": id })).join("、");
             const gameNames = {
-              genshin: "原神", honkai_sr: "星铁", zzz: "绝区零", honkai2: "崩坏2", honkai3rd: "崩坏3", tears_of_themis: "未定事件簿",
+              genshin: $t("app.text_d1597c51ed"), honkai_sr: $t("app.text_a2927891f0"), zzz: $t("app.text_b1110352c9"), honkai2: $t("app.text_7deeae4b7e"), honkai3rd: $t("app.text_6d3d8653d7"), tears_of_themis: $t("app.text_a6e4fbed57"),
             } as const;
             const retryNames = (targets: Pick<NonNullable<typeof entry.communityRetry>, "forums" | "games">) => [
-              targets.games?.length && `游戏 ${targets.games.map(game => gameNames[game]).join("、")}`,
-              targets.forums.length && `社区 ${forumNames(targets.forums)}`,
+              targets.games?.length && $t("app.text_a1dbf4b05a", { "value1": targets.games.map(game => gameNames[game]).join("、") }),
+              targets.forums.length && $t("app.text_1667f9f379", { "value1": forumNames(targets.forums) }),
             ].filter(Boolean).join("，");
             const lines: string[] = [];
-            if (attempt) lines.push(`${attempt.games?.length ? "签到" : "社区签到"}补跑第 ${attempt.number} 次（档案 ${entry.profileId}）`,
-              `本轮补跑：${retryNames(attempt)}。`);
+            if (attempt) lines.push($t("app.text_4f57fb36e4", { "value1": attempt.games?.length ? $t("app.text_347fa28b3b") : $t("app.text_8997e1e17e"), "number": attempt.number, "profileId": entry.profileId }),
+              $t("app.text_e4932b63de", { "value1": retryNames(attempt) }));
             if (entry.communityRetry?.verifiedUnsent) {
               const time = checkinScheduleClock(Date.parse(entry.communityRetry.nextAt)).iso.slice(11, 16);
-              lines.push(`预计 ${time} 补跑：${retryNames(entry.communityRetry)}。`);
-            } else if (attempt && !entry.ok) lines.push("今日补跑已结束，请核对签到结果。");
+              lines.push($t("app.text_e66d1a7402", { "time": time, "value2": retryNames(entry.communityRetry) }));
+            } else if (attempt && !entry.ok) lines.push($t("app.text_e793dd6225"));
             const reply: MessageReply = lines.length
               ? [`${lines.join("\n")}\n`, ...(Array.isArray(result.reply) ? result.reply : [result.reply])] : result.reply;
             await deliverCheckin(entry.qq, entry.profileId, reply, result.revision);
@@ -3507,7 +3514,7 @@ if (import.meta.main) {
           async addRegisteredProfile(qq, profileId, revision) {
             const current = await checkinProfiles.checkinSettings(qq, profileId);
             if (lifecycle.signal.aborted) return;
-            if (current.revision !== revision) throw new Error("签到档案已变更。");
+            if (current.revision !== revision) throw new Error($t("app.text_8b47625d78"));
             await runtime.addRegisteredProfile({ qq, profileId, name: current.displayName, enabled: current.enabled, schedule: current.schedule });
           },
         }));
@@ -3519,12 +3526,12 @@ if (import.meta.main) {
           { canGenerate, canRunDue }));
         commands.registerModule(checkinScheduleSettingCommands(root, runtime, lifecycle.signal));
       } else {
-        console.warn("[签到计划] 全局 scheduler 配置无效。");
+        console.warn($t("app.text_64eebb4891"));
       }
     }
     commands.registerModule(passportLoginCommands(profileDirectory, lifecycle.signal, async (qq, profileId, revision) => {
       void generatedDevices.refresh(qq, profileId).catch(() => {
-        if (!lifecycle.signal.aborted) console.warn("[设备] 登录后的自动设备检查未完成，稍后重试。");
+        if (!lifecycle.signal.aborted) console.warn($t("app.text_0edaecd48a"));
       });
       if (!checkinRuntime || lifecycle.signal.aborted) return;
       const current = await checkinProfiles.checkinSettings(qq, profileId);
@@ -3536,8 +3543,8 @@ if (import.meta.main) {
       const client = createProfileHoyoClient(checkinProfiles);
       scheduleLegacyPassportCookieRepair(active, async () => {
         const sweep = repairLegacyPassportCookies(checkinProfiles, client, nativeOperationSignal()).then(({ repaired, failed }) => {
-          if (repaired || failed) console.info(`[account] 旧 Cookie 检查完成，续期 ${repaired} 档，失败 ${failed} 档。`);
-        }, () => console.warn("[account] 无法检查旧 Cookie，原档案已保留。"));
+          if (repaired || failed) console.info($t("app.text_9c150ffdff", { "repaired": repaired, "failed": failed }));
+        }, () => console.warn($t("app.text_7fb28245b6")));
         pending.add(sweep);
         try { await sweep; }
         finally { pending.delete(sweep); }
@@ -3545,10 +3552,10 @@ if (import.meta.main) {
     });
     commands.registerModule({
       name: "@lotus-yunzai/gacha-batch", commands: {}, fallback: gachaBatch.fallback,
-    }, "[gacha] 抽卡记录");
+    }, $t("app.text_5f636b7036"));
     commands.registerModule({
       name: "@lotus-yunzai/panel-rebuild", commands: {}, fallback: panelRebuild.fallback,
-    }, "原神和星铁面板重建");
+    }, $t("app.text_f01182d86e"));
     const { hostname, oneBot, https, panelToken, panelPublicUrl } = network;
     const panelEnabled = panelToken !== undefined || panelPublicUrl !== undefined;
     panelOwnerSession = createPanelOwnerSession({
@@ -3581,7 +3588,7 @@ if (import.meta.main) {
       isProtectedMaster: (bot: number, user: number) =>
         permissions.isMaster(bot, user) || permissions.legacyMasterIds().includes(user),
       onMemberMute(notice: MemberMuteNotice) {
-        const handling = handleManagedWhitelist(notice).catch(() => console.warn("[group] 白名单自动解禁未能完成。"));
+        const handling = handleManagedWhitelist(notice).catch(() => console.warn($t("app.text_cf182ada84")));
         pending.add(handling);
         void handling.then(() => pending.delete(handling));
       },
@@ -3672,13 +3679,13 @@ if (import.meta.main) {
     const http = network.http ?? (milkyWebhook && !https ? { port: 2536, auth: new Headers() } : undefined);
     if (network.manualCaptchaUrl && !probingUpdate) {
       if (!http && !https) {
-        console.warn("[人工验证] 请先配置公共 HTTP 或 HTTPS 监听。");
+        console.warn($t("app.text_856913940e"));
       } else {
         try {
           const { createManualCaptchaRelay } = await import("./lib/captcha/manual-relay.ts");
           manualCaptcha = createManualCaptchaRelay({ publicUrl: network.manualCaptchaUrl });
         } catch {
-          console.warn("[人工验证] 公开地址无效或 GT-Manual 未初始化，验证页暂不可用。");
+          console.warn($t("app.text_7d2f283c5f"));
         }
       }
     }
@@ -3726,8 +3733,8 @@ if (import.meta.main) {
       });
       servers.push(server);
       for (const origin of listenerOrigins(hostname, server.port, tls ? "wss" : "ws"))
-        listenerMessages.push(`[ONEBOT V11] OneBot 11 正在监听 ${origin}/OneBotv11`);
-      listenerMessages.push([...auth.keys()].length ? "[ONEBOT V11] 内网可直接连接；公网连接须携带已配置的令牌。" : "[ONEBOT V11] 仅限本机及内网直接连接，无需令牌；公网接入须先配置 onebot_token。");
+        listenerMessages.push($t("app.text_773cdeec59", { "origin": origin }));
+      listenerMessages.push([...auth.keys()].length ? $t("app.text_d380ecab16") : $t("app.text_29dee9c0ea"));
       return server;
     }
     function listenHttp(port: number, fetch: ReturnType<typeof httpHandler>, tls?: Bun.TLSOptions) {
@@ -3741,9 +3748,9 @@ if (import.meta.main) {
       const server = shared && socketServer ? socketServer : listenHttp(http.port, httpHandler(http.auth));
       fileBase = network.publicUrl ?? listenerFileBase(server.url.hostname, server.port);
       for (const origin of listenerOrigins(hostname, server.port, "http"))
-        listenerMessages.push(`[HTTP] HTTP 正在监听 ${origin}/status`);
+        listenerMessages.push($t("app.text_711c38353a", { "origin": origin }));
     }
-    if (network.httpsError && !probingUpdate) console.warn("[HTTPS] server.https 配置无效，已跳过 HTTPS。");
+    if (network.httpsError && !probingUpdate) console.warn($t("app.text_206037e4ca"));
     let tlsListener: ManagedTlsListener | undefined;
     let tlsPort: number | undefined;
     if (https && !probingUpdate) {
@@ -3761,14 +3768,14 @@ if (import.meta.main) {
           tlsPort = port;
           fileBase = https.publicUrl ?? fileBase ?? network.publicUrl ?? listenerFileBase(server.url.hostname, server.port, "https");
           for (const origin of listenerOrigins(hostname, server.port, "https"))
-            listenerMessages.push(`[HTTPS] HTTPS 正在监听 ${origin}/status`);
+            listenerMessages.push($t("app.text_82bd220a04", { "origin": origin }));
         }
       } catch {
-        if (!stopping) console.warn("[HTTPS] 无法读取证书或启动监听，已跳过 HTTPS。");
+        if (!stopping) console.warn($t("app.text_8eeae42aa2"));
       }
     }
     if (milkyWebhook && !http && !tlsListener) {
-      throw new Error("Milky webhook 未能启动可接收入站事件的 HTTP 或 HTTPS 监听。");
+      throw new Error($t("app.text_460c4c2d34"));
     }
     lifecycle.signal.throwIfAborted();
     const fileToUrl = createFileToUrl(publicFiles, botConfig, () => stopping ? undefined : fileBase);
@@ -3811,7 +3818,7 @@ if (import.meta.main) {
     });
     Object.assign(globalThis, { Bot: legacyBot });
     const loadTimeout = parsePluginLoadMilliseconds(botConfig.plugin_load_timeout);
-    if (loadTimeout === undefined) console.warn("[插件] bot.yaml 的 plugin_load_timeout 无效，使用默认 60 秒。");
+    if (loadTimeout === undefined) console.warn($t("app.text_aa5ff0ae8b"));
     const storedLikeAssets = new URL("data/group/like-assets/", root);
     const likeAssets = Bun.env.LOTUS_GROUP_LIKE_ASSETS_DIR?.trim() ||
       (await stat(storedLikeAssets).then(info => info.isDirectory(), () => false)
@@ -3822,7 +3829,7 @@ if (import.meta.main) {
     plugins = await loadPlugins(fileURLToPath(new URL("plugins", root)), commands, legacy, Object.freeze({
       groups: groupTransport, signal: lifecycle.signal, fileToUrl, lockFile, subscriptionTransport, execute: commandDelegation.execute,
       allowOfficialVideoGroup: (botId: number, groupId: number) => noticeActive() &&
-        groupDispatch.allowsScheduledGroup(botId, groupId, ["[media] 米游社官号视频", "media", "@lotus-yunzai/media"]),
+        groupDispatch.allowsScheduledGroup(botId, groupId, [$t("app.text_ab8c7809cd"), "media", "@lotus-yunzai/media"]),
       messageStatistics: createMessageStatistics(counts),
       runtimeVersion,
       readCharacterAliases: (game: "gi" | "hsr") =>
@@ -3889,13 +3896,13 @@ if (import.meta.main) {
           return milky && !milky.signal.aborted ? [...accounts, milky] : accounts;
         },
         registerAutoGroupCardTask(cron, run) {
-          return registerModuleTask("[group] 自动群名片", cron, run);
+          return registerModuleTask($t("app.text_c428ee8a83"), cron, run);
         },
         groupTimedMute: {
           async readLegacy() { return await globalThis.redis?.get("yenai:MuteTasks") ?? null; },
           validateCron: validateModuleCron,
           register(name, cron, run) {
-            if (!validateModuleCron(cron)) throw new Error("定时群禁言配置无效。");
+            if (!validateModuleCron(cron)) throw new Error($t("app.text_11f8d782a8"));
             return registerModuleTask(name, cron, run);
           },
           async execute(binding, signal) {
@@ -3911,7 +3918,7 @@ if (import.meta.main) {
             return session.timedWholeMute(binding, active);
           },
           report(binding, result) {
-            if (result === "unknown") console.warn(`[group] 群 ${binding.groupId} 的定时禁言操作结果未确认。`);
+            if (result === "unknown") console.warn($t("app.text_2b0a45980d", { "groupId": binding.groupId }));
           },
         },
         autoRepeatSessionSignal(value) {
@@ -3925,7 +3932,7 @@ if (import.meta.main) {
           const handling = groupRepeatOrder.observe(group, observe);
           if (!handling) return observe();
           pending.add(handling);
-          void handling.catch(() => console.warn("[group] 自动复读处理失败。")).finally(() => pending.delete(handling));
+          void handling.catch(() => console.warn($t("app.text_207c649543"))).finally(() => pending.delete(handling));
         },
         readAutoRepeatImage: readQqMessageMedia,
         async profileLikeImage(userId, outcome, signal) {
@@ -4116,15 +4123,15 @@ if (import.meta.main) {
           },
           io: {
             async get(groupId, userId) {
-              if (!globalThis.redis) throw new Error("Valkey 未配置。");
+              if (!globalThis.redis) throw new Error($t("app.text_5459de4f75"));
               return await globalThis.redis.hGet(`Yz:group-leave-blacklist:${groupId}`, String(userId)) ?? null;
             },
             async set(groupId, userId, json) {
-              if (!globalThis.redis) throw new Error("Valkey 未配置。");
+              if (!globalThis.redis) throw new Error($t("app.text_5459de4f75"));
               await globalThis.redis.hSet(`Yz:group-leave-blacklist:${groupId}`, String(userId), json);
             },
             async remove(groupId, userId) {
-              if (!globalThis.redis) throw new Error("Valkey 未配置。");
+              if (!globalThis.redis) throw new Error($t("app.text_5459de4f75"));
               return (await globalThis.redis.hDel(`Yz:group-leave-blacklist:${groupId}`, String(userId))) > 0;
             },
             async appendGlobal(userId, signal) {
@@ -4141,7 +4148,7 @@ if (import.meta.main) {
                 masterPermissions.botIds().some(botId => masterPermissions.isMaster(botId, userId));
             },
             report(stage, outcome) {
-              if (outcome !== "confirmed") console.warn(`[group] 退群黑名单操作 ${stage} 未确认完成。`);
+              if (outcome !== "confirmed") console.warn($t("app.text_dbb19f5af0", { "stage": stage }));
             },
           },
         },
@@ -4158,9 +4165,9 @@ if (import.meta.main) {
       mediaRuntime: probingUpdate ? undefined : {
         disconnect: handoffSession.signal,
         whenReady: whenModuleTasksActive,
-        registerTask: (cron, run) => registerModuleTask("[media] 网易云合伙人定时任务", cron, run),
+        registerTask: (cron, run) => registerModuleTask($t("app.text_f4e425d817"), cron, run),
         registerOfficialVideoTask: (cron: string, run: () => Promise<void>) =>
-          registerModuleTask("[media] 米游社官号视频", cron, run),
+          registerModuleTask($t("app.text_ab8c7809cd"), cron, run),
         async notifyMasters(reply, signal) {
           const active = signal ? nativeOperationSignal(signal) : nativeOperationSignal();
           const notified = new Set<number>();
@@ -4187,7 +4194,7 @@ if (import.meta.main) {
       },
       zzzReminderRuntime: probingUpdate ? undefined : {
         disconnect: handoffSession.signal,
-        registerTask: run => registerModuleTask("[zzz] 式舆和危局战绩提醒", "0 * * * * *", run, true),
+        registerTask: run => registerModuleTask($t("app.text_0e17df94d9"), "0 * * * * *", run, true),
         route: (userId, botId, signal) => resolvePrivateFriendRoute(subscriptionTransport, userId, botId,
           () => !signal.aborted && !lifecycle.signal.aborted && handoff.accepting && !stopping, () => masterPermissions.botIds()),
       },
@@ -4211,7 +4218,7 @@ if (import.meta.main) {
             if (calendarSchedule === registration) calendarSchedule = undefined;
           };
         },
-        registerTask: (cron, type, run) => registerModuleTask(`[guides] 定时日历 ${type}`, cron, run),
+        registerTask: (cron, type, run) => registerModuleTask($t("app.text_a292b98594", { "type": type }), cron, run),
         targets: scheduledCalendarTargets,
         whenReady: whenModuleTasksActive,
       },
@@ -4220,7 +4227,7 @@ if (import.meta.main) {
         config: globalConfig.atlas,
         register(schedule) {
           const jobs: (() => Promise<void>)[] = [];
-          for (const [kind, name] of [["version", "[atlas] 图鉴版本"], ["challenge", "[atlas] 挑战轮换"]] as const) {
+          for (const [kind, name] of [["version", $t("app.text_41650baaa0")], ["challenge", $t("app.text_a007b52646")]] as const) {
             const task = schedule[kind];
             if (task?.issue) console.warn(`${name} ${task.issue}`);
             if (typeof task?.cron !== "string" || typeof task.run !== "function") continue;
@@ -4234,32 +4241,40 @@ if (import.meta.main) {
       },
     });
     if (!stopping) {
-      commands.registerModule(weatherCommands(lifecycle.signal), "天气");
-      commands.registerModule(generalToolCommands(lifecycle.signal), "[tools] 群聊工具");
+      commands.registerModule(weatherCommands(lifecycle.signal), $t("app.text_4d94732547"));
+      commands.registerModule(generalToolCommands(lifecycle.signal), $t("app.text_ddd4873754"));
       if (!commands.hasModule(systemModuleName)) {
-        throw new Error("系统模块未加载，请先运行 bun scripts/bootstrap.ts。");
+        throw new Error($t("app.text_203fa3ba02"));
       }
       if (!probingUpdate && commands.hasModule("@lotus-yunzai/atlas")) {
         const gallery = createCharacterGallerySchedule({
           readConfig: () => readLotusGlobalConfig(root),
           async synchronize(signal) {
             const { syncCharacterGallery } = await import("./lib/character-gallery-sync.ts");
-            return runInitializationStage("同步角色图库", onProgress => syncCharacterGallery({
+            return runInitializationStage($t("app.text_9e5f324e0b"), onProgress => syncCharacterGallery({
               root: fileURLToPath(new URL("data/character-gallery-synced/", root)), signal, onProgress,
-            }), { label: "图库", signal });
+            }), { label: $t("app.text_0091a6122f"), signal });
           },
           report: ({ downloaded, reused, removed }) => {
-            console.info(`[atlas] 角色图库已同步，新增或变更 ${downloaded} 张，复用 ${reused} 张，撤下 ${removed} 张。`);
+            console.info($t("app.text_4d875465d3", { "downloaded": downloaded, "reused": reused, "removed": removed }));
           },
           reportFailure: error => {
-            console.warn("[atlas] 角色图库同步失败，保留上一版。", error instanceof Error ? error.message : "");
+            console.warn($t("app.text_272a67ecd6"), error instanceof Error ? error.message : "");
           },
         });
-        registerModuleTask("[atlas] 角色图库", characterGalleryCron,
+        registerModuleTask($t("app.text_fe776efa19"), characterGalleryCron,
           () => gallery.run(nativeOperationSignal()));
       }
       const fallback = createServerRedirect(network.redirect);
       const settingsRoutes = new Map<string, ReturnType<typeof panelWebLogin>>([
+        ["/panel/api/i18n", panelI18n(i18nSettings)],
+        ["/panel/api/i18n/apply", async (request, authorized) => {
+          if (!authorized() || request.signal.aborted) return new Response(null, { status: 401 });
+          if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
+          const timer = setTimeout(() => { if (authorized() && !lifecycle.signal.aborted) void startProcessAction("restart", []); }, 250);
+          timer.unref();
+          return Response.json({ restarting: true });
+        }],
         ["/panel/api/settings/checkin/schedule", panelCheckinSchedule(root)],
         ["/panel/api/settings/checkin/permissions", panelAccountPermissions(root)],
         ["/panel/api/settings/group/export-permissions", panelGroupExportPermissions(root)],
@@ -4346,7 +4361,7 @@ if (import.meta.main) {
           const taken = await legacyPause.take();
           if (taken === false && dispatchPower.pausedAt === legacyPause.pausedAt) dispatchPower.setPaused(false);
         } catch {
-          console.warn("[进程管理] 未能确认旧版关机状态已接管。");
+          console.warn($t("app.text_b8a0c84a1b"));
         }
         handoff.reportPower(dispatchPower.pausedAt);
       }
@@ -4356,7 +4371,7 @@ if (import.meta.main) {
       milkyTransport?.start();
       checkinRuntime?.start();
       dailyNoteReminders?.start();
-      shopPlans?.start(lifecycle.signal, () => console.warn("[米游币商城] 未能读取或恢复预约。"));
+      shopPlans?.start(lifecycle.signal, () => console.warn($t("app.text_3ffac62e40")));
       plugins.startWatching();
       stopPowerSchedule = scheduleDispatchPower(botConfig, async (paused) => {
         if (stopping) return;
@@ -4364,14 +4379,14 @@ if (import.meta.main) {
         try {
           reply = dispatchPower.setPaused(paused);
         } catch {
-          console.warn("[进程管理] 无法保存定时开关机状态，当前状态保持原样。");
+          console.warn($t("app.text_e3fe4f8a47"));
           return;
         }
         if (reply === undefined) return;
-        console.log(`[进程管理] ${reply}`);
+        console.log($t("app.text_d0374637fe", { "reply": reply }));
         const notifications = await Promise.all(processOwnerTargets().map((target) => sendProcessMessage(target, reply)));
         if (notifications.includes(false)) {
-          console.warn("[进程管理] 部分主人未收到定时开关机通知。");
+          console.warn($t("app.text_c8ada095e7"));
         }
       });
       if (handoff.managed || canRestartHost()) {
@@ -4381,22 +4396,22 @@ if (import.meta.main) {
           return startProcessAction("restart", targets);
         });
       } else if (botConfig.restart_time || botConfig.restart_cron) {
-        console.warn("[进程管理] 当前运行环境不支持定时重启。");
+        console.warn($t("app.text_0765a5d981"));
       }
       try { updateNotices.initialize(readUpdateNoticeSettings(botConfig)); }
-      catch { console.warn("[更新推送] 跳过 bot.yaml 中无效的检查时间。"); }
+      catch { console.warn($t("app.text_d17d691ff0")); }
       if (handoff.managed) stopUpdateSchedule = scheduleUpdates(botConfig, requestScheduledUpdate);
       else if (botConfig.update_time || botConfig.update_cron) {
-        console.warn("[更新] 定时更新需要通过 bun run start 启动宿主。");
+        console.warn($t("app.text_f6d5379d36"));
       }
-      console.info(formatTerminalLog("mark", "Lotus-Yunzai 已启动。输入 #状态 查询运行状态。"));
+      console.info(formatTerminalLog("mark", $t("app.text_6502f15dc6")));
       queueStartupMessages();
 
       const terminalReply = createTerminalReply(fileToUrl, terminalOutput);
       consoleInput = createTerminalInput(() => {
         const report = !stopping && handoff.managed;
         interrupt();
-        if (report) console.info(formatTerminalLog("mark", "结束运行"));
+        if (report) console.info(formatTerminalLog("mark", $t("app.text_e5a73c676a")));
       });
       for await (const message of consoleInput) {
         if (stopping) break;
@@ -4413,7 +4428,7 @@ if (import.meta.main) {
           onAwaitInput: waiting.resolve,
           reply: terminalReply,
         }).catch(() => {
-          console.error("处理终端指令失败。");
+          console.error($t("app.text_9cc148daca"));
         });
         await Promise.race([handling, waiting.promise]);
         if (!stopping && process.stdin.isTTY) consoleInput.prompt(true);
@@ -4472,18 +4487,18 @@ if (import.meta.main) {
     const { kind, at, targets, pausedAt } = processAction;
     const saved = await Promise.allSettled(targets.map((target) => processReceipts.save({ kind, at, target })));
     if (saved.some((result) => result.status === "rejected")) {
-      console.warn("[进程管理] 无法保存进程操作回执。");
+      console.warn($t("app.text_95fea56fec"));
     }
     if (kind === "restart") {
       try {
         if (handoff.managed) {
           const sent = Promise.withResolvers<boolean>();
           if (!handoff.restart(pausedAt, (error) => sent.resolve(!error))) {
-            throw new Error("托管宿主未接受重启。");
+            throw new Error($t("app.text_4abf8b843e"));
           }
           const timer = setTimeout(() => sent.resolve(false), 1_000);
           try {
-            if (!await sent.promise) throw new Error("未能发送托管重启请求。");
+            if (!await sent.promise) throw new Error($t("app.text_5621a8beba"));
           } finally {
             clearTimeout(timer);
           }
@@ -4496,7 +4511,7 @@ if (import.meta.main) {
             return target.type === "terminal" ? processReceipts.discard() : processReceipts.discard(target.botId, target.adapter);
           }
         }));
-        console.error("[进程管理] 无法重新启动宿主。");
+        console.error($t("app.text_93d5acaef0"));
         process.exitCode = 1;
       }
     }

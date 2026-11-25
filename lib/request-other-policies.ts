@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isDeepStrictEqual } from "node:util";
 import { watchConfigFiles } from "./config-watch.ts";
 import { readOptionalConfigFile } from "./config.ts";
@@ -64,7 +67,7 @@ export async function readRequestOtherPolicies(root: URL, watchSignal?: AbortSig
         warned.delete(path);
         return result.value;
       }
-      if (!warned.has(path)) console.warn(`[请求策略] ${path} 重载失败，保留上次有效设置。`);
+      if (!warned.has(path)) console.warn($t("lib.request-other-policies.text_7932e1341c", { "path": path }));
       warned.add(path);
       return current[index];
     };
@@ -79,7 +82,7 @@ export async function readRequestOtherPolicies(root: URL, watchSignal?: AbortSig
   }
 
   if (watchSignal) watchConfigFiles(watchSignal, refresh,
-    () => console.warn("[请求策略] other.yaml 重载失败，保留上次有效设置。"));
+    () => console.warn($t("lib.request-other-policies.text_cc1c09cdb2")));
   return { current: () => current, refresh };
 }
 

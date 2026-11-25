@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createProfileStore, MAX_PROFILE_ID, ProfileError,
   type ProfileCheckinSettingsChange } from "@lotus-yunzai/account";
 import type { CommandContext, CommandModule, CommandReply, MessageFallbackContext } from "./commands.ts";
@@ -53,7 +56,7 @@ function matchSettings(message: string, groupId: number | undefined) {
   if (preference) return action(preference[2], preference[1] === "群聊"
     ? { type: "notify-preference", prefer: "group", groupId } : { type: "notify-preference", prefer: "private" });
   const binding = bindGroup.exec(message);
-  if (binding) return groupId ? action(binding[1], { type: "bind-notify-group", groupId }) : "请在要接收通知的群里发送绑定指令。";
+  if (binding) return groupId ? action(binding[1], { type: "bind-notify-group", groupId }) : $t("lib.checkin-profile-commands.text_a2dbb88811");
   const inherit = inheritTime.exec(message);
   if (inherit) return action(inherit[1], { type: "schedule", mode: "inherit" });
   const random = randomTime.exec(message);
@@ -79,9 +82,9 @@ export function checkinProfileCommands(directory: string | undefined, signal: Ab
       const match = matchSettings(context.normalizedMessage, groupId);
       if (typeof match === "string" || !match) return match;
       const { id, change } = match;
-      if (id > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
-      if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return "请从对应的 QQ 会话设置签到。";
-      if (change.type === "schedule" && !isCheckinCommandOwner(context)) return "签到模式与时间由机器人主人统一安排。";
+      if (id > MAX_PROFILE_ID) return $t("lib.checkin-profile-commands.text_3dd62228d2");
+      if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return $t("lib.checkin-profile-commands.text_39246a9f12");
+      if (change.type === "schedule" && !isCheckinCommandOwner(context)) return $t("lib.checkin-profile-commands.text_7469e28273");
       const qq = String(context.user_id);
       let saved = false;
       try {
@@ -94,13 +97,13 @@ export function checkinProfileCommands(directory: string | undefined, signal: Ab
         return await viewProfile(id, context);
       } catch (error) {
         if (signal.aborted) return;
-        if (saved) return `档案 ${id} 的签到设置已保存，暂时无法更新计划或显示资料卡。`;
+        if (saved) return $t("lib.checkin-profile-commands.text_db7e54b3f0", { "id": id });
         if (error instanceof ProfileError) {
-          if (error.code === "missing" || error.code === "login-required") return `请先登录档案 ${id}。`;
-          if (error.code === "changed") return "档案设置已变化，请重试。";
-          if (change.type === "schedule" && change.mode === "fixed") return "签到时间需为 0:00 到 23:59。";
+          if (error.code === "missing" || error.code === "login-required") return $t("lib.checkin-profile-commands.text_62b08191fe", { "id": id });
+          if (error.code === "changed") return $t("lib.checkin-profile-commands.text_3ddebc59b1");
+          if (change.type === "schedule" && change.mode === "fixed") return $t("lib.checkin-profile-commands.text_98f25b374f");
         }
-        return "暂时无法保存签到设置。";
+        return $t("lib.checkin-profile-commands.text_96e6c87e64");
       }
     },
   };

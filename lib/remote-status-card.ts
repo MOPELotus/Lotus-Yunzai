@@ -1,13 +1,16 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { nativeImageRasterScale } from "@lotus-yunzai/skia";
 import { drawInfoText, infoCardColors, measureInfoText, renderInfoCard } from "@lotus-yunzai/skia/info-card";
 
 export function renderRemoteStatusCard(paired: boolean, enabled: boolean) {
-  return renderInfoCard({ title: "远程身份验证", width: 620 }, ({ x, y, width, measure }) => {
+  return renderInfoCard({ title: $t("lib.remote-status-card.text_9e1fa31d6d"), width: 620 }, ({ x, y, width, measure }) => {
     const rows = [
-      paired ? "本机身份验证　已配对" : "本机身份验证　未配对",
-      enabled ? "远程运维　已开启" : "远程运维　已关闭",
+      paired ? $t("lib.remote-status-card.text_952c6da079") : $t("lib.remote-status-card.text_feddbe9922"),
+      enabled ? $t("lib.remote-status-card.text_c875b089f5") : $t("lib.remote-status-card.text_40daf13746"),
     ];
-    const guide = measureInfoText(measure, "在私人本机终端运行远程身份验证脚本完成配对或重置。", width - 32, 16);
+    const guide = measureInfoText(measure, $t("lib.remote-status-card.text_dc2e3290dc"), width - 32, 16);
     return {
       height: 110 + guide.length * 26,
       draw(ctx) {

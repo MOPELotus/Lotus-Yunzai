@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { normalizeProfileRoleArtworkUrl, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -41,7 +44,7 @@ export interface StarRailGrowthSnapshot {
   readonly materials: Readonly<Record<(typeof materialSections)[number], readonly GrowthMaterial[]>>;
 }
 
-const mainSkills = { Point01: "普通攻击", Point02: "战技", Point03: "终结技", Point04: "天赋" } as const;
+const mainSkills = { Point01: $t("starrail-growth.text_d90c73f75a"), Point02: $t("starrail-growth.text_6d8c868f52"), Point03: $t("starrail-growth.text_a985bc32b7"), Point04: $t("starrail-growth.text_866e2e6d67") } as const;
 type MainSkill = keyof typeof mainSkills;
 const mainAnchors = Object.keys(mainSkills) as MainSkill[];
 
@@ -60,7 +63,7 @@ function label(value: unknown) {
   if (clean && Array.from(clean).length <= 128) return clean;
 }
 
-function invalid(message = "官方星铁养成计算响应格式无效。"): never {
+function invalid(message = $t("starrail-growth.text_850933abee")): never {
   throw new HoyoRequestError("response", message);
 }
 
@@ -70,7 +73,7 @@ function verifyIdentity(data: Json, uid: string, region: string) {
     if (["uid", "role_id", "game_uid"].some(key => Object.hasOwn(identity, key) && String(identity[key]) !== uid) ||
         ["region", "server"].some(key => Object.hasOwn(identity, key) && identity[key] !== region) ||
         (Object.hasOwn(identity, "game_biz") && identity.game_biz !== "hkrpg_cn")) {
-      invalid("官方星铁养成响应的角色或区服与当前档案不一致。");
+      invalid($t("starrail-growth.text_975639da14"));
     }
   }
 }
@@ -95,14 +98,14 @@ function decodeSkills(value: unknown, targets: readonly number[]) {
     const base = ordinal !== -1 && max > 1;
     const requested = base ? targets[ordinal]! : whole(skill?.target_level, 0, max) ?? current;
     const result = { id, current, max, target: Math.max(current, Math.min(max, requested)),
-      name: base ? mainSkills[key] : label(skill?.item_name) ?? "额外行迹", icon: normalizeProfileRoleArtworkUrl(skill?.item_url) };
+      name: base ? mainSkills[key] : label(skill?.item_name) ?? $t("starrail-growth.text_1695f4e124"), icon: normalizeProfileRoleArtworkUrl(skill?.item_url) };
     if (base) {
       if (primary.has(key)) invalid();
       primary.set(key, result);
     }
     return result;
   });
-  if (primary.size !== mainAnchors.length) invalid("米游社未返回该角色的完整主行迹。");
+  if (primary.size !== mainAnchors.length) invalid($t("starrail-growth.text_0f79801a1e"));
   return { all, primary: mainAnchors.map(key => primary.get(key)!) };
 }
 
@@ -129,15 +132,15 @@ export async function readStarRailGrowth(source: ProfileRequestContext, transpor
   const { uid, region, gameBiz } = source.role;
   if (source.game !== "sr" || gameBiz !== "hkrpg_cn" || !/^[1-5]\d{8}$/u.test(uid) ||
       region !== (uid.startsWith("5") ? "prod_qd_cn" : "prod_gf_cn")) {
-    throw new HoyoRequestError("invalid-input", "星铁养成需要已同步的本人国服星铁档案。");
+    throw new HoyoRequestError("invalid-input", $t("starrail-growth.text_85f903a038"));
   }
   if (!source.device.id?.trim()) {
-    throw new HoyoRequestError("invalid-input", "当前档案缺少设备 ID，无法查询星铁养成。");
+    throw new HoyoRequestError("invalid-input", $t("starrail-growth.text_bb975c66db"));
   }
   if (!whole(avatarId, 1, 9_999_999) || !label(name) || !Array.isArray(levels) ||
       levels.length !== defaultStarRailGrowthLevels.length || levels.some((value, index) =>
         typeof value !== "number" || whole(value, 1, defaultStarRailGrowthLevels[index]!) === undefined)) {
-    throw new HoyoRequestError("invalid-input", "星铁养成的角色或目标等级无效。");
+    throw new HoyoRequestError("invalid-input", $t("starrail-growth.text_2d96229fd3"));
   }
   const { avatars } = await readStarRailPanel(source, transport, { signal }, verifyProfile);
   const matches = avatars.filter(candidate => whole(candidate.id, 1, 9_999_999) === avatarId);
@@ -148,7 +151,7 @@ export async function readStarRailGrowth(source: ProfileRequestContext, transpor
     tab_from: owned ? "TabOwned" : "TabAll", change_target_level: "0", uid, region });
   const detail = await requestStarRailCalculator(source, transport, "avatar/detail", { query: detailParameters, signal, verifyProfile });
   verifyIdentity(detail, uid, region);
-  if (owned && detail.is_login === false) throw new GameRecordRequestError("星铁养成计算", "expired", "api", 200);
+  if (owned && detail.is_login === false) throw new GameRecordRequestError($t("starrail-growth.text_2957fe507f"), "expired", "api", 200);
   const displayed = object(detail.avatar);
   if ((!owned && !displayed) ||
       ["id", "item_id", "avatar_id"].some(key => displayed && Object.hasOwn(displayed, key) &&
@@ -165,7 +168,7 @@ export async function readStarRailGrowth(source: ProfileRequestContext, transpor
   if (equipmentId) {
     const level = whole(equip?.level, 1, 80);
     if (level === undefined) invalid();
-    equipment = { id: equipmentId, name: label(equip?.name) ?? "已装备光锥", current: level, target: Math.max(level, levels[1]!),
+    equipment = { id: equipmentId, name: label(equip?.name) ?? $t("starrail-growth.text_4f052158b1"), current: level, target: Math.max(level, levels[1]!),
       rarity: whole(equip?.rarity, 1, 5), icon: normalizeProfileRoleArtworkUrl(equip?.icon) };
   }
   const { all, primary } = decodeSkills(detail.skill_list ?? detail.skills, levels.slice(2));

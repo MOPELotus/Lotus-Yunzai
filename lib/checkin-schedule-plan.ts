@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { MAX_PROFILE_ID } from "@lotus-yunzai/account";
 
 type ScheduleMode = "fixed" | "random";
@@ -124,7 +127,7 @@ function isMode(value: unknown): value is ScheduleMode {
 }
 
 function invalid(): never {
-  throw new TypeError("自动签到计划格式有误。");
+  throw new TypeError($t("lib.checkin-schedule-plan.text_298ecf8482"));
 }
 
 export function isCheckinScheduleDate(value: unknown): value is string {
@@ -146,7 +149,7 @@ export function checkinScheduleMinute(value: unknown): number {
 
 function requiredMinute(value: unknown): number {
   const minute = checkinScheduleMinute(value);
-  if (!Number.isInteger(minute)) throw new TypeError("签到时间须为有效的 HH:mm。");
+  if (!Number.isInteger(minute)) throw new TypeError($t("lib.checkin-schedule-plan.text_502a69cc96"));
   return minute;
 }
 
@@ -157,7 +160,7 @@ function isTimestamp(value: unknown): value is string {
 
 export function checkinScheduleClock(now: Date | number = Date.now()) {
   const timestamp = now instanceof Date ? now.getTime() : now;
-  if (!Number.isFinite(timestamp)) throw new TypeError("自动签到时间无效。");
+  if (!Number.isFinite(timestamp)) throw new TypeError($t("lib.checkin-schedule-plan.text_1f27582037"));
   const local = new Date(timestamp + chinaOffset).toISOString();
   const date = local.slice(0, 10);
   const tomorrow = new Date(timestamp + chinaOffset + day).toISOString().slice(0, 10);
@@ -167,13 +170,13 @@ export function checkinScheduleClock(now: Date | number = Date.now()) {
 }
 
 function checkedWindow(start: string, end: string) {
-  if (requiredMinute(start) > requiredMinute(end)) throw new TypeError("签到窗口结束时间不得早于开始时间。");
+  if (requiredMinute(start) > requiredMinute(end)) throw new TypeError($t("lib.checkin-schedule-plan.text_49665ff724"));
   return { window_start: start, window_end: end };
 }
 
 function configOf(config: CheckinScheduleConfig = {}) {
   const { mode = "random", fixed_time: fixedTime = "04:30", random, late_registration: late } = config;
-  if (!isMode(mode)) throw new TypeError("自动签到模式无效。");
+  if (!isMode(mode)) throw new TypeError($t("lib.checkin-schedule-plan.text_5b9590e877"));
   requiredMinute(fixedTime);
   return {
     mode, fixedTime,
@@ -197,7 +200,7 @@ function validIdentity(qq: unknown, id: unknown): id is number {
 }
 
 function keyFor({ qq, profileId = 1 }: { readonly qq: string; readonly profileId?: number }) {
-  if (!validIdentity(qq, profileId)) throw new TypeError("自动签到档案的 QQ 或编号无效。");
+  if (!validIdentity(qq, profileId)) throw new TypeError($t("lib.checkin-schedule-plan.text_b7e4e0df49"));
   return `${qq}:${profileId}`;
 }
 
@@ -254,7 +257,7 @@ function randomEntry(profile: CheckinScheduleProfile, index: number, count: numb
   let jitter = 0;
   if (step > 1) {
     const sample = random();
-    if (!Number.isFinite(sample) || sample < 0 || sample >= 1) throw new TypeError("签到随机数须在 [0, 1) 内。");
+    if (!Number.isFinite(sample) || sample < 0 || sample >= 1) throw new TypeError($t("lib.checkin-schedule-plan.text_52895eaa81"));
     jitter = Math.floor(sample * step);
   }
   const minute = Math.min(end, Math.round(start + step * index + jitter));

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { nativeImageRasterScale } from "@lotus-yunzai/skia";
 import { batchInlineImagePages } from "@lotus-yunzai/skia/forward-images";
 import type { CommandReply } from "./commands.ts";
@@ -28,7 +31,7 @@ export async function gachaImageReply({
   };
   const roleIsCurrent = async () => !signal.aborted && await verifyRole() && !signal.aborted;
   const scale = nativeImageRasterScale();
-  const tooLarge = "抽卡记录已读取，但单页图片仍超过当前会话的图片大小上限。";
+  const tooLarge = $t("lib.gacha-image-reply.text_5b90ea75d3");
 
   let aggregate = 0;
   const high: Image[] = [];
@@ -61,16 +64,16 @@ export async function gachaImageReply({
   if (!await roleIsCurrent()) return signal.aborted ? undefined : changedRoleMessage;
   if (total === 1) return batches[0]?.[0];
   if (batches.length === 1) return { type: "forward", nodes: [title, ...batches[0]!] };
-  if (!forward) return "当前会话无法分段合并转发抽卡记录。";
+  if (!forward) return $t("lib.gacha-image-reply.text_49c0fbd8bf");
 
   for (const [index, pages] of batches.entries()) {
     if (index && !await roleIsCurrent()) return signal.aborted ? undefined : changedRoleMessage;
     try {
-      if (!await forward([`${title}（第 ${index + 1}/${batches.length} 段）`, ...pages])) {
-        return `第 ${index + 1} 段合并转发未发送，其余段落已停止。`;
+      if (!await forward([$t("lib.gacha-image-reply.text_11d4132897", { "title": title, "value2": index + 1, "length": batches.length }), ...pages])) {
+        return $t("lib.gacha-image-reply.text_0f1a420ea5", { "value1": index + 1 });
       }
     } catch {
-      return `第 ${index + 1} 段合并转发结果未确认，请在聊天中核对。`;
+      return $t("lib.gacha-image-reply.text_5af9e46976", { "value1": index + 1 });
     }
   }
   return [];

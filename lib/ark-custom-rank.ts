@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 // Ark request and response shapes follow e81b5ef. See rank-statistics.LICENSE.
 import type { MessageEvent } from "./messages.ts";
 import { arkRankTokenEnvironment, arkRankTokenKey, isArkRankToken } from "./ark-rank-credentials.ts";
@@ -83,10 +86,10 @@ function readRow(value: unknown): ArkCustomRankRow | undefined {
 }
 
 function failure(result: Record<string, unknown> | undefined, missing: string): Failure {
-  if (result?.retcode === 429) return { message: "排名查询过于频繁，请稍后重试。" };
-  if (result?.retcode === 401 || result?.retcode === 403) return { message: "排名服务拒绝本次请求，请检查高级筛选授权。" };
+  if (result?.retcode === 429) return { message: $t("lib.ark-custom-rank.text_57fe768b35") };
+  if (result?.retcode === 401 || result?.retcode === 403) return { message: $t("lib.ark-custom-rank.text_035c0e676a") };
   if (result?.retcode === 400 || result?.retcode === 404) return { message: missing };
-  return { message: "排名服务未能返回完整结果。" };
+  return { message: $t("lib.ark-custom-rank.text_cb926e9767") };
 }
 
 export async function queryArkCustomRank(query: ArkCustomRankQuery, signal: AbortSignal, token?: string,
@@ -94,11 +97,11 @@ export async function queryArkCustomRank(query: ArkCustomRankQuery, signal: Abor
   const { game, characterId, metric, filters, count } = query;
   if ((game !== "gs" && game !== "sr") || !positiveId(characterId) || !positiveId(count) || count > 50 ||
       (metric !== "damage" && metric !== "artifacts") || filters.length > 20 ||
-      (token !== undefined && !isArkRankToken(token))) return { message: "无效的排行查询条件。" };
+      (token !== undefined && !isArkRankToken(token))) return { message: $t("lib.ark-custom-rank.text_b60f082f76") };
   if (filters.some(({ field, operator, value }) => !columns.has(field) || (!token && field !== "cons") ||
       (field.startsWith("pos") && game !== "sr") || !Number.isInteger(operator) || operator < 0 || operator > 5 ||
       (field === "artis_sets" && typeof value === "string" ? !label(value) : number(value) === undefined))) {
-    return { message: "无效的排行筛选条件，或当前没有高级筛选权限。" };
+    return { message: $t("lib.ark-custom-rank.text_53c36cee35") };
   }
   const result = await postArkQuery("rank/custom", {
     game, charId: characterId,
@@ -109,12 +112,12 @@ export async function queryArkCustomRank(query: ArkCustomRankQuery, signal: Abor
 
   const payload = record(result.payload);
   const data = record(payload?.data);
-  if (payload?.retcode !== 0) return failure(payload, "此角色暂无符合条件的排行。");
+  if (payload?.retcode !== 0) return failure(payload, $t("lib.ark-custom-rank.text_707a16b279"));
   if (!data || String(data.charId) !== String(characterId) ||
       (typeof data.isSr === "boolean" && data.isSr !== (game === "sr")) || !Array.isArray(data.rows) || data.rows.length > count) {
     return failure(undefined, "");
   }
-  if (!data.rows.length) return { message: "此角色暂无符合条件的排行。" };
+  if (!data.rows.length) return { message: $t("lib.ark-custom-rank.text_707a16b279") };
   const queryId = data.query_id ?? data.queryId;
   if (typeof queryId !== "string" || !queryIdPattern.test(queryId)) return failure(undefined, "");
   // Positions in the display must correspond to the original indices for follow-up reads.
@@ -126,17 +129,17 @@ export async function queryArkCustomRank(query: ArkCustomRankQuery, signal: Abor
 export async function queryArkCustomPanel(queryId: string, index: number, signal: AbortSignal, token?: string,
   transport: RankStatsTransport = fetch): Promise<{ readonly snapshot: unknown } | Failure> {
   if (!queryIdPattern.test(queryId) || !Number.isInteger(index) || index < 0 || index >= 20 ||
-      (token !== undefined && !isArkRankToken(token))) return { message: "排行面板编号无效。" };
+      (token !== undefined && !isArkRankToken(token))) return { message: $t("lib.ark-custom-rank.text_7f5d47ef34") };
   const result = await postArkQuery("rank/custom/specific", { query_id: queryId, index }, signal, transport,
     { token, maximum: 2 * 1024 * 1024 });
   if ("message" in result) return result;
   const payload = record(result.payload);
   const data = record(payload?.data);
-  if (payload?.retcode !== 0) return failure(payload, "排行结果已失效，请重新查询。");
+  if (payload?.retcode !== 0) return failure(payload, $t("lib.ark-custom-rank.text_d412a6a8e9"));
   const snapshot = record(data?.info ?? data?.playerData ?? data);
   const uid = arkPublicUid(snapshot?.uid);
   if (!snapshot || !uid || (!record(snapshot.avatars) && !Array.isArray(snapshot.avatars))) {
-    return { message: "排名服务返回的角色面板不完整。" };
+    return { message: $t("lib.ark-custom-rank.text_918c86c017") };
   }
   return { snapshot: { ...snapshot, uid } };
 }

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { withTerminalOutput } from "./terminal-output.ts";
 import { formatTerminalLog, formattedLogLevel } from "./terminal-log-format.ts";
 import { constants } from "node:fs";
@@ -59,7 +62,7 @@ export function createPluginLog(config: Readonly<Record<string, unknown>>,
 
   function format(value: unknown) {
     if (typeof value === "string") return value;
-    if (types.isProxy(value)) return "[代理对象]";
+    if (types.isProxy(value)) return $t("lib.runtime-log-writer.text_444fc9f335");
     if (setting !== false) return inspect(value, options);
     if (types.isNativeError(value)) {
       const message: unknown = Object.getOwnPropertyDescriptor(value, "message")?.value;
@@ -90,7 +93,7 @@ async function append(file: string, line: string): Promise<void> {
   const handle = await open(file,
     constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
   try {
-    if (!(await handle.stat()).isFile()) throw new Error("日志目标须为普通文件。");
+    if (!(await handle.stat()).isFile()) throw new Error($t("lib.runtime-log-writer.text_309a783679"));
     await handle.writeFile(line, "utf8");
   } finally {
     await handle.close();
@@ -122,7 +125,7 @@ export async function attachRuntimeLog(root: URL, config: Readonly<Record<string
     const exceptional = level === "error" || level === "fatal";
     queued++;
     tail = tail.then(async () => {
-      if (await realpath(configured) !== directory) throw new Error("日志目录已变更。");
+      if (await realpath(configured) !== directory) throw new Error($t("lib.runtime-log-writer.text_47964e017d"));
       const dailyFile = runtimeLogFilename("runtime", time);
       const writes = await Promise.allSettled([
         append(join(directory, dailyFile), line),
@@ -131,13 +134,13 @@ export async function attachRuntimeLog(root: URL, config: Readonly<Record<string
       if (!closed && writes[0]?.status === "fulfilled" && dailyFile > lastLogDate) {
         lastLogDate = dailyFile;
         archiveWork = archiveWork.then(() => archiveRuntimeLogs(directory, dailyFile, archiveLifecycle.signal)).catch(() => {
-          if (!archiveWarned && !archiveLifecycle.signal.aborted) warn("[日志] 无法归档旧运行日志。");
+          if (!archiveWarned && !archiveLifecycle.signal.aborted) warn($t("lib.runtime-log-writer.text_3fb70dda42"));
           archiveWarned = true;
         });
       }
-      if (writes.some(({ status }) => status === "rejected")) throw new Error("本地日志写入失败。");
+      if (writes.some(({ status }) => status === "rejected")) throw new Error($t("lib.runtime-log-writer.text_1f469434a5"));
     }).catch(() => {
-      if (!warned) warn("[日志] 无法写入本地日志。");
+      if (!warned) warn($t("lib.runtime-log-writer.text_73e21e172c"));
       warned = true;
     }).finally(() => { queued--; });
   }

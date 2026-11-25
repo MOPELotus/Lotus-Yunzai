@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -222,7 +223,7 @@ globalThis.fetch = async (input, options) => {
     expect(await Bun.file(join(root, "unexpected-network.txt")).exists()).toBe(false);
   }, 2_000, preload, async (root) => {
     const target = join(root, "profiles");
-    await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+    await linkHostPackages(root);
     await mkdir(target);
     await writeFile(join(target, "42.yaml"), Bun.YAML.stringify(document("42", 1, { ...games, gs: ["100000041"], zzz: [] })));
     await writeFile(join(target, "42-2.yaml"), Bun.YAML.stringify(document("42", 2)));

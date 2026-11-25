@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { Game, ProfileAccountContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { readGameRecordPayload } from "./game-record.ts";
@@ -132,7 +135,7 @@ export async function openHoYoLabRedemption(
       reserve: () => Promise<boolean>): Promise<InternationalRedeemStatus | "duplicate"> {
       if (!codePattern.test(code)) return "invalid";
       if (!roles.some(bound => bound.uid === role.uid && bound.region === role.region && bound.gameBiz === gameBiz)) {
-        throw new HoyoRequestError("invalid-input", "兑换角色不属于当前 HoYoLAB 档案。");
+        throw new HoyoRequestError("invalid-input", $t("redeem-submit.text_d1b88f9b64"));
       }
       const endpoint = new URL(`https://${host}/common/apicdkey/api/webExchangeCdkeyHyl`);
       endpoint.search = new URLSearchParams({

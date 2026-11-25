@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { lockFile } from "./file-lock.ts";
@@ -21,7 +24,7 @@ export async function migrateTrssWishSnapshot(plan: LegacyMigrationPlan, inputs:
   signal?: AbortSignal) {
   const snapshot = inputs.trssWishSnapshot;
   if (!snapshot) return;
-  if (!snapshot.sourceUrl) throw new Error("续接旧 TRSS 限抽需要设置 LOTUS_GENSHIN_TRSS_WISH_SNAPSHOT_URL。");
+  if (!snapshot.sourceUrl) throw new Error($t("lib.migration-trss-wish.text_cfed4a2e1a"));
   const { importTrssWishLimits } = await import("../plugins/genshin/wish-sim/trss-daily-import.ts");
   // Preview only reads the destination. A real import writes to the private overlay, which is published with config and data.
   const target = stage ?? plan.target;
@@ -34,7 +37,7 @@ export async function migrateTrssWishSnapshot(plan: LegacyMigrationPlan, inputs:
     signal,
   }, lockFile);
   if (stage !== undefined && report.unavailable) {
-    throw new Error(`有 ${report.unavailable} 个已授权的旧 TRSS 限抽会话无法读取，请核对隔离副本和读取权限后重试。`);
+    throw new Error($t("lib.migration-trss-wish.text_1273cbb5c5", { "unavailable": report.unavailable }));
   }
   return report;
 }

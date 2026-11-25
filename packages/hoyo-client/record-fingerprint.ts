@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { randomBytes } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import { transientReadResponse } from "@lotus-yunzai/http";
@@ -28,7 +31,7 @@ export async function addRecordFingerprint(headers: Headers, transport: HoyoTran
       appMemory: "55", romCapacity: "488153", romRemain: "157348", cpuType: "CPU_TYPE_ARM64",
       magnetometer: "-84.426331x-89.708435x-37.117889" }),
   });
-  const failed = () => new HoyoRequestError("transport", "米游社查询设备指纹申请失败，请稍后重试。");
+  const failed = () => new HoyoRequestError("transport", $t("record-fingerprint.text_725972774b"));
   for (let attempt = 0; attempt < 3; attempt++) {
     signal.throwIfAborted();
     await verify();

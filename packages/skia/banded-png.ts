@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { createDeflate } from "node:zlib";
 
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -29,7 +32,7 @@ export async function encodeBandedPng(width: number, height: number, bands: Asyn
   async function collect() {
     for await (const bytes of compressor) {
       length += bytes.length + 12;
-      if (length > maxEncodedBytes) throw new ImageSizeLimitError("超长图片编码大小超过 128 MiB。");
+      if (length > maxEncodedBytes) throw new ImageSizeLimitError($t("banded-png.text_c7d41ac028"));
       parts.push(chunk("IDAT", bytes));
     }
   }
@@ -40,7 +43,7 @@ export async function encodeBandedPng(width: number, height: number, bands: Asyn
     let rows = 0;
     for await (const band of bands) {
       if (band.length < stride || band.length % stride !== 0 || rows + band.length / stride > height) {
-        throw new Error("图像分带的像素尺寸不匹配。");
+        throw new Error($t("banded-png.text_588387e089"));
       }
       const bandRows = band.length / stride;
       for (let start = 0; start < bandRows; start += batchRows) {
@@ -64,7 +67,7 @@ export async function encodeBandedPng(width: number, height: number, bands: Asyn
       }
       rows += bandRows;
     }
-    if (rows !== height) throw new Error("图像分带没有覆盖全部画布。");
+    if (rows !== height) throw new Error($t("banded-png.text_82c11fc05a"));
     compressor.end();
   }
 

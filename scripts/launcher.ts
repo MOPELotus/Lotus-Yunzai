@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { formatTerminalLog, formattedLogLevel, installTerminalLogging } from "../lib/terminal-log-format.ts";
 import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
@@ -46,13 +50,13 @@ function readCommand(args: string[]) {
       return { action } as const;
     }
   }
-  throw new Error("用法：bun run init [live|latest]、bun run start、bun run start:bg、bun run stop、bun run restart、bun run logs 或 bun run status。");
+  throw new Error($t("scripts.launcher.text_1b1cad616b"));
 }
 
 function pm2Executable() {
-  if (process.platform === "win32") throw new Error("独立后台托管需要 Linux 或 macOS。可用 bun run start 前台运行。");
+  if (process.platform === "win32") throw new Error($t("scripts.launcher.text_ffe7c1e5d6"));
   const binary = Bun.which("pm2");
-  if (!binary) throw new Error("后台托管需要 PATH 中的 PM2。可用 bun run start 前台运行。");
+  if (!binary) throw new Error($t("scripts.launcher.text_306fc16aea"));
   return binary;
 }
 
@@ -138,13 +142,13 @@ async function readBackgroundLogFiles(home: string, options: readonly string[]):
     else if (option === "--lines") lines = options[++index] ?? "";
     else if (option.startsWith("--lines=")) lines = option.slice("--lines=".length);
     else if (!["--raw", "--out", "--err"].includes(option)) {
-      throw new Error("当前没有 PM2 登记。历史日志支持 --lines、--nostream、--raw、--out 或 --err。");
+      throw new Error($t("scripts.launcher.text_56ba72d1d6"));
     }
   }
-  if (!/^\d+$/u.test(lines) || !Number.isSafeInteger(Number(lines))) throw new Error("日志行数须为非负整数。");
+  if (!/^\d+$/u.test(lines) || !Number.isSafeInteger(Number(lines))) throw new Error($t("scripts.launcher.text_a176d3bdd3"));
 
   const tail = Bun.which("tail");
-  if (!tail) throw new Error("读取 PM2 历史日志需要 PATH 中的 tail。");
+  if (!tail) throw new Error($t("scripts.launcher.text_a128d37bc9"));
   return waitForLogs(Bun.spawn([tail, "-n", lines, ...(follow ? ["-F"] : []), ...files], {
     stdin: "ignore", stdout: "pipe", stderr: "inherit",
   }));
@@ -165,7 +169,7 @@ async function daemonListening(path: string): Promise<boolean> {
     });
     socket.setTimeout(500, () => {
       socket.destroy();
-      reject(new Error("无法确认 PM2 守护进程状态。"));
+      reject(new Error($t("scripts.launcher.text_e513d679e6")));
     });
   });
 }
@@ -177,7 +181,7 @@ async function preparePm2Entry(home: string) {
     entrypoints: [fileURLToPath(new URL("managed-entry.ts", import.meta.url))], target: "bun",
   });
   const output = bundle.outputs[0];
-  if (!bundle.success || !output) throw new Error("无法准备 PM2 宿主启动入口。");
+  if (!bundle.success || !output) throw new Error($t("scripts.launcher.text_13086c28fe"));
   try {
     await writeFile(temporary, await output.text(), { mode: 0o600, flag: "wx" });
     await rename(temporary, entry);
@@ -201,7 +205,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
   async function privateHome(path: string) {
     const directory = await present(path);
     if (directory && (!directory.isDirectory() || directory.uid !== process.getuid?.() || directory.mode & 0o077)) {
-      throw new Error("PM2 运行目录须为当前用户独占的实体目录（权限 0700）。");
+      throw new Error($t("scripts.launcher.text_580d4426d4"));
     }
     return directory !== undefined;
   }
@@ -212,22 +216,22 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
   } as const);
   async function application(path: string, attempt?: string) {
     if (!await privateHome(path) || !await daemonListening(join(path, "rpc.sock"))) return;
-    if (!binary) throw new Error("发现正在运行的 PM2，无法核实后台登记。请确保 PATH 中有 PM2。");
+    if (!binary) throw new Error($t("scripts.launcher.text_8e593cd64e"));
     const lookup = Bun.spawn([binary, "jlist"], { ...spawnOptions(path), stdout: "pipe", timeout: 2_500 });
     const [code, result] = await Promise.all([lookup.exited, new Response(lookup.stdout).text()]);
-    if (code !== 0) throw new Error("无法查询 PM2 应用。");
+    if (code !== 0) throw new Error($t("scripts.launcher.text_d83512dfbd"));
     let processes: unknown;
     try { processes = JSON.parse(result); }
-    catch { throw new Error("无法读取 PM2 应用状态。"); }
-    if (!Array.isArray(processes)) throw new Error("无法读取 PM2 应用状态。");
+    catch { throw new Error($t("scripts.launcher.text_539f1a325c")); }
+    if (!Array.isArray(processes)) throw new Error($t("scripts.launcher.text_539f1a325c"));
     const named = processes.filter((item) => item?.name === name || item?.name === legacyName);
     if ((action === "restart" || action === "stop") && named.length > 1) {
-      throw new Error("PM2 中存在多个同名登记，无法确认要操作的宿主。");
+      throw new Error($t("scripts.launcher.text_b7c75acfc5"));
     }
     const process = named.find((item) => attempt === undefined || item.pm2_env?.env?.[startToken] === attempt);
     if (!process) return;
     const status: unknown = process.pm2_env?.status;
-    if (typeof status !== "string") throw new Error("无法读取 PM2 应用状态。");
+    if (typeof status !== "string") throw new Error($t("scripts.launcher.text_539f1a325c"));
     const pid: unknown = process.pid;
     const id: unknown = process.pm_id;
     const token: unknown = process.pm2_env?.env?.[startToken];
@@ -254,13 +258,13 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
   if (action === "stop") {
     if (!active) {
       const stopped = await stopForeground(root);
-      console.log(stopped ? "Lotus-Yunzai 已停止。" : "Lotus-Yunzai 未运行。");
+      console.log(stopped ? $t("scripts.launcher.text_eb2b9b4a60") : $t("scripts.launcher.text_08afaaff27"));
       return 0;
     }
-    if (!binary || !active.owned || active.id === undefined) throw new Error("无法核实当前目录的 PM2 登记。");
+    if (!binary || !active.owned || active.id === undefined) throw new Error($t("scripts.launcher.text_f8d1d9b3c0"));
     const checked = await application(active.path, active.token);
     if (!checked?.active || !checked.owned || checked.id !== active.id || checked.pid !== active.pid || checked.token !== active.token) {
-      throw new Error("PM2 登记在停止前发生变化，请重新确认状态。");
+      throw new Error($t("scripts.launcher.text_2021cc549c"));
     }
     return Bun.spawn([binary, "stop", active.id], spawnOptions(active.path)).exited;
   }
@@ -272,13 +276,13 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
       const status = await readBackgroundLogFiles(path, options);
       if (status !== undefined) return status;
     }
-    throw new Error("当前目录暂无后台启动日志。");
+    throw new Error($t("scripts.launcher.text_78a53b0efd"));
   }
-  if (!binary) throw new Error("后台托管需要 PATH 中的 PM2。");
+  if (!binary) throw new Error($t("scripts.launcher.text_e6601e13ec"));
   const executable = binary;
   if (action !== "start:bg" && action !== "restart") {
     if (!selected) {
-      console.log("Lotus-Yunzai 未在后台运行。");
+      console.log($t("scripts.launcher.text_8afec76506"));
       return 0;
     }
     const args = action === "status" ? ["status"] : [action, selected.id ?? name, ...(action === "logs" && !options.includes("--raw") ? ["--raw"] : []), ...options];
@@ -305,32 +309,32 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
         const observed = await application(active.path, active.workerToken);
         signal?.throwIfAborted();
         if (!observed?.active || observed.id !== active.id || observed.pid !== active.pid) {
-          throw new Error("等待期间后台宿主已停止或被替换。请运行 bun run status 查看状态。");
+          throw new Error($t("scripts.launcher.text_d860c70b85"));
         }
         ready = observed.status === "online" && observed.pid === await readyPid(active.path);
       }
       signal?.throwIfAborted();
-      if (!ready) throw new Error("后台工作进程尚未就绪。请运行 bun run logs --nostream 查看日志。");
+      if (!ready) throw new Error($t("scripts.launcher.text_ed1ee39b7f"));
     }
     signal?.throwIfAborted();
     if (!ready) {
-      throw new Error("当前目录已有后台进程。请运行 bun run status 查看状态。");
+      throw new Error($t("scripts.launcher.text_38260bef39"));
     }
-    console.log("Lotus-Yunzai 已在后台运行。");
+    console.log($t("scripts.launcher.text_2edbb0a5f4"));
     return 0;
   }
   if (action === "restart") {
-    if ((current && !current.owned) || (legacy && !legacy.owned)) throw new Error("同名 PM2 登记不属于当前安装目录。");
-    if (current?.active && legacy?.active) throw new Error("新旧 PM2 目录均有活动登记，无法确认要重启的宿主。");
-    if (active?.id === undefined || !active.pid) throw new Error("Lotus-Yunzai 未在后台运行。请运行 bun run start:bg。");
+    if ((current && !current.owned) || (legacy && !legacy.owned)) throw new Error($t("scripts.launcher.text_938f80f0f2"));
+    if (current?.active && legacy?.active) throw new Error($t("scripts.launcher.text_ae51f77ba2"));
+    if (active?.id === undefined || !active.pid) throw new Error($t("scripts.launcher.text_88f0ec7dc3"));
     if (active.status !== "online" || await readyPid(active.path) !== active.pid) {
-      throw new Error("当前后台工作进程尚未就绪。请运行 bun run status 查看状态。");
+      throw new Error($t("scripts.launcher.text_b4daf30f5d"));
     }
     if (!active.workerToken && startup && !await startup.prepare()) return 1;
     signal?.throwIfAborted();
     if (active.workerToken) {
       if (await readMarker(active.path, "host-start-attempt") !== active.workerToken) {
-        throw new Error("当前后台启动登记已失效，请运行 bun run status 查看状态。");
+        throw new Error($t("scripts.launcher.text_9294ba0793"));
       }
       // Refresh the bundle without replacing the registration or its pause state.
       await preparePm2Entry(active.path);
@@ -338,7 +342,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
     const before = await application(active.path);
     if (!before?.owned || before.id !== active.id || before.pid !== active.pid || before.token !== active.token ||
         before.status !== "online" || await readyPid(active.path) !== before.pid) {
-      throw new Error("后台宿主已变更，请重新确认后重试。");
+      throw new Error($t("scripts.launcher.text_12abae5a77"));
     }
     signal?.throwIfAborted();
     if (active.workerToken) {
@@ -351,21 +355,21 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
         if (!restarted?.owned || !restarted.active || restarted.id !== active.id) break;
         if (restarted.status === "online" && restarted.pid && restarted.pid !== active.pid &&
             restarted.pid === await readyPid(active.path)) {
-          console.log("Lotus-Yunzai 重启成功。");
+          console.log($t("scripts.launcher.text_fc5b32fd78"));
           return 0;
         }
         await Bun.sleep(100);
       } while (performance.now() < until);
-      throw new Error("后台宿主重启后未就绪。请运行 bun run logs --nostream 查看日志。");
+      throw new Error($t("scripts.launcher.text_15dffcfc9e"));
     }
     const code = await Bun.spawn([binary, "stop", active.id], { ...spawnOptions(active.path), timeout: 25_000 }).exited;
     if (code !== 0) return code;
     const stopped = await application(active.path);
     if (!stopped?.owned || stopped.id !== active.id || stopped.active || stopped.pid !== undefined) {
-      throw new Error("旧后台宿主未确认停止，未启动替换宿主。");
+      throw new Error($t("scripts.launcher.text_a20ff4248b"));
     }
     current = await application(home);
-    if (current && (!current.owned || current.active)) throw new Error("后台登记已变更，未启动替换宿主。");
+    if (current && (!current.owned || current.active)) throw new Error($t("scripts.launcher.text_b2878ee091"));
   }
   if (action === "start:bg" && startup && !await startup.prepare()) return 1;
   signal?.throwIfAborted();
@@ -398,7 +402,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
     if (retained && (retained.active || retained.pid !== undefined || retained.id === undefined ||
         retained.id !== current.id ||
         await Bun.spawn([binary, "delete", retained.id], { ...spawn, stdout: "ignore", timeout: 2_500 }).exited !== 0)) {
-      throw new Error("无法替换已停止的 PM2 登记，请运行 bun run status 查看状态。");
+      throw new Error($t("scripts.launcher.text_ec937bf293"));
     }
     signal?.throwIfAborted();
   }
@@ -411,7 +415,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
   async function stopOwnedApplication(id: string | undefined) {
     if (id === undefined ||
         await Bun.spawn([executable, "stop", id], { ...spawn, timeout: 25_000 }).exited !== 0) {
-      throw new Error("未能停止本次后台启动，请运行 bun run status 查看状态。");
+      throw new Error($t("scripts.launcher.text_49e7c891f3"));
     }
   }
 
@@ -435,7 +439,7 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
       }
       launched ??= await waitForRegistration(cancelledRegistrationGraceMs);
       if (launched?.active) await stopOwnedApplication(launched.id);
-      if (!revoked) throw new Error("无法撤销本次后台启动，请运行 bun run status 查看状态。");
+      if (!revoked) throw new Error($t("scripts.launcher.text_0253e26568"));
     } finally {
       if (start.exitCode === null && start.signalCode === null) start.kill("SIGKILL");
       await start.exited;
@@ -452,11 +456,11 @@ async function pm2(binary: string | undefined, root: string, action: "start:bg" 
     const ready = await readyPid(home);
     signal?.throwIfAborted();
     if (launched?.status === "online" && launched.pid && launched.pid === ready) {
-      if (action === "restart") console.log("Lotus-Yunzai 重启成功。");
+      if (action === "restart") console.log($t("scripts.launcher.text_fc5b32fd78"));
       return 0;
     }
     if (launched?.active && !/^[1-9]\d*$/u.test(ready ?? "")) await stopOwnedApplication(launched.id);
-    throw new Error("后台宿主未就绪。请运行 bun run logs --nostream 查看日志后重试。");
+    throw new Error($t("scripts.launcher.text_cf71dcee13"));
   } catch (error) {
     if (signal?.aborted) {
       await cancelStart();
@@ -479,7 +483,7 @@ async function run() {
 
   // Managed replacement can rename the checkout while this lock is held.
   const lock = await lockFile(managedStartupLockPath(directory),
-    "启动操作", 2_000, "当前目录正在执行启动操作，请稍后重试。");
+    $t("scripts.launcher.text_837c8d2798"), 2_000, $t("scripts.launcher.text_c0b7ac1462"));
   let lockHeld = true;
   function releaseStartup() {
     if (!lockHeld) return;
@@ -487,7 +491,7 @@ async function run() {
     lockHeld = false;
   }
   const controller = new AbortController();
-  const interrupt = () => controller.abort(new Error("启动操作已中止。"));
+  const interrupt = () => controller.abort(new Error($t("scripts.launcher.text_5893b8086e")));
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", interrupt);
   try {
@@ -510,7 +514,7 @@ async function run() {
     if (!await prepareStartup(directory, command.action === "init" ? command.channel : undefined,
       controller.signal, command.action === "init")) return 1;
     if (command.action === "init") {
-      console.log("[初始化] 已就绪，可运行 bun run start 或 bun run start:bg。");
+      console.log($t("scripts.launcher.text_4feb86a82c"));
       return 0;
     }
   } finally {
@@ -533,7 +537,7 @@ if (import.meta.main) {
   try {
     process.exitCode = await run();
   } catch (error) {
-    console.error(error instanceof Error ? error.message : "启动操作失败。");
+    console.error(error instanceof Error ? error.message : $t("scripts.launcher.text_b72f0f9e05"));
     process.exitCode = 1;
   }
 }

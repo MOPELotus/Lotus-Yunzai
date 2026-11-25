@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { readLocalConfig } from "./config.ts";
 import { isMilkyOwnerSession } from "./command-permissions.ts";
 import { normalizeGameCommand } from "./command-prefix.ts";
@@ -21,7 +24,7 @@ export function isStarRailGachaLinkMessage(text: string) {
 const zzzLinkedViewEntry = new RegExp(`^${zzzLinkPrefix}逐抽记录(?:[1-9]\\d{0,2})?$`, "iu");
 const groupReviewEntry = /^#(?:入群申请|同意入群|拒绝入群)(?:\s|$)/u;
 const allowedFile = /\.(?:txt|xlsx|json)$/iu;
-export const defaultPrivateAccessMessage = "私聊功能已禁用，仅支持发送cookie，抽卡记录链接，记录日志文件";
+export const defaultPrivateAccessMessage = $t("lib.private-access.text_25aeaf4e0b");
 const cooldownMs = 10_000;
 const maxCooldownEntries = 10_000;
 
@@ -42,7 +45,7 @@ export function privateAccessPolicy(config: Readonly<Record<string, unknown>>) {
     try {
       custom = new RegExp(`(?:${patterns.join("|")})`);
     } catch {
-      throw new Error("other.yaml 的 disableAdopt 包含无效的正则表达式。");
+      throw new Error($t("lib.private-access.text_fd9d374479"));
     }
   }
   return { enabled, tip, custom };
@@ -64,7 +67,7 @@ export async function readPrivateAccess(root: URL, claimTip?: ClaimTip, fileWatc
       policy = candidate;
       reloadFailed = false;
     }).catch(() => {
-      if (!reloadFailed) console.warn("[私聊限制] 配置重载失败，保留上次有效设置。");
+      if (!reloadFailed) console.warn($t("lib.private-access.text_62d721dc91"));
       reloadFailed = true;
     }).finally(() => {
       nextRefresh = performance.now() + 1_000;

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { dailyNoteAssets } from "@lotus-yunzai/skia/daily-note-assets";
 import { lstat, readdir, readlink, realpath } from "node:fs/promises";
 import { devNull } from "node:os";
@@ -89,7 +92,7 @@ async function configuredRuntimePaths(root: string, source: string, env: Runtime
   const add = (absolute: string) => {
     if (!within(root, absolute)) return;
     const path = relative(root, absolute);
-    if (!path) throw new Error("运行数据配置使用宿主根目录，无法安全切换版本。");
+    if (!path) throw new Error($t("lib.update-runtime-paths.text_8f415cf1b1"));
     if (!persistentPath(path)) paths.push(path.split(sep).join("/"));
   };
   async function readSnapshot<T>(path: string, read: (location: string) => Promise<T>): Promise<T> {
@@ -191,7 +194,7 @@ async function existingAssetPath(root: string, source: string, value: string, al
   const asset = relative(root, installedPath);
   if (!asset) {
     if (allowRoot) return;
-    throw new Error("原主题或素材配置使用宿主根目录，无法安全切换版本。");
+    throw new Error($t("lib.update-runtime-paths.text_49f3f472b1"));
   }
   try {
     const installed = join(source, asset);
@@ -203,7 +206,7 @@ async function existingAssetPath(root: string, source: string, value: string, al
       const targets = path === installed ? [await realpath(path)] : await Promise.all([realpath(path), realpath(installed)]);
       if (targets.some(target => [root, source].some(base =>
         within(base, target) && !persistentPath(relative(base, target))))) {
-        throw new Error("原素材或旧资料经过指向安装目录内的链接，无法安全切换版本。");
+        throw new Error($t("lib.update-runtime-paths.text_b98f06e15f"));
       }
       // Moving the link keeps external resources at their existing location.
       return relative(source, path);
@@ -256,11 +259,11 @@ export async function readUpdateRuntimePaths(root: string, signal: AbortSignal, 
   });
   const [text, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
   signal.throwIfAborted();
-  if (code !== 0) throw new Error("无法读取工作进程的运行数据路径。");
+  if (code !== 0) throw new Error($t("lib.update-runtime-paths.text_b189e8cddb"));
   return findRuntimePaths(root, root, JSON.parse(text) as RuntimePaths);
 }
 
 export async function verifyMovedRuntimePaths(root: string, previous: string, env: RuntimePaths): Promise<void> {
   // An older supervisor cannot move these paths. Do not acknowledge readiness if its archive still owns them.
-  if ((await findRuntimePaths(root, previous, env)).length) throw new Error("指定的运行数据仍留在旧版本，已拒绝接管。");
+  if ((await findRuntimePaths(root, previous, env)).length) throw new Error($t("lib.update-runtime-paths.text_3eebd8221f"));
 }

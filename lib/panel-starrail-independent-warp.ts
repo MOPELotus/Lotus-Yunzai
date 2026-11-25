@@ -1,18 +1,21 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { lockFile } from "./file-lock.ts";
 import { readPanelJson } from "./panel.ts";
 
 const fields = [
-  { key: "enabled", label: "对旧十连指令使用独立规则", type: "boolean",
-    hint: "启用后，旧抽卡与十连按群或私聊独立计数。单抽、多连和指定编号的指令继续使用星轨票。" },
-  { key: "group", label: "允许群聊", type: "boolean" },
-  { key: "private", label: "允许私聊", type: "boolean" },
-  { key: "dailyTenPulls", label: "每日每池的十连次数", type: "number", min: 0,
-    hint: "填 0 为不限。主人不受次数限制。" },
-  { key: "disabledGroups", label: "禁用群号", type: "list", separator: "line" },
-  { key: "recallSeconds", label: "未中五星时撤回延时（秒）", type: "number", min: 0, max: 2_147_483,
-    hint: "填 0 不撤回。" },
+  { key: "enabled", label: $t("lib.panel-starrail-independent-warp.text_af0f77424b"), type: "boolean",
+    hint: $t("lib.panel-starrail-independent-warp.text_afaf37aea6") },
+  { key: "group", label: $t("lib.panel-starrail-independent-warp.text_946c96eb71"), type: "boolean" },
+  { key: "private", label: $t("lib.panel-starrail-independent-warp.text_4e7fb2a2eb"), type: "boolean" },
+  { key: "dailyTenPulls", label: $t("lib.panel-starrail-independent-warp.text_7df60e2220"), type: "number", min: 0,
+    hint: $t("lib.panel-starrail-independent-warp.text_05092333e0") },
+  { key: "disabledGroups", label: $t("lib.panel-starrail-independent-warp.text_126d480b3b"), type: "list", separator: "line" },
+  { key: "recallSeconds", label: $t("lib.panel-starrail-independent-warp.text_7009d6f335"), type: "number", min: 0, max: 2_147_483,
+    hint: $t("lib.panel-starrail-independent-warp.text_88a82045f8") },
 ] as const;
 
 class SettingsConflict extends Error {}
@@ -21,7 +24,7 @@ export function panelStarRailIndependentWarp(root: URL) {
   const directory = fileURLToPath(new URL("data/starrail/simulation/", root));
   return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     const active = () => !request.signal.aborted && stillAuthorized();
-    const verify = async () => { if (!active()) throw new Error("管理会话已失效。"); };
+    const verify = async () => { if (!active()) throw new Error($t("lib.panel-starrail-independent-warp.text_9af41270d6")); };
     if (!active()) return new Response(null, { status: 401 });
     if (request.method !== "GET" && request.method !== "PUT") return new Response(null, { status: 405, headers: { Allow: "GET, PUT" } });
     try {
@@ -39,10 +42,10 @@ export function panelStarRailIndependentWarp(root: URL) {
         next = parseIndependentWarpSettings(body.values);
         previous = parseIndependentWarpSettings(body.previous);
       } catch {
-        return Response.json({ message: "请检查星铁旧十连配置、数字和群号。" }, { status: 400 });
+        return Response.json({ message: $t("lib.panel-starrail-independent-warp.text_19c5551b74") }, { status: 400 });
       }
       const saved = await store.update(current => {
-        if (!isDeepStrictEqual(current, previous)) throw new SettingsConflict("星铁旧十连设置已更改。");
+        if (!isDeepStrictEqual(current, previous)) throw new SettingsConflict($t("lib.panel-starrail-independent-warp.text_23e2075707"));
         return next;
       }, verify);
       return Response.json({ fields, values: saved });

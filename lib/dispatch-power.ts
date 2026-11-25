@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { MessageEvent } from "./messages.ts";
 
 const pause = "#关机";
@@ -39,10 +42,10 @@ export function formatElapsed(milliseconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
   const parts = [
-    [Math.floor(hours / 24), "天"], [hours % 24, "时"], [minutes % 60, "分"],
-    [seconds % 60, "秒"], [elapsed % 1000, ""],
+    [Math.floor(hours / 24), $t("lib.dispatch-power.text_49da61ceee")], [hours % 24, $t("lib.dispatch-power.text_7d58b6422c")], [minutes % 60, $t("lib.dispatch-power.text_b6a993c256")],
+    [seconds % 60, $t("lib.dispatch-power.text_9dcdc2b289")], [elapsed % 1000, ""],
   ] as const;
-  return parts.map(([amount, unit]) => amount ? `${amount}${unit}` : "").join("") || "0秒";
+  return parts.map(([amount, unit]) => amount ? `${amount}${unit}` : "").join("") || $t("lib.dispatch-power.text_b69efa8606");
 }
 
 export function createDispatchPower(now = Date.now, pausedAt?: number, persist?: (pausedAt?: number) => void) {
@@ -59,7 +62,7 @@ export function createDispatchPower(now = Date.now, pausedAt?: number, persist?:
     paused = value;
     if (paused) active.abort();
     else active = new AbortController();
-    return paused ? `关机成功，本次运行时长${elapsed}` : `开机成功，距离上次关机${elapsed}`;
+    return paused ? $t("lib.dispatch-power.text_4c1e4e628b", { "elapsed": elapsed }) : $t("lib.dispatch-power.text_e4f3b86506", { "elapsed": elapsed });
   }
 
   function setPaused(value: boolean): string | undefined {
@@ -81,7 +84,7 @@ export function createDispatchPower(now = Date.now, pausedAt?: number, persist?:
       try {
         message = setPaused(!paused);
       } catch {
-        message = "无法保存软关机状态，当前状态保持原样。";
+        message = $t("lib.dispatch-power.text_6f1efb141b");
       }
       if (message !== undefined) await event.reply(message);
     },

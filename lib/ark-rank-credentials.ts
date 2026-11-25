@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { MessageFallback } from "./commands.ts";
 import type { MessageEvent } from "./messages.ts";
 import { readPanelJson } from "./panel.ts";
@@ -10,10 +13,10 @@ export const arkRankCredentialsPath = "/panel/api/settings/native/ark-rank-crede
 const tokenCommand = /^[#＃井/／]\s*(?:(?:ark配置token|设置排行凭据)([\s\S]*)|排行凭据\s*(状态|清除|用量)?|(排行用量))$/iu;
 const tokenInput = /[#＃井/／]\s*(?:ark配置token|设置排行凭据)/iu;
 const tokenPattern = /^[\x21-\x7e]{1,2048}$/u;
-const environmentHint = `当前由环境变量 ${arkRankTokenEnvironment} 控制，请在部署设置中修改。`;
-const storageError = "无法访问排行榜凭据存储，请检查 Valkey 后重试。";
-const invalidToken = "请输入有效的 Token，最多 2048 个非空格 ASCII 字符。";
-const usageError = "暂时无法查询排行凭据用量，请检查凭据后重试。";
+const environmentHint = $t("lib.ark-rank-credentials.text_542debb1f3", { "arkRankTokenEnvironment": arkRankTokenEnvironment });
+const storageError = $t("lib.ark-rank-credentials.text_31de7f1f50");
+const invalidToken = $t("lib.ark-rank-credentials.text_0ca938655f");
+const usageError = $t("lib.ark-rank-credentials.text_d7b1756acf");
 
 function object(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -37,11 +40,11 @@ function formatUsage(payload: unknown) {
   const permission = quotaNumber(auth?.permission);
   const multiplier = quotaNumber(auth?.limit_normal, true) ?? 1;
   return [
-    `凭据权限：${permission === 1 ? "高级" : "普通"}`,
-    `全部请求剩余（分钟／小时／天）：${remaining(rank?.minute)}／${remaining(rank?.hour)}／${remaining(rank?.day)}`,
-    `自定义排行普通请求倍率：${multiplier} 倍`,
-    `自定义排行普通请求剩余：${remaining(custom?.normal)}`,
-    `自定义排行高级请求剩余：${remaining(custom?.advanced)}`,
+    $t("lib.ark-rank-credentials.text_246ff93195", { "value1": permission === 1 ? $t("lib.ark-rank-credentials.text_d6e61888b0") : $t("lib.ark-rank-credentials.text_de907d10df") }),
+    $t("lib.ark-rank-credentials.text_bb699e4443", { "value1": remaining(rank?.minute), "value2": remaining(rank?.hour), "value3": remaining(rank?.day) }),
+    $t("lib.ark-rank-credentials.text_8f2777730b", { "multiplier": multiplier }),
+    $t("lib.ark-rank-credentials.text_30956ed775", { "value1": remaining(custom?.normal) }),
+    $t("lib.ark-rank-credentials.text_fffadf461e", { "value1": remaining(custom?.advanced) }),
   ].join("\n");
 }
 
@@ -111,43 +114,43 @@ export function createArkRankCredentialSettings({ signal, storage = () => global
     const { privateCredentialSignal: connection, user_id: owner } = context;
     if (context.isDelegated || context.message_type !== "private" || connection?.aborted !== false ||
         owner === undefined || !context.isMaster || !context.isBotMaster(owner) || !context.isFriend) {
-      return usage ? "请由当前机器人主人在已绑定的好友私聊查询排行用量。" :
-        "请由当前机器人主人在已绑定的好友私聊或管理面板设置排行凭据。";
+      return usage ? $t("lib.ark-rank-credentials.text_fe1244a3fa") :
+        $t("lib.ark-rank-credentials.text_236693bb58");
     }
     const active = () => !signal.aborted && !connection.aborted && context.isBotMaster(owner);
     try {
       const friend = await context.isFriend().catch(() => false);
       if (!active()) return;
-      if (!friend) return usage ? "无法确认当前好友私聊，未查询排行用量。" :
-        "无法确认当前好友私聊，请通过管理面板设置排行凭据。";
+      if (!friend) return usage ? $t("lib.ark-rank-credentials.text_e2d38656f5") :
+        $t("lib.ark-rank-credentials.text_a65c984338");
       if (usage) {
         const override = environment();
         const store = override === undefined ? storage() : undefined;
         if (override === undefined && !store) return storageError;
         const token = override ?? await store?.get(arkRankTokenKey);
         if (!active()) return;
-        if (token == null) return "尚未设置排行榜 Token。";
-        if (!isArkRankToken(token)) return "当前排行榜 Token 格式无效，请检查凭据。";
+        if (token == null) return $t("lib.ark-rank-credentials.text_a8afb530aa");
+        if (!isArkRankToken(token)) return $t("lib.ark-rank-credentials.text_643e6d2683");
         const result = await postArkQuery("auth/usage", {}, AbortSignal.any([signal, connection]), transport, { token });
         if (!active()) return;
         return "message" in result ? result.message : formatUsage(result.payload);
       }
       if (match[1] !== undefined) {
         const token = match[1].trim();
-        if (!token) return "请在本私聊发送 #设置排行凭据 加空格和 Token，或在管理面板配置。";
+        if (!token) return $t("lib.ark-rank-credentials.text_9a478e3451");
         if (!isArkRankToken(token)) return invalidToken;
         await modify({ kind: "set", token }, active);
-        return active() ? "排行榜 Token 已保存。" : undefined;
+        return active() ? $t("lib.ark-rank-credentials.text_b48c1727b7") : undefined;
       }
       if (match[2] === "清除") {
         await modify({ kind: "clear" }, active);
-        return active() ? "排行榜 Token 已清除。" : undefined;
+        return active() ? $t("lib.ark-rank-credentials.text_218a33c32d") : undefined;
       }
       const state = await status();
       if (!active()) return;
-      if (state.source === "environment") return state.usable ? environmentHint : `${environmentHint} 当前 Token 格式无效。`;
-      if (state.source === "stored") return state.usable ? "已保存排行榜 Token。" : "已保存的排行榜 Token 格式无效，请替换或清除。";
-      return "尚未设置排行榜 Token。";
+      if (state.source === "environment") return state.usable ? environmentHint : $t("lib.ark-rank-credentials.text_fce805e2ee", { "environmentHint": environmentHint });
+      if (state.source === "stored") return state.usable ? $t("lib.ark-rank-credentials.text_acc8563063") : $t("lib.ark-rank-credentials.text_639c027469");
+      return $t("lib.ark-rank-credentials.text_a8afb530aa");
     } catch (error) {
       if (!active() || error instanceof CredentialAuthorityChanged) return;
       if (error instanceof CredentialEnvironmentOverride) return environmentHint;

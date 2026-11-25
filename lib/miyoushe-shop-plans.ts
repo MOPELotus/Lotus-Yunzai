@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdir, open, rename, rm } from "node:fs/promises";
@@ -26,42 +29,42 @@ const receiptLifetime = 24 * 3_600_000;
 const receiptPollInterval = 15_000;
 
 const statusMessage = {
-  scheduled: "等待开放兑换",
-  preparing: "正在检查登录状态、余额和兑换目标",
-  submitting: "正在提交兑换请求",
-  unknown: "兑换结果待确认，请查米游社兑换记录。请勿在确认前重新兑换。",
-  cancelled: "已取消",
-  missed: "已经错过预约场次，请重新预约。",
-  succeeded: "兑换成功，请查看米游社兑换记录或游戏内邮件。",
-  failed: "本次兑换未成功。",
+  scheduled: $t("lib.miyoushe-shop-plans.text_3702391dc1"),
+  preparing: $t("lib.miyoushe-shop-plans.text_1b0a988dd8"),
+  submitting: $t("lib.miyoushe-shop-plans.text_903171463e"),
+  unknown: $t("lib.miyoushe-shop-plans.text_5aed717c7d"),
+  cancelled: $t("lib.miyoushe-shop-plans.text_a37778f17c"),
+  missed: $t("lib.miyoushe-shop-plans.text_0033a9c2ef"),
+  succeeded: $t("lib.miyoushe-shop-plans.text_ea53cc2f96"),
+  failed: $t("lib.miyoushe-shop-plans.text_62ac729f8d"),
 };
 const details = {
-  changed: "档案绑定的米游社账号或设备已变化，请重新预约。",
-  resolveAccount: "请在当前档案登录原米游社账号，再核对这笔兑换记录。",
-  trackerRoleChanged: "当前档案的游戏 UID 已换绑，请重新建立追踪。",
-  legacy: "旧版预约缺少账号绑定核验，请重新确认商品后预约。",
-  updated: "官方调整了开放时间，预约已同步。",
-  conditions: "商品、余额或兑换目标已变化，请重新预约。",
-  unavailable: "暂时无法核验兑换条件，请重新预约。",
-  redeemed: "用户核对官方兑换记录后确认已兑换。",
-  unredeemed: "用户核对官方兑换记录后确认未兑换，可重新预约。",
-  stockEmpty: "官方库存已售罄，本轮追踪结束。",
-  accountQuota: "已达本轮账号限购，未提交兑换。",
-  pending: "该账号此商品有兑换结果待确认，请先核对米游社兑换记录再预约。",
-  verification: "米游社要求验证，请在官方客户端完成验证后重新预约。",
-  sessionEnded: "发起立即兑换的网页会话已结束，未提交兑换。",
-  "rate-limited": "米游社商城请求频繁，请稍后重新预约。",
+  changed: $t("lib.miyoushe-shop-plans.text_60620706e9"),
+  resolveAccount: $t("lib.miyoushe-shop-plans.text_99df87f028"),
+  trackerRoleChanged: $t("lib.miyoushe-shop-plans.text_d52cd6d878"),
+  legacy: $t("lib.miyoushe-shop-plans.text_b5ccbdf88f"),
+  updated: $t("lib.miyoushe-shop-plans.text_f14e66b405"),
+  conditions: $t("lib.miyoushe-shop-plans.text_1d0e18f115"),
+  unavailable: $t("lib.miyoushe-shop-plans.text_6864aeab48"),
+  redeemed: $t("lib.miyoushe-shop-plans.text_1dca1b9bff"),
+  unredeemed: $t("lib.miyoushe-shop-plans.text_23f6f07b19"),
+  stockEmpty: $t("lib.miyoushe-shop-plans.text_cef8499b57"),
+  accountQuota: $t("lib.miyoushe-shop-plans.text_21edea8478"),
+  pending: $t("lib.miyoushe-shop-plans.text_c8bdd66b9e"),
+  verification: $t("lib.miyoushe-shop-plans.text_0a3657e4e9"),
+  sessionEnded: $t("lib.miyoushe-shop-plans.text_6327bf1d6b"),
+  "rate-limited": $t("lib.miyoushe-shop-plans.text_a9463ba8a0"),
 } as const;
 const trackerMessages = {
-  start: "持续追踪已开启，等待符合条件的库存及场次。",
-  resume: "持续追踪已恢复，等待符合条件的库存及场次。",
-  pause: "持续追踪已暂停。",
-  booked: "已预约匹配商品，等待官方开放。",
-  watching: "等待符合条件的库存及场次。",
-  accountQuota: "匹配商品已达本轮限购，继续追踪后续场次。",
-  retry: "暂时无法核验官方商品状态，将在下次轮询重试。",
-  changed: "档案绑定已变更，请重新建立追踪。",
-  unknown: "有兑换结果待确认，请先核对米游社兑换记录。",
+  start: $t("lib.miyoushe-shop-plans.text_e1cadb0b59"),
+  resume: $t("lib.miyoushe-shop-plans.text_912b21fbc4"),
+  pause: $t("lib.miyoushe-shop-plans.text_4260e08276"),
+  booked: $t("lib.miyoushe-shop-plans.text_cfa6341ffb"),
+  watching: $t("lib.miyoushe-shop-plans.text_39d1c108a8"),
+  accountQuota: $t("lib.miyoushe-shop-plans.text_bddddd02c2"),
+  retry: $t("lib.miyoushe-shop-plans.text_d6b3390407"),
+  changed: $t("lib.miyoushe-shop-plans.text_72ab655a67"),
+  unknown: $t("lib.miyoushe-shop-plans.text_defc2e6590"),
 } as const;
 const publicTrackerMessages = new Set<string>([...Object.values(trackerMessages), details.verification, details["rate-limited"], statusMessage.unknown]);
 const publicMessages = new Set([...Object.values(statusMessage), ...Object.values(details)]);
@@ -214,7 +217,7 @@ function createStore(file: string, legacyFiles: NonNullable<Options["legacyFiles
     try {
       const input = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
       try {
-        if (!(await input.stat()).isFile()) throw new Error("米游币兑换计划须为普通文件。");
+        if (!(await input.stat()).isFile()) throw new Error($t("lib.miyoushe-shop-plans.text_a865bdf958"));
         const data = asRecord(JSON.parse(await input.readFile("utf8")));
         if (!data || (data.version !== 1 && data.version !== 2) ||
             !Array.isArray(data.plans) || !data.plans.every(validPlan) ||
@@ -222,7 +225,7 @@ function createStore(file: string, legacyFiles: NonNullable<Options["legacyFiles
             (data.version === 2 && !Array.isArray(data.trackers)) ||
             (data.trackers !== undefined && !Array.isArray(data.trackers)) ||
             (data.importedLegacy !== undefined && (!Array.isArray(data.importedLegacy) ||
-              !data.importedLegacy.every(id => typeof id === "string")))) throw new Error("米游币兑换计划文件格式异常。");
+              !data.importedLegacy.every(id => typeof id === "string")))) throw new Error($t("lib.miyoushe-shop-plans.text_5a7d144534"));
         return data as unknown as Store;
       } finally { await input.close(); }
     } catch (error) {
@@ -237,7 +240,7 @@ function createStore(file: string, legacyFiles: NonNullable<Options["legacyFiles
 
   async function changePrimary<T>(edit: (data: Store) => T | Promise<T>): Promise<T> {
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    const guard = await lockFile(join(directory, `.${basename(file)}.sqlite`), "兑换计划");
+    const guard = await lockFile(join(directory, `.${basename(file)}.sqlite`), $t("lib.miyoushe-shop-plans.text_220d263cae"));
     try {
       const data = await readPrimary();
       const previous = JSON.stringify(data);
@@ -273,7 +276,7 @@ function createStore(file: string, legacyFiles: NonNullable<Options["legacyFiles
           if (!source.data || imported.includes(source.id)) continue;
           for (const plan of source.data.plans) {
             const existing = plansById.get(plan.id);
-            if (existing && !isDeepStrictEqual(existing, plan)) throw new Error("现用与旧版兑换计划有冲突。");
+            if (existing && !isDeepStrictEqual(existing, plan)) throw new Error($t("lib.miyoushe-shop-plans.text_b7c5b2161e"));
             if (!existing) {
               data.plans.push(plan);
               plansById.set(plan.id, plan);
@@ -283,7 +286,7 @@ function createStore(file: string, legacyFiles: NonNullable<Options["legacyFiles
             const id = asTrackerRecord(tracker)?.id;
             if (trackers.some(item => isDeepStrictEqual(item, tracker))) continue;
             if (typeof id === "string" && trackers.some(item => asTrackerRecord(item)?.id === id)) {
-              throw new Error("现用与旧版兑换追踪有冲突。");
+              throw new Error($t("lib.miyoushe-shop-plans.text_30a159b5df"));
             }
             trackers.push(tracker);
           }
@@ -306,7 +309,7 @@ function createStore(file: string, legacyFiles: NonNullable<Options["legacyFiles
   async function withAccount<T>(accountId: string, action: () => Promise<T>) {
     const account = createHash("sha256").update(accountId).digest("hex");
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    const guard = await lockFile(join(directory, `.${basename(file)}.account-${account}.sqlite`), "账号兑换", 0).catch(error => {
+    const guard = await lockFile(join(directory, `.${basename(file)}.account-${account}.sqlite`), $t("lib.miyoushe-shop-plans.text_4ca181643f"), 0).catch(error => {
       if (error instanceof Error && error.message === "账号兑换正在更新，请稍后重试。") return undefined;
       throw error;
     });
@@ -325,7 +328,7 @@ function reservationInput(value: unknown) {
     (input.intentId !== undefined && !matching(input.intentId, intentPattern)) ||
     (input.expectedPrice !== undefined && !natural(input.expectedPrice)) ||
     Object.keys(input).some(key => !["confirmed", "goodsId", "immediate", "uid", "region", "addressId", "intentId", "expectedPrice"].includes(key))) {
-    bad("请明确确认兑换 1 件商品并选择当前档案的兑换目标。");
+    bad($t("lib.miyoushe-shop-plans.text_248a15aeb9"));
   }
   return { goodsId: input.goodsId, immediate: input.immediate, uid: input.uid, region: input.region, addressId: input.addressId,
     intentId: typeof input.intentId === "string" ? input.intentId : undefined, expectedPrice: input.expectedPrice };
@@ -333,11 +336,11 @@ function reservationInput(value: unknown) {
 
 function validateInspection({ good, balance }: MiyousheShopInspection, goodsId: string, immediate: boolean) {
   if (good.id !== goodsId || !natural(good.price) || (good.type !== 1 && good.type !== 2) ||
-      !clean(good.name, 240) || (good.type === 2 && !matching(good.gameBiz, code))) bad("暂不支持该商品。");
+      !clean(good.name, 240) || (good.type === 2 && !matching(good.gameBiz, code))) bad($t("lib.miyoushe-shop-plans.text_55e60ed08a"));
   if (good.status !== "available" && (immediate || good.status !== "scheduled" || !natural(good.opensAt))) {
-    conflict("商品当前没有可用的兑换场次。");
+    conflict($t("lib.miyoushe-shop-plans.text_efba80c86d"));
   }
-  if (!natural(balance) || balance < good.price) conflict("无法确认米游币余额足够兑换此商品。");
+  if (!natural(balance) || balance < good.price) conflict($t("lib.miyoushe-shop-plans.text_b2a19a448e"));
   return { ...good, type: good.type as 1 | 2 };
 }
 
@@ -369,7 +372,7 @@ function trackedStock(good: TrackingGood, opensAt: number, now: number) {
 
 function owned(data: Store, target: MiyousheOverviewTarget, id: string) {
   const plan = planId.test(id) && data.plans.find(item => item.id === id && item.qq === target.qq && item.profileId === target.profileId);
-  if (!plan) throw new MiyousheShopPlanError(404, "未找到当前档案的兑换计划。");
+  if (!plan) throw new MiyousheShopPlanError(404, $t("lib.miyoushe-shop-plans.text_815b886014"));
   return plan;
 }
 
@@ -386,7 +389,7 @@ export function createMiyousheShopPlans({
     const { stuid, ltuid } = account;
     const accountId = stuid || ltuid;
     if (!matching(accountId, numericId) || (stuid && ltuid && stuid !== ltuid) || !device.id || !device.fp) {
-      conflict("请先核验当前档案绑定的米游社账号和设备。");
+      conflict($t("lib.miyoushe-shop-plans.text_ce67fba632"));
     }
     const login = await profiles.loginIdentity(target.qq, target.profileId);
     if (revision !== (await profiles.accountContext(target.qq, target.profileId)).revision) conflict(details.changed);
@@ -436,7 +439,7 @@ export function createMiyousheShopPlans({
         });
         if (!claimed || signal?.aborted || !await ownsReceiptAccount(claimed) || signal?.aborted) continue;
         const { goodsName, profileId, id, message } = publicPlan(claimed);
-        await send(`[米游币兑换]${goodsName}\n档案 ${profileId} · 计划 ${id}\n${message}`).catch(() => undefined);
+        await send($t("lib.miyoushe-shop-plans.text_670d287a55", { "goodsName": goodsName, "profileId": profileId, "id": id, "message": message })).catch(() => undefined);
       }
     })().finally(() => { deliveringReceipts = undefined; });
   }
@@ -522,23 +525,23 @@ export function createMiyousheShopPlans({
       needsConfirmation: !confirmed, role: rule.role && { uid: rule.role.uid, region: rule.role.region,
         regionName: miyousheShopRegionName(rule.role.gameBiz, rule.role.region) },
       addressLabel: addressLabel(rule.addressLabel), ...trackerUsage(data, rule.id),
-      message: !confirmed ? "旧追踪规则，重新确认后才会兑换。" :
+      message: !confirmed ? $t("lib.miyoushe-shop-plans.text_dd4575a47d") :
         publicTrackerMessages.has(rule.message) ? rule.message : (rule.enabled ? trackerMessages.watching : trackerMessages.pause) };
   }
 
   function ownsTracker(data: Store, target: MiyousheOverviewTarget, id: string) {
     const raw = asTrackerRecord(findTracker(data, id));
     if (!raw || raw.qq !== target.qq || raw.profileId !== target.profileId) {
-      throw new MiyousheShopPlanError(404, "未找到当前档案的追踪规则。");
+      throw new MiyousheShopPlanError(404, $t("lib.miyoushe-shop-plans.text_ebf3089f2d"));
     }
     const rule = trackingRule(raw);
-    if (!rule) conflict("旧规则的范围或限额无法核验，请核对原始记录后重新建立规则。");
+    if (!rule) conflict($t("lib.miyoushe-shop-plans.text_5efc7b1ce3"));
     return { raw, rule };
   }
 
   async function verifyRole(target: MiyousheOverviewTarget, rule: Pick<ShopTracker, "game" | "role">) {
     if (!rule.role) return;
-    if (!trackingGame(rule.game)) conflict("无法核验该分区的游戏角色。");
+    if (!trackingGame(rule.game)) conflict($t("lib.miyoushe-shop-plans.text_e52ba3da2e"));
     const selected = await profiles.selectedShopRoleUid(target.qq, target.profileId, trackingProfileGames[rule.game]);
     if (selected !== rule.role.uid) conflict(details.trackerRoleChanged);
   }
@@ -548,7 +551,7 @@ export function createMiyousheShopPlans({
     const destinations = await tracking!.destinations(target, rule.game, rule.itemType, signal, verify);
     if (rule.itemType === 2 ? !destinations.roles?.some(role => role.uid === rule.role?.uid && role.region === rule.role.region &&
         role.gameBiz === rule.role.gameBiz) : !destinations.addresses?.some(address => address.id === rule.addressId)) {
-      conflict("原兑换目标不属于当前档案，请重新建立追踪。");
+      conflict($t("lib.miyoushe-shop-plans.text_ceed3cab98"));
     }
     await verifyRole(target, rule);
   }
@@ -766,7 +769,7 @@ export function createMiyousheShopPlans({
           await verifyCurrent(target, booked);
           if (plan.trackingId) {
             const data = await store.read();
-            if (!trackerIsCurrent(data, plan)) conflict("持续追踪已暂停或当前商品已兑换。");
+            if (!trackerIsCurrent(data, plan)) conflict($t("lib.miyoushe-shop-plans.text_02050baad6"));
             await verifyRole(target, trackingRule(findTracker(data, plan.trackingId))!);
           }
           activeSignal?.throwIfAborted();
@@ -969,16 +972,16 @@ export function createMiyousheShopPlans({
     },
     scan,
     async trackerTargets(target: MiyousheOverviewTarget, game: unknown, itemType: unknown, signal?: AbortSignal, verifyLogin?: Verify) {
-      if (!tracking) throw new MiyousheShopPlanError(503, "持续追踪服务暂未启用。");
+      if (!tracking) throw new MiyousheShopPlanError(503, $t("lib.miyoushe-shop-plans.text_af95a03d02"));
       if (!trackingSection(game) || (itemType !== 1 && itemType !== 2) || (itemType === 2 && !trackingGame(game)) || game === "all") {
-        bad("请选择游戏分区和商品类型。");
+        bad($t("lib.miyoushe-shop-plans.text_6df92e0a38"));
       }
       await verifyLogin?.();
       const result = await tracking.destinations(target, game, itemType, signal, verifyLogin);
       await verifyLogin?.();
       if (itemType === 1) return { type: "address" as const,
         items: (result.addresses ?? []).filter(item => matching(item.id, numericId)).map(item => ({ id: item.id, label: addressLabel(item.label) })) };
-      if (!trackingGame(game)) bad("请选择支持角色兑换的游戏分区。");
+      if (!trackingGame(game)) bad($t("lib.miyoushe-shop-plans.text_d49364119f"));
       const selected = await profiles.selectedShopRoleUid(target.qq, target.profileId, trackingProfileGames[game]);
       return { type: "role" as const, items: (result.roles ?? []).filter(role => role.gameBiz === trackingGames[game] &&
         role.uid === selected && matching(role.region, code)).map(role => ({ uid: role.uid, region: role.region,
@@ -999,14 +1002,14 @@ export function createMiyousheShopPlans({
         return { id: raw.id, profileId: target.profileId, createdAt, migrationBlocked: true, enabled: false,
           needsConfirmation: true, game: trackingSection(raw.game) ? raw.game : "",
           itemType: raw.itemType === 1 || raw.itemType === 2 ? raw.itemType : null, ...trackerUsage(data, raw.id),
-          message: "旧规则的范围或限额无法核验，请核对原始记录后重新建立规则。" };
+          message: $t("lib.miyoushe-shop-plans.text_5efc7b1ce3") };
       }).filter(row => row !== undefined).sort((a, b) => b.createdAt - a.createdAt);
       return { now: now(), canTrack: Boolean(tracking && submit), trackers };
     },
     async createTracker(target: MiyousheOverviewTarget, value: unknown, signal?: AbortSignal, verifyLogin?: Verify, origin?: string) {
-      if (!tracking || !submit) throw new MiyousheShopPlanError(503, "持续追踪服务暂未启用。");
+      if (!tracking || !submit) throw new MiyousheShopPlanError(503, $t("lib.miyoushe-shop-plans.text_af95a03d02"));
       const input = readTrackingInput(value);
-      if (!input) bad("请核对追踪范围、预算并确认持续兑换。");
+      if (!input) bad($t("lib.miyoushe-shop-plans.text_69d3c22154"));
       await verifyLogin?.();
       const booked = await binding(target);
       const verify = async () => {
@@ -1020,17 +1023,17 @@ export function createMiyousheShopPlans({
       const role = profileGame && destinations.roles?.find(role => role.uid === selected && role.gameBiz === trackingGames[profileGame] &&
         matching(role.region, code));
       const address = destinations.addresses?.find(address => address.id === input.addressId);
-      if (input.itemType === 2 ? !role : !address) bad("未找到当前档案的兑换目标。");
+      if (input.itemType === 2 ? !role : !address) bad($t("lib.miyoushe-shop-plans.text_38f45acc8f"));
       const names: string[] = [];
       for (const goodsId of input.goodsIds) {
         const { good } = await inspect(target, goodsId, signal, verify);
-        if (good.id !== goodsId || !matchesTrackingGood({ ...input, names: [] }, good)) bad("所选商品不属于指定的分区和类型，或超过价格上限。");
+        if (good.id !== goodsId || !matchesTrackingGood({ ...input, names: [] }, good)) bad($t("lib.miyoushe-shop-plans.text_13ea7eb73f"));
         names.push(clean(good.name, 240));
       }
       return store.change(async data => {
         await verify();
         if (data.plans.some(plan => plan.accountId === booked.accountId && plan.status === "unknown")) {
-          conflict("请先核对该账号待确认的兑换记录。");
+          conflict($t("lib.miyoushe-shop-plans.text_23e808d8da"));
         }
         const rows = data.trackers ??= [];
         let id: string;
@@ -1040,7 +1043,7 @@ export function createMiyousheShopPlans({
           role: role ? { uid: role.uid, region: role.region, gameBiz: role.gameBiz } : null,
           gameBiz: role?.gameBiz ?? "", addressId: address?.id ?? "", addressLabel: addressLabel(address?.label),
           enabled: true, createdAt: now(), confirmation: { bindingStamp: booked.stamp, at: now() },
-          message: "持续追踪已开启，等待符合条件的库存及场次。" };
+          message: $t("lib.miyoushe-shop-plans.text_e1cadb0b59") };
         await verifyRole(target, rule);
         const exists = rows.map(trackingRule).some(item => item && item.qq === rule.qq && item.profileId === rule.profileId &&
           item.accountId === rule.accountId && item.mode === rule.mode && item.game === rule.game && item.itemType === rule.itemType &&
@@ -1048,7 +1051,7 @@ export function createMiyousheShopPlans({
           JSON.stringify([...item.keywords].sort()) === JSON.stringify([...rule.keywords].sort()) &&
           item.addressId === rule.addressId && item.role?.uid === rule.role?.uid && item.maxPrice === rule.maxPrice &&
           item.spendLimit === rule.spendLimit && item.followSameName === rule.followSameName);
-        if (exists) conflict("该档案已有相同追踪规则，请在列表中恢复或暂停。");
+        if (exists) conflict($t("lib.miyoushe-shop-plans.text_797658d8ba"));
         rows.push(rule);
         return publicTracker(rule, data);
       });
@@ -1058,15 +1061,15 @@ export function createMiyousheShopPlans({
       if (!enabled) return store.change(async data => {
         await verifyLogin?.();
         const { raw, rule } = ownsTracker(data, target, id);
-        pauseTracks(data, rule.accountId, "持续追踪已暂停。", rule.id);
+        pauseTracks(data, rule.accountId, $t("lib.miyoushe-shop-plans.text_4260e08276"), rule.id);
         return publicTracker(trackingRule(raw)!, data);
       });
-      if (!tracking || !submit) throw new MiyousheShopPlanError(503, "持续追踪服务暂未启用。");
-      if (confirmed !== true) bad("请明确确认恢复持续兑换。");
+      if (!tracking || !submit) throw new MiyousheShopPlanError(503, $t("lib.miyoushe-shop-plans.text_af95a03d02"));
+      if (confirmed !== true) bad($t("lib.miyoushe-shop-plans.text_b3db3f8f0f"));
       const { rule } = ownsTracker(await store.read(), target, id);
       const booked = await binding(target);
       if (booked.accountId !== rule.accountId || (confirmedTracker(rule) && booked.stamp !== rule.confirmation.bindingStamp)) {
-        conflict("追踪规则的绑定已变化，请重新建立追踪。");
+        conflict($t("lib.miyoushe-shop-plans.text_220c4e6513"));
       }
       const verify = async () => {
         signal?.throwIfAborted();
@@ -1077,11 +1080,11 @@ export function createMiyousheShopPlans({
       return store.change(async data => {
         await verify();
         if (data.plans.some(plan => plan.accountId === booked.accountId &&
-            (plan.status === "unknown" || plan.status === "submitting"))) conflict("请先核对该账号待确认的兑换记录。");
+            (plan.status === "unknown" || plan.status === "submitting"))) conflict($t("lib.miyoushe-shop-plans.text_23e808d8da"));
         const { raw, rule: current } = ownsTracker(data, target, id);
         if (raw.enabled && confirmedTracker(current)) return publicTracker(current, data);
         Object.assign(raw, { enabled: true, confirmation: { bindingStamp: booked.stamp, at: now() },
-          message: "持续追踪已恢复，等待符合条件的库存及场次。", pollUnit: current.pollUnit, pollMs: current.pollMs,
+          message: $t("lib.miyoushe-shop-plans.text_912b21fbc4"), pollUnit: current.pollUnit, pollMs: current.pollMs,
           leadMs: current.leadMs, intervalMs: current.intervalMs, nextPollAt: 0 });
         delete raw.afterMs;
         delete raw.pollRunId;
@@ -1095,7 +1098,7 @@ export function createMiyousheShopPlans({
       const matches = (plan: MiyousheShopPlan) => plan.qq === target.qq && plan.profileId === target.profileId;
       const cursor = before === undefined ? undefined : historyCursor.exec(before);
       const cursorAt = Number(cursor?.[1]);
-      if (before !== undefined && (!cursor || !natural(cursorAt))) bad("兑换记录页码无效。");
+      if (before !== undefined && (!cursor || !natural(cursorAt))) bad($t("lib.miyoushe-shop-plans.text_9f95a611fb"));
       await verifyLogin?.();
       if (!cursor) await recover(matches);
       const plans = (await store.read()).plans.filter(matches)
@@ -1127,7 +1130,7 @@ export function createMiyousheShopPlans({
     async reserve(target: MiyousheOverviewTarget, value: unknown, signal?: AbortSignal, verifyLogin?: Verify, session?: ManualShopSession,
       origin?: string) {
       const input = reservationInput(value);
-      if (!submit) throw new MiyousheShopPlanError(503, "预约兑换服务暂未启用。");
+      if (!submit) throw new MiyousheShopPlanError(503, $t("lib.miyoushe-shop-plans.text_bba5b8d55c"));
       await verifyLogin?.();
       const intentFingerprint = input.intentId && createHash("sha256")
         .update(JSON.stringify([input.goodsId, input.immediate, input.uid || "", input.region || "", input.addressId || "",
@@ -1135,7 +1138,7 @@ export function createMiyousheShopPlans({
       const previousIntent = (data: Store) => {
         if (!input.intentId) return;
         const prior = data.plans.find(plan => plan.qq === target.qq && plan.profileId === target.profileId && plan.intentId === input.intentId);
-        if (prior && prior.intentFingerprint !== intentFingerprint) conflict("该次兑换确认已用于其他商品或兑换目标。");
+        if (prior && prior.intentFingerprint !== intentFingerprint) conflict($t("lib.miyoushe-shop-plans.text_ef18e18316"));
         return prior;
       };
       if (input.intentId) {
@@ -1154,23 +1157,23 @@ export function createMiyousheShopPlans({
       };
       const snapshot = await inspect(target, input.goodsId, signal, verifyBinding);
       const good = validateInspection(snapshot, input.goodsId, input.immediate);
-      if (input.expectedPrice !== undefined && input.expectedPrice !== good.price) conflict("商品价格已变化，请刷新后重新确认。");
+      if (input.expectedPrice !== undefined && input.expectedPrice !== good.price) conflict($t("lib.miyoushe-shop-plans.text_e6e8dac841"));
       const community = communityAccountGood(good);
       const role = good.type === 2 && !community ? snapshot.roles?.find(item => item.uid === input.uid &&
         (!input.region || item.region === input.region) && matching(item.region, code)) : undefined;
       const address = good.type === 1 ? snapshot.addresses?.find(item => item.id === input.addressId) : undefined;
       if (community ? input.uid !== undefined || input.region !== undefined || input.addressId !== undefined
-        : good.type === 2 ? !role || input.addressId : !address || input.uid || input.region) bad("兑换目标不属于当前档案。");
+        : good.type === 2 ? !role || input.addressId : !address || input.uid || input.region) bad($t("lib.miyoushe-shop-plans.text_aee01a382c"));
       let createdSessionPlan: string | undefined;
       const plan = await store.change(async data => {
         await verifyBinding();
         const prior = previousIntent(data);
         if (prior) return prior;
         if (data.plans.some(item => item.accountId === booked.accountId && item.goodsId === good.id &&
-            (active(item.status) || item.status === "unknown"))) conflict("该账号已有此商品的兑换预约或待确认结果。");
+            (active(item.status) || item.status === "unknown"))) conflict($t("lib.miyoushe-shop-plans.text_8fc0e34d17"));
         const createdAt = now();
         const opensAt = good.status === "available" ? createdAt : good.opensAt!;
-        if (opensAt < createdAt) conflict("商品开放时间已过，请刷新商品状态。");
+        if (opensAt < createdAt) conflict($t("lib.miyoushe-shop-plans.text_dbe173a82b"));
         let id: string;
         do { id = randomUUID().replaceAll("-", "").slice(0, 12); } while (data.plans.some(item => item.id === id));
         const manualSessionExpected = input.immediate && input.intentId && session && manualRelay?.() ? true : undefined;
@@ -1196,7 +1199,7 @@ export function createMiyousheShopPlans({
       return store.change(async data => {
         await verifyLogin?.();
         const plan = owned(data, target, id);
-        if (plan.status !== "scheduled" && plan.status !== "preparing") conflict("当前状态下无法取消兑换计划。");
+        if (plan.status !== "scheduled" && plan.status !== "preparing") conflict($t("lib.miyoushe-shop-plans.text_d8197ccc57"));
         finish(plan, "cancelled");
         immediateVerification.get(id)?.cancel.abort();
         immediateVerification.delete(id);
@@ -1204,11 +1207,11 @@ export function createMiyousheShopPlans({
       });
     },
     async resolve(target: MiyousheOverviewTarget, id: string, redeemed: unknown, verifyLogin?: Verify) {
-      if (typeof redeemed !== "boolean") bad("请先核对米游社官方兑换记录。");
+      if (typeof redeemed !== "boolean") bad($t("lib.miyoushe-shop-plans.text_42a74d663f"));
       return store.change(async data => {
         await verifyLogin?.();
         const plan = owned(data, target, id);
-        if (plan.status !== "unknown") conflict("只有结果待确认的计划可以人工确认。");
+        if (plan.status !== "unknown") conflict($t("lib.miyoushe-shop-plans.text_6f55cccfac"));
         const current = await profiles.accountContext(target.qq, target.profileId).catch(() => undefined);
         if (!current || (current.account.stuid || current.account.ltuid) !== plan.accountId ||
             profileCookieAccountId(current.account) !== plan.accountId) conflict(details.resolveAccount);

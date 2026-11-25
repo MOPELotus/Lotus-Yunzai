@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdir, open, rename, rm } from "node:fs/promises";
@@ -6,9 +9,9 @@ import { HoyoRequestError } from "@lotus-yunzai/hoyo-client";
 import { lockFile } from "./file-lock.ts";
 
 const redeemGames = {
-  gs: { name: "原神", count: 3, regions: ["cn_gf01", "cn_qd01"] },
-  sr: { name: "星穹铁道", count: 3, regions: ["prod_gf_cn", "prod_qd_cn"] },
-  zzz: { name: "绝区零", count: 1, regions: ["prod_gf_cn", "prod_qd_cn"] },
+  gs: { name: $t("lib.redeem-code-runner.text_d1597c51ed"), count: 3, regions: ["cn_gf01", "cn_qd01"] },
+  sr: { name: $t("lib.redeem-code-runner.text_4548f2ad35"), count: 3, regions: ["prod_gf_cn", "prod_qd_cn"] },
+  zzz: { name: $t("lib.redeem-code-runner.text_b1110352c9"), count: 1, regions: ["prod_gf_cn", "prod_qd_cn"] },
 } as const;
 
 export type PreviewGame = keyof typeof redeemGames;
@@ -24,12 +27,12 @@ export interface PreviewRole {
 }
 
 export const redeemResultText = {
-  succeeded: "使用成功",
-  "already-used": "已使用",
-  expired: "兑换码已过期",
-  invalid: "兑换码无效",
-  blocked: "请求已被拒绝，请在官方客户端检查账号状态",
-  unknown: "结果未确认，请到游戏内检查",
+  succeeded: $t("lib.redeem-code-runner.text_5c1578a971"),
+  "already-used": $t("lib.redeem-code-runner.text_9845c16515"),
+  expired: $t("lib.redeem-code-runner.text_cf21a4e956"),
+  invalid: $t("lib.redeem-code-runner.text_26b86354ba"),
+  blocked: $t("lib.redeem-code-runner.text_88824a30ba"),
+  unknown: $t("lib.redeem-code-runner.text_c891537b43"),
 } as const;
 export type PreviewSubmissionStatus = keyof typeof redeemResultText;
 interface PreviewBinding {
@@ -63,18 +66,18 @@ const codePattern = /^[\p{L}\p{N}_-]{1,64}$/u;
 type Journal = Record<string, unknown>;
 
 const requestErrorText = {
-  "invalid-input": "请求资料无效", transport: "连接失败", http: "HTTP 请求失败", response: "接口响应无效",
-  api: "接口拒绝请求", refresh: "登录续期失败", "profile-changed": "档案已变更",
+  "invalid-input": $t("lib.redeem-code-runner.text_1c180b0905"), transport: $t("lib.redeem-code-runner.text_89c4766afc"), http: $t("lib.redeem-code-runner.text_1514ef8794"), response: $t("lib.redeem-code-runner.text_ab5b6d99e5"),
+  api: $t("lib.redeem-code-runner.text_4bbb739018"), refresh: $t("lib.redeem-code-runner.text_abf7d53ae8"), "profile-changed": $t("lib.redeem-code-runner.text_e71fce8ac7"),
 } as const;
 
 function requestFailure(error: unknown) {
-  if (!(error instanceof HoyoRequestError)) return "原因未知";
+  if (!(error instanceof HoyoRequestError)) return $t("lib.redeem-code-runner.text_f07e9519bb");
   const { status, retcode, code } = error;
   if (typeof status === "number" && Number.isInteger(status) && status >= 400 && status <= 599) return `HTTP ${status}`;
   if (typeof retcode === "number" && Number.isInteger(retcode) && retcode >= -2_147_483_648 && retcode <= 2_147_483_647) {
-    return `米游社返回 ${retcode}`;
+    return $t("lib.redeem-code-runner.text_8497899325", { "retcode": retcode });
   }
-  return Object.hasOwn(requestErrorText, code) ? requestErrorText[code] : "原因未知";
+  return Object.hasOwn(requestErrorText, code) ? requestErrorText[code] : $t("lib.redeem-code-runner.text_f07e9519bb");
 }
 
 function record(value: unknown): Journal | undefined {
@@ -129,10 +132,10 @@ function createJournal(file: string, legacy: readonly string[], requireExisting:
     try {
       const input = await open(inputPath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
       try {
-        if (!(await input.stat()).isFile()) throw new Error("前瞻自动兑换记录须为普通文件。");
+        if (!(await input.stat()).isFile()) throw new Error($t("lib.redeem-code-runner.text_ef8a425438"));
         const data = record(JSON.parse(await input.readFile("utf8")));
         if (!data || Object.keys(data).some(key => key !== createdJournal && !/^[a-f0-9]{64}$/u.test(key))) {
-          throw new Error("前瞻自动兑换记录格式无效。");
+          throw new Error($t("lib.redeem-code-runner.text_d4280690a0"));
         }
         return data;
       } finally { await input.close(); }
@@ -158,7 +161,7 @@ function createJournal(file: string, legacy: readonly string[], requireExisting:
 
   async function edit(change: (data: Journal, source: Awaited<ReturnType<typeof sources>>) => boolean) {
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    const lock = await lockFile(join(directory, `.${basename(file)}.sqlite`), "前瞻自动兑换记录");
+    const lock = await lockFile(join(directory, `.${basename(file)}.sqlite`), $t("lib.redeem-code-runner.text_86d53e605e"));
     try {
       const source = await sources();
       const data = source.primary ?? { [createdJournal]: 1 };
@@ -262,7 +265,7 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
       if (signal?.aborted) return;
       const remaining = current.expiry === null ? submissionTimeout : current.expiry - now();
       if (stopped || remaining <= 0) {
-        lines.push(`${code}：未提交`);
+        lines.push($t("lib.redeem-code-runner.text_8b917e12c0", { "code": code }));
         continue;
       }
       const deadline = AbortSignal.timeout(Math.min(remaining, 2_147_483_647));
@@ -276,7 +279,7 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
       stopped = status === "blocked" || status === "unknown";
     }
     if (signal?.aborted || !await store.finish(keys, time)) return;
-    const reply = `${redeemGames[game].name} ${current.version} 前瞻 · 档案 ${profile.profileId}（UID ${role.uid}）\n${lines.join("\n")}`;
+    const reply = $t("lib.redeem-code-runner.text_20218dea25", { "name": redeemGames[game].name, "version": current.version, "profileId": profile.profileId, "uid": role.uid, "value5": lines.join("\n") });
     if (access.notify) await access.notify(reply, signal);
     else await notify?.(profile, reply, signal);
   }
@@ -295,7 +298,7 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
         let value: unknown;
         try { value = await lookup(game, signal); }
         catch (error) {
-          if (!signal?.aborted) onError?.(`${redeemGames[game].name}前瞻查询未完成（${requestFailure(error)}）。`);
+          if (!signal?.aborted) onError?.($t("lib.redeem-code-runner.text_08b9ce38fb", { "name": redeemGames[game].name, "value2": requestFailure(error) }));
           continue;
         }
         if (signal?.aborted) return;
@@ -309,7 +312,7 @@ export function createPreviewRedeemRunner({ journal, legacyJournal, lookup, list
           if (signal?.aborted || isExpired(current.expiry, now())) break;
           try { await redeem(profile, game, current, recorded, signal); }
           catch (error) {
-            if (!signal?.aborted) onError?.(`${redeemGames[game].name} ${current.version} 前瞻自动兑换未完成（${requestFailure(error)}）。`);
+            if (!signal?.aborted) onError?.($t("lib.redeem-code-runner.text_adc4a5b606", { "name": redeemGames[game].name, "version": current.version, "value3": requestFailure(error) }));
           }
         }
       }

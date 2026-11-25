@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { setTimeout } from "node:timers/promises";
 import { ProfileError, type createProfileStore } from "@lotus-yunzai/account";
 import type { MessageFallback } from "./commands.ts";
@@ -12,7 +15,7 @@ type PanelRebuildProfiles = Pick<ReturnType<typeof createProfileStore>, "listChe
 type Render = (title: string, lead: string, rows: readonly string[], at: Date) => Promise<{ readonly png: Uint8Array }>;
 
 const command = /^#(?:修复|重建|重刷|清理)(?:原铁|原神星铁|原神和星铁|面板(?:缓存|数据)?|排名数据|个人查询缓存)(?:\s+间隔(\d{1,3}))?$/u;
-const gameNames = { gs: "原神", sr: "星铁" };
+const gameNames = { gs: $t("lib.panel-rebuild.text_d1597c51ed"), sr: $t("lib.panel-rebuild.text_a2927891f0") };
 const reportRows = 14;
 const renderReport: Render = async (...args) => {
   const { renderStatusCard } = await import("@lotus-yunzai/skia/status-card");
@@ -34,18 +37,18 @@ export function createPanelRebuild(profiles: PanelRebuildProfiles, signal: Abort
     if (!request || signal.aborted) return;
     if (context.message_type !== "private" || context.canManagePackages !== true || context.isDelegated ||
         !context.privateCredentialSignal || context.user_id === undefined || !context.isMaster ||
-        !context.isBotMaster(context.user_id)) return "请由机器人主人在已绑定的私聊中重建面板。";
+        !context.isBotMaster(context.user_id)) return $t("lib.panel-rebuild.text_98fa82bf71");
     const active = AbortSignal.any([signal, context.privateCredentialSignal]);
     const requester = context.user_id;
     function verifyAuthority() {
       active.throwIfAborted();
-      if (!context.isBotMaster(requester)) throw new Error("机器人主人授权已变更。");
+      if (!context.isBotMaster(requester)) throw new Error($t("lib.panel-rebuild.text_d7f6d09f39"));
     }
     if (active.aborted) return;
-    if (rebuilding) return "原神和星铁面板正在重建，请稍后再试。";
+    if (rebuilding) return $t("lib.panel-rebuild.text_cd0cdd55e8");
     rebuilding = true;
     try {
-      if (!providers.size) return "原神和星铁的面板更新模块尚未加载。";
+      if (!providers.size) return $t("lib.panel-rebuild.text_251d756629");
       const intervalMs = Math.min(60, request[1] === undefined ? 8 : Number(request[1])) * 1000;
       const profilesToRead = await profiles.listCheckinProfiles();
       verifyAuthority();
@@ -60,11 +63,11 @@ export function createPanelRebuild(profiles: PanelRebuildProfiles, signal: Abort
         }
       }
       verifyAuthority();
-      if (!targets.length) return "没有可重建的已登录原神或星铁档案。";
+      if (!targets.length) return $t("lib.panel-rebuild.text_18e8855081");
       const status = { done: 0, skipped: 0, failed: 0 };
       const rows: string[] = [];
       const finished = new Set<string>();
-      await context.reply(`开始重建原神和星铁面板，现有面板会保留到新数据写入成功。更新间隔 ${intervalMs / 1000} 秒。`);
+      await context.reply($t("lib.panel-rebuild.text_0ab8bb63c3", { "value1": intervalMs / 1000 }));
       let wait = false;
       for (const { qq, profileId, game, role } of targets) {
         verifyAuthority();
@@ -77,37 +80,37 @@ export function createPanelRebuild(profiles: PanelRebuildProfiles, signal: Abort
         const key = `${game}:${qq}:${role.uid}`;
         const update = providers.get(game);
         if (!update || finished.has(key)) {
-          report("skipped", update ? "同一面板已更新" : "模块已卸载");
+          report("skipped", update ? $t("lib.panel-rebuild.text_eedbc70107") : $t("lib.panel-rebuild.text_30c81d2ad5"));
           continue;
         }
         if (wait && intervalMs) await setTimeout(intervalMs, undefined, { signal: active });
         verifyAuthority();
         if (update !== providers.get(game)) {
-          report("skipped", "模块已重新加载");
+          report("skipped", $t("lib.panel-rebuild.text_a406a2a867"));
           continue;
         }
         wait = true;
         try {
           if (await update(qq, profileId, role.uid, active, verifyAuthority)) {
             finished.add(key);
-            report("done", "更新成功");
-          } else report("skipped", "已有更新或存档已变更");
+            report("done", $t("lib.panel-rebuild.text_7c0d266486"));
+          } else report("skipped", $t("lib.panel-rebuild.text_7f9f355345"));
         } catch (error) {
           verifyAuthority();
           if (error instanceof ProfileError && (error.code === "missing" || error.code === "role-missing" ||
-              error.code === "login-required" || error.code === "changed")) report("skipped", "登录或绑定状态已变更");
-          else report("failed", "更新未完成");
+              error.code === "login-required" || error.code === "changed")) report("skipped", $t("lib.panel-rebuild.text_65aefded62"));
+          else report("failed", $t("lib.panel-rebuild.text_607e00bd9a"));
         }
       }
       verifyAuthority();
-      const title = "原神和星铁面板重建";
-      const lead = `更新 ${status.done} 项，跳过 ${status.skipped} 项，失败 ${status.failed} 项。`;
-      if (targets.length > reportRows) rows.push(`还有 ${targets.length - reportRows} 项已计入总数。`);
+      const title = $t("lib.panel-rebuild.text_f01182d86e");
+      const lead = $t("lib.panel-rebuild.text_fc1b3ca42e", { "done": status.done, "skipped": status.skipped, "failed": status.failed });
+      if (targets.length > reportRows) rows.push($t("lib.panel-rebuild.text_04859d136e", { "value1": targets.length - reportRows }));
       const card = await render(title, lead, rows, new Date()).catch(() => undefined);
       verifyAuthority();
       return card ? segment.image(card.png) : [title, lead, ...rows].join("\n");
     } catch {
-      if (!active.aborted) return "面板重建提前结束，请查看档案状态后重试。";
+      if (!active.aborted) return $t("lib.panel-rebuild.text_b8af43f382");
     } finally {
       rebuilding = false;
     }

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { setTimeout as wait } from "node:timers/promises";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
@@ -61,7 +64,7 @@ async function openStarRailLedger(source: ProfileRequestContext, transport: Hoyo
   const { uid, region } = source.role;
   if (source.game !== "sr" || !/^[1-5]\d{8}$/u.test(uid) || source.role.gameBiz !== gameBiz ||
       region !== (uid.startsWith("5") ? "prod_qd_cn" : "prod_gf_cn")) {
-    throw new HoyoRequestError("invalid-input", "星铁流水仅支持当前档案已同步的国服角色。");
+    throw new HoyoRequestError("invalid-input", $t("starrail-ledger.text_a0c40c636e"));
   }
   const cookie = starRailLedgerStokenCookie(source);
   let headers: Headers;
@@ -73,7 +76,7 @@ async function openStarRailLedger(source: ProfileRequestContext, transport: Hoyo
     headers.set("x-rpc-channel", "miyousheluodi");
     if (!source.device.id) headers.delete("x-rpc-device_id");
   } catch {
-    throw new HoyoRequestError("invalid-input", "星铁流水的档案设备信息无效。");
+    throw new HoyoRequestError("invalid-input", $t("starrail-ledger.text_6347e09a79"));
   }
 
   async function guard() {
@@ -83,7 +86,7 @@ async function openStarRailLedger(source: ProfileRequestContext, transport: Hoyo
   }
 
   async function request(url: URL, init: RequestInit, authorizing: boolean) {
-    const action = authorizing ? "星铁流水授权" : "星铁流水查询";
+    const action = authorizing ? $t("starrail-ledger.text_c1db1d44aa") : $t("starrail-ledger.text_f2e78d1be7");
     await guard();
     const timeout = AbortSignal.timeout(15_000);
     const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -92,35 +95,35 @@ async function openStarRailLedger(source: ProfileRequestContext, transport: Hoyo
       response = await transport(url, { ...init, redirect: "error", credentials: "omit", signal: deadline });
     } catch {
       await guard();
-      throw new HoyoRequestError("transport", `官方${action}请求未完成。`);
+      throw new HoyoRequestError("transport", $t("starrail-ledger.text_4464b90e26", { "action": action }));
     }
     const verification = response.headers.get("x-rpc-aigis")?.trim();
     if (response.redirected || (response.url && response.url !== url.href) ||
         (!response.ok && response.status !== 401) || (verification && verification !== "{}")) {
       await response.body?.cancel().catch(() => undefined);
       await guard();
-      const message = response.status === 429 ? `官方${action}请求过于频繁，请稍后重试。` :
-        verification && verification !== "{}" ? `官方${action}要求验证，请在官方客户端处理后重试。` :
-          `官方${action}接口返回 HTTP 错误。`;
+      const message = response.status === 429 ? $t("starrail-ledger.text_7a164fbe8a", { "action": action }) :
+        verification && verification !== "{}" ? $t("starrail-ledger.text_81cb6e5539", { "action": action }) :
+          $t("starrail-ledger.text_d51a86f9d0", { "action": action });
       throw new HoyoRequestError("http", message, response.status);
     }
     const payload = await readGameRecordPayload(response, authorizing ? 32 * 1024 : 64 * 1024, deadline);
     await guard();
-    if (timeout.aborted) throw new HoyoRequestError("transport", `官方${action}超时。`);
+    if (timeout.aborted) throw new HoyoRequestError("transport", $t("starrail-ledger.text_d668038810", { "action": action }));
     const code = integer(payload?.retcode);
     if (code !== undefined && risk.has(code)) {
-      throw new HoyoRequestError("api", `官方${action}要求验证，请在官方客户端处理后重试。`, response.status, code);
+      throw new HoyoRequestError("api", $t("starrail-ledger.text_81cb6e5539", { "action": action }), response.status, code);
     }
     if (response.status === 401 || (code !== undefined && expired.has(code))) {
-      throw new HoyoRequestError("api", authorizing ? "档案登录已失效，请重新登录后查询星铁流水。" :
-        "星铁流水临时授权已失效，请重新查询。", response.status, code);
+      throw new HoyoRequestError("api", authorizing ? $t("starrail-ledger.text_88023acf7c") :
+        $t("starrail-ledger.text_5183bb09c9"), response.status, code);
     }
-    if (code === undefined) throw new HoyoRequestError("response", `官方${action}响应格式无效。`);
-    if (code !== 0) throw new HoyoRequestError("api", `官方${action}拒绝请求。`, response.status, code);
+    if (code === undefined) throw new HoyoRequestError("response", $t("starrail-ledger.text_2a6a4c6138", { "action": action }));
+    if (code !== 0) throw new HoyoRequestError("api", $t("starrail-ledger.text_920750a297", { "action": action }), response.status, code);
     const data = object(payload?.data);
     if (!data || (Object.hasOwn(data, "role") && !object(data.role)) ||
         !matchingRole(data, uid, region) || !matchingRole(object(data.role) ?? {}, uid, region)) {
-      throw new HoyoRequestError("response", `官方${action}响应的档案身份或数据无效。`);
+      throw new HoyoRequestError("response", $t("starrail-ledger.text_c480639c27", { "action": action }));
     }
     return data;
   }
@@ -133,7 +136,7 @@ async function openStarRailLedger(source: ProfileRequestContext, transport: Hoyo
       (Object.hasOwn(ticket, "auth_appid") && ticket.auth_appid !== authAppid) ||
       (Object.hasOwn(ticket, "authkey_ver") && integer(ticket.authkey_ver) !== 1) ||
       (Object.hasOwn(ticket, "sign_type") && integer(ticket.sign_type) !== 2)) {
-    throw new HoyoRequestError("response", "星铁流水临时授权无效。");
+    throw new HoyoRequestError("response", $t("starrail-ledger.text_945311f4c5"));
   }
 
   return async function readPage(kind: StarRailLedgerKind, cursor: string, size: number) {
@@ -143,7 +146,7 @@ async function openStarRailLedger(source: ProfileRequestContext, transport: Hoyo
       lang: "zh-cn", authkey, end_id: cursor, size: String(size) }).toString();
     const data = await request(url, { method: "GET" }, false);
     if (!Array.isArray(data.list) || data.list.length > size) {
-      throw new HoyoRequestError("response", "官方星铁流水响应的记录无效。");
+      throw new HoyoRequestError("response", $t("starrail-ledger.text_b08c5f8c24"));
     }
     let previous = cursor ? BigInt(cursor) : undefined;
     return data.list.map(entry => {
@@ -154,11 +157,11 @@ async function openStarRailLedger(source: ProfileRequestContext, transport: Hoyo
       if (!row || count === undefined || !displayText(row.time, 40) || !displayText(row.action, 120) ||
           !matchingRole(row, uid, region) ||
           !/^[1-9]\d{0,39}$/u.test(id)) {
-        throw new HoyoRequestError("response", "官方星铁流水含无效记录或游标。");
+        throw new HoyoRequestError("response", $t("starrail-ledger.text_26d24530b5"));
       }
       const current = BigInt(id);
       if (previous !== undefined && current >= previous) {
-        throw new HoyoRequestError("response", "官方星铁流水返回了重复或未递进的游标。");
+        throw new HoyoRequestError("response", $t("starrail-ledger.text_6c958cb9ea"));
       }
       previous = current;
       return { count, time: row.time, action: row.action, id };
@@ -169,7 +172,7 @@ async function openStarRailLedger(source: ProfileRequestContext, transport: Hoyo
 export async function readStarRailLedger(source: ProfileRequestContext, transport: HoyoTransport,
   { kind, page, signal }: StarRailLedgerOptions, verifyProfile?: () => Promise<void>) {
   if (!Object.hasOwn(types, kind) || !Number.isSafeInteger(page) || page < 1 || page > maxLedgerPages) {
-    throw new HoyoRequestError("invalid-input", `星铁流水类型或页码无效，最多查询第 ${maxLedgerPages} 页。`);
+    throw new HoyoRequestError("invalid-input", $t("starrail-ledger.text_6e235a3e27", { "maxLedgerPages": maxLedgerPages }));
   }
   const readPage = await openStarRailLedger(source, transport, signal, verifyProfile);
   let cursor = "";
@@ -184,7 +187,7 @@ export async function readStarRailLedger(source: ProfileRequestContext, transpor
   for (const row of selected) {
     if (row.count <= (kind === "power" ? 1 : 0)) continue;
     if (!displayText(row.time, 40) || !displayText(row.action, 120)) {
-      throw new HoyoRequestError("response", "官方星铁流水含无效记录。");
+      throw new HoyoRequestError("response", $t("starrail-ledger.text_43c9eaa282"));
     }
     rows.push({ count: row.count, time: row.time, reason: row.action });
   }
@@ -196,7 +199,7 @@ export async function readStarRailOnline(source: ProfileRequestContext, transpor
   { signal, maxPages = 120, intervalMs = 500 }: StarRailOnlineOptions, verifyProfile?: () => Promise<void>) {
   if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 240 ||
       !Number.isSafeInteger(intervalMs) || intervalMs < 0 || intervalMs > 5_000) {
-    throw new HoyoRequestError("invalid-input", "星铁在线时长的翻页或间隔参数无效。");
+    throw new HoyoRequestError("invalid-input", $t("starrail-ledger.text_e31092f63d"));
   }
   const readPage = await openStarRailLedger(source, transport, signal, verifyProfile);
   const recoveries: StarRailPowerRecovery[] = [];
@@ -206,7 +209,7 @@ export async function readStarRailOnline(source: ProfileRequestContext, transpor
     if (!rows.length) return { recoveries, complete: true };
     for (const row of rows) {
       if (row.action !== "随时间回复开拓力" || row.count <= 0) continue;
-      if (!displayText(row.time, 40)) throw new HoyoRequestError("response", "官方星铁开拓力流水的恢复时间无效。");
+      if (!displayText(row.time, 40)) throw new HoyoRequestError("response", $t("starrail-ledger.text_082511f5c8"));
       recoveries.push({ time: row.time, count: row.count });
     }
     cursor = rows.at(-1)!.id;

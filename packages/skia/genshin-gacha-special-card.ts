@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { builtinFontFallback } from "./builtin-fonts.ts";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
@@ -46,11 +49,11 @@ interface GachaSpecialView {
 
 const games = {
   sr: {
-    label: "星铁", banner: "meta-sr/character/common/imgs/banner.webp", logo: "StarRail/img/other/logo.png",
+    label: $t("genshin-gacha-special-card.text_a2927891f0"), banner: "meta-sr/character/common/imgs/banner.webp", logo: "StarRail/img/other/logo.png",
     logoWidth: 115, logoRight: 10, logoTop: 5, historyEmpty: 30,
   },
   gs: {
-    label: "原神", banner: "meta-gs/character/闲云/imgs/banner.webp", logo: "img/other/原神.png",
+    label: $t("genshin-gacha-special-card.text_d1597c51ed"), banner: "meta-gs/character/闲云/imgs/banner.webp", logo: "img/other/原神.png",
     logoWidth: 97, logoRight: 15, logoTop: 1, historyEmpty: 0,
   },
 } as const;
@@ -90,11 +93,11 @@ async function loadTheme(genshin: string, characterTheme: string, game: Game) {
   const aliases: string[] = [];
   for (const [family, name] of [["Number", "tttgbnumber.ttf"], ["Han", "HYWenHei-55W.ttf"]] as const) {
     const path = await canonicalAsset(genshin, `font/${name}`);
-    if (!path) throw new Error(`${config.label}特殊池记录的原版字体不可用。`);
+    if (!path) throw new Error($t("genshin-gacha-special-card.text_0cbbaa970a", { "label": config.label }));
     try {
       aliases.push(registerGachaThemeFont(family, path));
     } catch {
-      throw new Error(`${config.label}特殊池记录的原版字体不可用。`);
+      throw new Error($t("genshin-gacha-special-card.text_0cbbaa970a", { "label": config.label }));
     }
   }
 
@@ -103,7 +106,7 @@ async function loadTheme(genshin: string, characterTheme: string, game: Game) {
     image(genshin, config.logo),
     image(genshin, "img/other/bg5.png"),
   ]);
-  if (!banner || !logo || !star) throw new Error(`${config.label}特殊池记录的原版图片不可用。`);
+  if (!banner || !logo || !star) throw new Error($t("genshin-gacha-special-card.text_f8a3c21dfd", { "label": config.label }));
   const wenHei = aliases[1] + ", " + builtinFontFallback;
   const han = wenHei;
   return { banner, logo, star, fonts: { han, number: aliases[0] + ", " + han, wenHei } };
@@ -190,10 +193,10 @@ function drawHeader(ctx: Context, theme: Theme, pool: Pool, uid: string, x: numb
   const idSize = compact ? 24 : 26;
   const drawSize = compact ? 20 : 22;
   text(ctx, `ID: ${uid}`, x + 20, y + (compact ? 31 : 32), idSize, "#000", "left", "number", width - 170);
-  const draws = `${pool.allNum}抽`;
+  const draws = $t("genshin-gacha-special-card.text_18353d32c9", { "allNum": pool.allNum });
   text(ctx, draws, x + 20, y + (compact ? 68 : 72), drawSize, "#000", "left", "number", width - 250, true);
   const labelX = x + 26 + ctx.measureText(draws).width;
-  const label = `${pool.typeName}池`;
+  const label = $t("genshin-gacha-special-card.text_abf65ef355", { "typeName": pool.typeName });
   ctx.font = `700 12px ${fontFamilies.get(ctx)!.han}`;
   const badgeWidth = ctx.measureText(label).width + 14;
   const badgeY = y + (compact ? 60 : 64);
@@ -228,8 +231,8 @@ function drawMetrics(ctx: Context, pool: Pool, x: number, y: number, width: numb
 }
 
 function dateRange(pool: Pool) {
-  if (pool.firstTime && pool.lastTime) return `五星历史 ${pool.firstTime} ~ ${pool.lastTime}`;
-  return pool.fiveNum ? "五星历史 · 日期未记录" : "五星历史 · 暂无记录";
+  if (pool.firstTime && pool.lastTime) return $t("genshin-gacha-special-card.text_8f64a19805", { "firstTime": pool.firstTime, "lastTime": pool.lastTime });
+  return pool.fiveNum ? $t("genshin-gacha-special-card.text_6836e61613") : $t("genshin-gacha-special-card.text_a310596486");
 }
 
 function drawHistoryHeading(ctx: Context, pool: Pool, x: number, y: number, width: number) {
@@ -300,7 +303,7 @@ function positions(model: GachaSpecialView, game: Game) {
       const rows = Math.ceil(pool.fiveLog.length / columns);
       const x = crossPool ? 30 + index * 585 : 15;
       const note = !model.pageInfo && pool.hiddenNum
-        ? `仅显示最近 ${pool.shownNum} 条五星记录，另有 ${pool.hiddenNum} 条` : "";
+        ? $t("genshin-gacha-special-card.text_482155d2f0", { "shownNum": pool.shownNum, "hiddenNum": pool.hiddenNum }) : "";
       result.push({ pool, x, y, width: panelWidth, columns, rows, note });
       rowHeight = Math.max(rowHeight, header + 20 + 175 + historyHeight(rows, game) + (note ? 22 : 0) + 10);
     }
@@ -318,13 +321,13 @@ function drawPool(ctx: Context, p: PositionedPool, model: GachaSpecialView, them
   shadow(ctx, game, () => panel(ctx, x, top, width, 175 + cardsHeight + (note ? 22 : 0), 15, paper));
 
   panel(ctx, x - 8, top - 10, 76, 23, [15, 0, 15, 15], "#d4b98c");
-  text(ctx, "数据总览", x + 30, top + 1.5, 14, paper, "center", "wenHei");
+  text(ctx, $t("genshin-gacha-special-card.text_3c5118f194"), x + 30, top + 1.5, 14, paper, "center", "wenHei");
   drawMetrics(ctx, pool, x, top, width, game);
   const historyTop = top + 138;
   drawHistoryHeading(ctx, pool, x + 10, historyTop, width - 10);
 
   if (!rows && cardsHeight) {
-    text(ctx, pool.fiveNum ? "本页无五星记录" : "暂无五星记录", x + width / 2, historyTop + 49, 14, muted, "center");
+    text(ctx, pool.fiveNum ? $t("genshin-gacha-special-card.text_d974a78661") : $t("genshin-gacha-special-card.text_8b48ec6ac7"), x + width / 2, historyTop + 49, 14, muted, "center");
   }
   const stride = crossPool ? 90 : 78;
   const inset = crossPool ? 20 : 10;
@@ -339,18 +342,18 @@ export async function renderGachaSpecialCard(
   game: Game, model: GachaSpecialView,
   { mode = "auto", scale = 4, themeDirectory, genshinResourceDirectory }: GachaSpecialCardOptions,
 ) {
-  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("抽卡记录缩放比例须在 1 至 4 之间。");
+  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError($t("genshin-gacha-special-card.text_7511bffc0d"));
   const { panels, width, bottom, crossPool } = positions(model, game);
   const page = model.pageInfo && model.pageInfo.total > 1 ? model.pageInfo : undefined;
   const height = bottom + (page ? 47 : 25);
-  if (height > 24_000) throw new RangeError(`${games[game].label}特殊池记录超出可渲染高度。`);
+  if (height > 24_000) throw new RangeError($t("genshin-gacha-special-card.text_370e796ce4", { "label": games[game].label }));
 
   const [genshin, characterTheme] = await Promise.all([
     realpath(genshinResourceDirectory).catch(() => undefined),
     realpath(themeDirectory).catch(() => undefined),
   ]);
-  if (!genshin) throw new Error(`${games[game].label}特殊池记录的原 Genshin 资源目录不可用。`);
-  if (!characterTheme) throw new Error(`${games[game].label}特殊池记录的原版角色资源目录不可用。`);
+  if (!genshin) throw new Error($t("genshin-gacha-special-card.text_fa30358a73", { "label": games[game].label }));
+  if (!characterTheme) throw new Error($t("genshin-gacha-special-card.text_6a8bacf43f", { "label": games[game].label }));
   const theme = await themeAt(genshin, characterTheme, game);
   const icons = new Set(model.pools.flatMap(({ fiveLog }) => fiveLog.map(({ icon }) => icon))
     .filter((path): path is string => !!path && /^\/?meta-(gs|sr)\/(?:character|weapon)\/.+\.(?:png|webp|jpe?g)$/iu.exec(path)?.[1]?.toLowerCase() === game));
@@ -371,9 +374,9 @@ export async function renderGachaSpecialCard(
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     for (const panel of panels) drawPool(ctx, panel, model, theme, portraits, crossPool, game);
-    if (page) text(ctx, `第 ${page.page}/${page.total} 张 · ${crossPool ? "各池" : ""}第 ${page.from}~${page.to} 条五星记录`,
+    if (page) text(ctx, $t("genshin-gacha-special-card.text_a6743dc8ab", { "page": page.page, "total": page.total, "value3": crossPool ? $t("genshin-gacha-special-card.text_a28305483d") : "", "from": page.from, "to": page.to }),
       width / 2, bottom + 9, 14, muted, "center");
-    text(ctx, "Created By Lotus-Yunzai", width / 2 + 5, bottom + (page ? 29.5 : 7.5),
+    text(ctx, $t("genshin-gacha-special-card.text_d41c915582"), width / 2 + 5, bottom + (page ? 29.5 : 7.5),
       12, "#000", "center", "number");
   }, mode, { renderScale: scale, allowHalfScale: scale === 4 });
 }

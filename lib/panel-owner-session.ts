@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { Database } from "bun:sqlite";
 import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
@@ -157,16 +160,16 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
       if (signal.aborted || !isPanelOwnerCommand(context.normalizedMessage) || context.isDelegated) return;
       const bot = context.self_id;
       const user = context.user_id;
-      if (!bot || !user || !isOwner(bot, user)) return "只有当前机器人主人可以登录管理面板。";
+      if (!bot || !user || !isOwner(bot, user)) return $t("lib.panel-owner-session.text_b27ca4f6aa");
       if (context.message_type !== "private" || context.privateCredentialSignal?.aborted !== false) {
-        return "请在机器人好友私聊发送 #管理面板。";
+        return $t("lib.panel-owner-session.text_003b632472");
       }
       const destination = page();
-      if (!destination) return "管理面板尚未配置可用于登录的访问地址。";
+      if (!destination) return $t("lib.panel-owner-session.text_a3ecd7e8cc");
       try {
         const { ticketMinutes, sessionHours } = await lifetimes();
         if (signal.aborted || context.privateCredentialSignal?.aborted !== false) return;
-        if (!isOwner(bot, user)) return "只有当前机器人主人可以登录管理面板。";
+        if (!isOwner(bot, user)) return $t("lib.panel-owner-session.text_b27ca4f6aa");
         database().run("DELETE FROM credentials WHERE expiresAt <= ?", [now()]);
         for (const [hash, binding] of bindings) {
           if (binding.expires <= now() || binding.gateway.signal.aborted) bindings.delete(hash);
@@ -178,9 +181,9 @@ export function createPanelOwnerSession({ databasePath, publicBase, isOwner, sig
           bindings.set(digest(ticket), { gateway, expires: now() + ticketMinutes * 60_000 });
         }
         destination.hash = `ticket=${ticket}`;
-        return `管理面板\n${destination.href}\n链接 ${ticketMinutes} 分钟内有效且只能使用一次。浏览器登录后可使用 ${sessionHours} 小时，请勿转发。`;
+        return $t("lib.panel-owner-session.text_aec013a08e", { "href": destination.href, "ticketMinutes": ticketMinutes, "sessionHours": sessionHours });
       } catch {
-        return "暂时无法创建管理面板登录链接。";
+        return $t("lib.panel-owner-session.text_ff1f4eb349");
       }
     },
   };

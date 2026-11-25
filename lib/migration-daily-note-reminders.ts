@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, open, realpath, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { createProfileStore, profileGames, type Game } from "@lotus-yunzai/account";
@@ -11,7 +14,7 @@ const maxSourceBytes = 1024 * 1024;
 const hour = 60 * 60_000;
 const defaultCooldown = 12 * hour;
 const defaultCron = "0 0/30 * * * ?";
-const defaultMessage = "哥哥（姐姐）你的体力快满了哦~";
+const defaultMessage = $t("lib.migration-daily-note-reminders.text_9b23592825");
 const uidPattern = /^[1-9]\d{7,9}$/u;
 
 export interface LegacyDailyNoteReminderSettings {
@@ -39,14 +42,14 @@ async function loadYaml(source: string, name: string, signal?: AbortSignal) {
     const result = mapping(input);
     if (result) return result;
   } catch {}
-  throw new Error("旧体力推送配置须为有效 YAML 映射。");
+  throw new Error($t("lib.migration-daily-note-reminders.text_0090388a04"));
 }
 
 export async function stageLegacyDailyNoteReminders(sourcePath: string, stagePath: string, signal?: AbortSignal, now = Date.now) {
   signal?.throwIfAborted();
   const [source, stage] = await Promise.all([realpath(sourcePath), realpath(stagePath)]);
   if (withinInstallation(source, stage) || withinInstallation(stage, source)) {
-    throw new Error("旧安装副本与体力推送暂存目录必须分离。");
+    throw new Error($t("lib.migration-daily-note-reminders.text_354e8dd76f"));
   }
   const [registrations, config] = await Promise.all([
     loadYaml(source, "defnote.yaml", signal), loadYaml(source, "config.yaml", signal),
@@ -140,7 +143,7 @@ export async function stageLegacyDailyNoteReminders(sourcePath: string, stagePat
       if (error.code !== "EEXIST") throw error;
     });
     if (await realpath(folder) !== folder || !(await lstat(folder)).isDirectory()) {
-      throw new Error("体力推送暂存须使用实体目录。");
+      throw new Error($t("lib.migration-daily-note-reminders.text_c8fc4ec555"));
     }
   }
   signal?.throwIfAborted();

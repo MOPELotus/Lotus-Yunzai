@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 // Old option names and operators follow e81b5ef:apps/customRank.js. See rank-statistics.LICENSE.
 import {
   arkCustomRankSessions, queryArkCustomPanel, queryArkCustomRank, readArkCustomRankToken,
@@ -81,34 +84,34 @@ export function parseArkRankFilters(intent: RankingIntent, game: Game) {
       count = Math.max(1, Math.min(50, Number(quantity[1])));
       continue;
     }
-    if (sortPattern.test(token)) return "排序按所选排名指标降序。";
+    if (sortPattern.test(token)) return $t("lib.ark-custom-rank-command.text_2c37378fe2");
     const filter = /^([\w\p{Script=Han}]+)(>=|<=|!=|>|<|=)(.+)$/u.exec(token);
-    if (!filter) return "无效的筛选条件，请使用“列名＋运算符＋值”。";
+    if (!filter) return $t("lib.ark-custom-rank-command.text_36b0efc23f");
     const [, alias, operator, raw] = filter as unknown as readonly [string, string, keyof typeof operators, string];
     const slot = /^(?:pos|部位)([1-6])$/iu.exec(alias);
     const field = slot ? "pos" + slot[1] : (Object.hasOwn(fieldAliases, alias) ? fieldAliases[alias]! : alias.toLowerCase());
-    if (!fields.has(field) || filters.length >= 16) return "筛选列无效，或筛选条件过多。";
+    if (!fields.has(field) || filters.length >= 16) return $t("lib.ark-custom-rank-command.text_1e19fece35");
     let value: string | number;
     if (slot) {
-      if (game !== "sr") return "原神排行不支持按部位主词条筛选。";
+      if (game !== "sr") return $t("lib.ark-custom-rank-command.text_ece5ef6f34");
       const key = Object.hasOwn(statAliases, raw) ? statAliases[raw]! : raw;
       const id = (mainStats[Number(slot[1]) - 1]?.indexOf(key) ?? -1) + 1;
-      if (!id) return `部位 ${slot[1]} 没有这个主词条。`;
+      if (!id) return $t("lib.ark-custom-rank-command.text_c66784f7f7", { "value1": slot[1] });
       value = id;
     } else if (field === "artis_sets" && !/^\d+$/u.test(raw)) {
-      if (!/^[\p{L}\p{N}·・]{1,38}$/u.test(raw)) return "套装名格式无效。";
+      if (!/^[\p{L}\p{N}·・]{1,38}$/u.test(raw)) return $t("lib.ark-custom-rank-command.text_e205ca5e19");
       value = raw;
     } else {
       if (!/^\d+(?:\.\d+)?$/u.test(raw) || !Number.isFinite(Number(raw)) || Math.abs(Number(raw)) > Number.MAX_SAFE_INTEGER) {
-        return `${alias}的值必须为有限数字。`;
+        return $t("lib.ark-custom-rank-command.text_3398838ac9", { "alias": alias });
       }
       value = Number(raw);
     }
     filters.push({ field, operator: operators[operator], value });
     descriptions.push(`${alias}${operator}${raw}`);
   }
-  if (!name || name.length > 40) return "请输入有效角色名。";
-  return { name, filters, count, filterText: descriptions.join(" ") || "无" };
+  if (!name || name.length > 40) return $t("lib.ark-custom-rank-command.text_acae0eec7b");
+  return { name, filters, count, filterText: descriptions.join(" ") || $t("lib.ark-custom-rank-command.text_484d556139") };
 }
 
 const grades = ["D", "C", "B", "A", "S", "SS", "SSS", "ACE", "MAX"] as const;
@@ -121,14 +124,14 @@ export function arkCustomRankGrade(score: number, game: Game) {
 
 function help(game: Game, advanced: boolean) {
   const prefix = game === "sr" ? "*" : "#";
-  const sample = game === "sr" ? "希儿" : "胡桃";
+  const sample = game === "sr" ? $t("lib.ark-custom-rank-command.text_cd224df2bc") : $t("lib.ark-custom-rank-command.text_289bd629bd");
   return [
-    `${prefix}自定义${sample}排行 命座=0 数量:10`,
-    `${prefix}自定义${sample}${game === "sr" ? "遗器" : "圣遗物"}排行 命座<=2`,
-    "默认按伤害降序，数量 1–50，默认 20。支持 >= <= > < = !=。",
-    `引用本会话的排行榜发送 ${prefix}排行面板1，可查看前 20 名面板。`,
-    advanced ? "高级筛选支持等级、突破、天赋、武器、伤害、评分及套装，星铁支持部位主词条。" :
-      "普通查询可按命座筛选。高级筛选需当前机器人的主人配置排名服务凭据。",
+    $t("lib.ark-custom-rank-command.text_76d4dd539c", { "prefix": prefix, "sample": sample }),
+    $t("lib.ark-custom-rank-command.text_4a663f1676", { "prefix": prefix, "sample": sample, "value3": game === "sr" ? $t("lib.ark-custom-rank-command.text_2f2b17beb4") : $t("lib.ark-custom-rank-command.text_fc2ee58f3d") }),
+    $t("lib.ark-custom-rank-command.text_dac6420e16"),
+    $t("lib.ark-custom-rank-command.text_66f4aa8788", { "prefix": prefix }),
+    advanced ? $t("lib.ark-custom-rank-command.text_9b7dd6f5f9") :
+      $t("lib.ark-custom-rank-command.text_840987d8d0"),
   ].join("\n");
 }
 
@@ -147,7 +150,7 @@ export function createArkRankCommand(game: Game, signal: AbortSignal, {
     if ((intent.game && intent.game !== game) || signal.aborted) return;
     if (context.isDelegated || !context.self_id || !context.user_id ||
         (context.adapter !== undefined && context.adapter !== "onebot" && context.adapter !== "milky") ||
-        (context.message_type !== "group" && context.message_type !== "private")) return "请在当前机器人会话直接操作排行榜。";
+        (context.message_type !== "group" && context.message_type !== "private")) return $t("lib.ark-custom-rank-command.text_9412ff69ac");
     const connection = context.message_type === "group" ? context.groupActivitySignal : context.privateCredentialSignal;
     if (!connection || connection.aborted) return;
     const active = AbortSignal.any([signal, connection]);
@@ -159,60 +162,60 @@ export function createArkRankCommand(game: Game, signal: AbortSignal, {
     if (intent.type === "panel") {
       const record = sessions.find(context);
       if (record && record.game !== game) return;
-      if (!Number.isSafeInteger(intent.rank) || intent.rank < 1 || intent.rank > 20) return "面板名次须为 1–20。";
-      if (!record || !context.lookupReply) return "请引用本会话最近五分钟内的一条自定义排行榜消息。";
+      if (!Number.isSafeInteger(intent.rank) || intent.rank < 1 || intent.rank > 20) return $t("lib.ark-custom-rank-command.text_7fb32b802a");
+      if (!record || !context.lookupReply) return $t("lib.ark-custom-rank-command.text_8918bb3f0c");
       const index = intent.rank - 1;
       const uid = record.uids[index];
-      if (index >= record.count || !uid) return "这条榜单没有对应名次。";
+      if (index >= record.count || !uid) return $t("lib.ark-custom-rank-command.text_b6bd852fbc");
       if (record.authorizedBy !== undefined && (!admittedOwner(context) || record.authorizedBy !== context.user_id)) {
-        return "只有发起这条高级排行榜的机器人主人可查看面板。";
+        return $t("lib.ark-custom-rank-command.text_71963931ea");
       }
       const token = record.authorizedBy === undefined ? undefined : await tokenFor(context);
-      if (record.authorizedBy !== undefined && !token) return "排名服务凭据已失效，请重新查询。";
+      if (record.authorizedBy !== undefined && !token) return $t("lib.ark-custom-rank-command.text_13a7d571fc");
       const quote = await context.lookupReply().catch(() => undefined);
       if (active.aborted) return;
-      if (quote?.user_id !== context.self_id || sessions.find(context) !== record) return "无法确认这条排行榜消息。";
-      if (record.authorizedBy !== undefined && !admittedOwner(context)) return "当前会话的主人权限已变更。";
+      if (quote?.user_id !== context.self_id || sessions.find(context) !== record) return $t("lib.ark-custom-rank-command.text_e869cbf079");
+      if (record.authorizedBy !== undefined && !admittedOwner(context)) return $t("lib.ark-custom-rank-command.text_c09e0c00a9");
       const character = { id: record.characterId, name: record.name };
       const panel = await fetchPanel(record.queryId, index, active, token);
       if (active.aborted || sessions.find(context) !== record) return;
-      if (record.authorizedBy !== undefined && !admittedOwner(context)) return "当前会话的主人权限已变更。";
+      if (record.authorizedBy !== undefined && !admittedOwner(context)) return $t("lib.ark-custom-rank-command.text_c09e0c00a9");
       if ("message" in panel) return panel.message;
       try {
         const image = await renderPanel(character, uid, panel.snapshot, context);
         if (active.aborted || sessions.find(context) !== record) return;
-        if (record.authorizedBy !== undefined && !admittedOwner(context)) return "当前会话的主人权限已变更。";
-        return image ?? "返回的面板与榜单角色不匹配。";
+        if (record.authorizedBy !== undefined && !admittedOwner(context)) return $t("lib.ark-custom-rank-command.text_c09e0c00a9");
+        return image ?? $t("lib.ark-custom-rank-command.text_aa55b507af");
       } catch {
-        if (!active.aborted) return "该排行面板暂时无法显示。";
+        if (!active.aborted) return $t("lib.ark-custom-rank-command.text_a6556564ad");
       }
       return;
     }
 
     const { name } = rankInput(intent);
-    if (!name || name.length > 40) return "请输入有效角色名。";
+    if (!name || name.length > 40) return $t("lib.ark-custom-rank-command.text_acae0eec7b");
     const character = await resolveCharacter(name);
-    if (!character) return intent.game ? "找不到该游戏的角色。" : undefined;
+    if (!character) return intent.game ? $t("lib.ark-custom-rank-command.text_b4e643d179") : undefined;
     const parsed = parseArkRankFilters(intent, game);
     if (typeof parsed === "string") return parsed;
     const needsToken = parsed.filters.some(({ field }) => field !== "cons");
     const token = needsToken ? await tokenFor(context) : undefined;
-    if (needsToken && (!token || !admittedOwner(context))) return "除命座外的筛选需要当前机器人主人配置排名服务凭据。";
+    if (needsToken && (!token || !admittedOwner(context))) return $t("lib.ark-custom-rank-command.text_d9231430ee");
     if (active.aborted) return;
     const result = await fetchRank({ game, characterId: character.id, metric: intent.metric, filters: parsed.filters, count: parsed.count }, active, token);
     if (active.aborted) return;
-    if (needsToken && !admittedOwner(context)) return "当前会话的主人权限已变更。";
+    if (needsToken && !admittedOwner(context)) return $t("lib.ark-custom-rank-command.text_c09e0c00a9");
     if ("message" in result) return result.message;
-    if (!result.rows.length) return `${character.name}暂无符合条件的排名数据。`;
-    const model = { title: result.title || "期望伤害", metric: intent.metric, filters: parsed.filterText,
+    if (!result.rows.length) return $t("lib.ark-custom-rank-command.text_00a2be2684", { "name": character.name });
+    const model = { title: result.title || $t("lib.ark-custom-rank-command.text_d5f4617e07"), metric: intent.metric, filters: parsed.filterText,
       count: parsed.count, rows: result.rows };
     const body = await renderRank(character, model, context).catch(() => {
-      const mode = intent.metric === "damage" ? "伤害" : game === "gs" ? "圣遗物评分" : "遗器评分";
-      return [`全服 · ${character.name}${mode}排行`, `筛选 ${parsed.filterText}`,
+      const mode = intent.metric === "damage" ? $t("lib.ark-custom-rank-command.text_30e1196888") : game === "gs" ? $t("lib.ark-custom-rank-command.text_0e1133fcd3") : $t("lib.ark-custom-rank-command.text_08ddb000a9");
+      return [$t("lib.ark-custom-rank-command.text_4c967dae45", { "name": character.name, "mode": mode }), $t("lib.ark-custom-rank-command.text_83dbb3680a", { "filterText": parsed.filterText }),
         ...result.rows.map((row, i) => `${i + 1}. ${row.uid} · ${(intent.metric === "damage" ? row.damage : row.score) ?? "—"}`)].join("\n");
     });
     if (active.aborted) return;
-    if (needsToken && !admittedOwner(context)) return "当前会话的主人权限已变更。";
+    if (needsToken && !admittedOwner(context)) return $t("lib.ark-custom-rank-command.text_c09e0c00a9");
     return { type: "delivery", message: body, onDelivered(messageId) {
       if (active.aborted || (needsToken && !admittedOwner(context))) return;
       sessions.remember(context, messageId, { game, characterId: character.id, name: character.name, queryId: result.queryId,

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
 import { readLocalConfig, readOptionalConfigFile } from "./config.ts";
@@ -10,30 +13,30 @@ import { readPanelJson } from "./panel.ts";
 import { defaultPluginLoadMs, maxPluginLoadMs, parsePluginLoadMilliseconds } from "./plugin-load-progress.ts";
 import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 
-const restart = "保存后重启宿主生效。";
-const reload = "配置监听开启时自动生效；关闭监听时，重启宿主生效。";
+const restart = $t("lib.panel-runtime-settings.text_d3d0842647");
+const reload = $t("lib.panel-runtime-settings.text_9550adf734");
 const slash = "/→#";
 const fields = [
-  { key: "imageRenderPreset", label: "图片渲染档位", type: "select", hint: restart,
-    options: [{ label: "标准（4×）", value: "standard" }, { label: "低配（1×）", value: "low" }] },
-  { key: "log_level", label: "日志等级", type: "select", hint: reload,
+  { key: "imageRenderPreset", label: $t("lib.panel-runtime-settings.text_fe562a50dd"), type: "select", hint: restart,
+    options: [{ label: $t("lib.panel-runtime-settings.text_1724f1ad64"), value: "standard" }, { label: $t("lib.panel-runtime-settings.text_70f0fcd6b3"), value: "low" }] },
+  { key: "log_level", label: $t("lib.panel-runtime-settings.text_0f8effe393"), type: "select", hint: reload,
     options: logLevels.map(value => ({ label: value, value })) },
-  { key: "log_length", label: "日志单段字符上限", type: "number", min: 1, max: 32_000, hint: restart },
-  { key: "log_object", label: "日志对象格式", type: "json",
-    hint: "填 false 简化对象输出。可设置 length、depth、maxArrayLength、maxStringLength、breakLength、compact、sorted 和 numericSeparator。留空使用默认。保存后重启宿主生效。" },
-  { key: "log_align", label: "日志标签对齐", type: "text", hint: "标签最多 64 个字符。留空取消对齐。保存后重启宿主生效。" },
-  { key: "plugin_load_timeout", label: "单个插件加载超时（秒）", type: "number", min: 0, max: maxPluginLoadMs / 1000,
-    hint: "默认 60 秒，填 0 时立即触发加载超时。保存后重启宿主生效。" },
-  { key: slash, label: "识别斜线命令前缀", type: "boolean", hint: reload },
-  { key: "cache_group_member", label: "上线预缓存群成员", type: "boolean", hint: restart },
-  { key: "msg_type_count", label: "统计消息段类型", type: "boolean", hint: restart },
-  { key: "file_watch", label: "监听配置文件改动", type: "boolean", hint: restart },
-  { key: "online_msg_exp", label: "主人上线通知冷却（分钟）", type: "number",
-    min: 0, hint: "填 0 关闭上线通知。保存后重启宿主生效。" },
-  { key: "file_to_url_time", label: "文件分享有效期（分钟）", type: "number", min: 0,
-    hint: "默认 1 分钟，支持小数。填 0 时链接不随时间失效。保存后重启宿主生效。" },
-  { key: "file_to_url_times", label: "文件分享下载次数", type: "number", min: 0, nullable: true,
-    hint: "留空不限次数，填 0 时按默认策略生成的链接不可下载。HEAD 探测不计入。保存后重启宿主生效。" },
+  { key: "log_length", label: $t("lib.panel-runtime-settings.text_edd613ccd8"), type: "number", min: 1, max: 32_000, hint: restart },
+  { key: "log_object", label: $t("lib.panel-runtime-settings.text_c46da81035"), type: "json",
+    hint: $t("lib.panel-runtime-settings.text_2ad4ab2c79") },
+  { key: "log_align", label: $t("lib.panel-runtime-settings.text_77e3ebb25a"), type: "text", hint: $t("lib.panel-runtime-settings.text_fff8050bff") },
+  { key: "plugin_load_timeout", label: $t("lib.panel-runtime-settings.text_a7c6e7e42e"), type: "number", min: 0, max: maxPluginLoadMs / 1000,
+    hint: $t("lib.panel-runtime-settings.text_339f143408") },
+  { key: slash, label: $t("lib.panel-runtime-settings.text_e796c28897"), type: "boolean", hint: reload },
+  { key: "cache_group_member", label: $t("lib.panel-runtime-settings.text_5dbae9fd9e"), type: "boolean", hint: restart },
+  { key: "msg_type_count", label: $t("lib.panel-runtime-settings.text_3b34617719"), type: "boolean", hint: restart },
+  { key: "file_watch", label: $t("lib.panel-runtime-settings.text_0efc2b209f"), type: "boolean", hint: restart },
+  { key: "online_msg_exp", label: $t("lib.panel-runtime-settings.text_62351d01df"), type: "number",
+    min: 0, hint: $t("lib.panel-runtime-settings.text_2d6d6fc755") },
+  { key: "file_to_url_time", label: $t("lib.panel-runtime-settings.text_a15439b360"), type: "number", min: 0,
+    hint: $t("lib.panel-runtime-settings.text_fb71acb2ef") },
+  { key: "file_to_url_times", label: $t("lib.panel-runtime-settings.text_05b5341eea"), type: "number", min: 0, nullable: true,
+    hint: $t("lib.panel-runtime-settings.text_92c897308a") },
 ] as const;
 
 interface RuntimeValues {

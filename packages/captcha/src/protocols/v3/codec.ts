@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../../../i18n/index.ts";
+import messageCatalog from "../../../i18n/zh-CN.json";
+const $t = createTextTranslator("captcha", messageCatalog.messages);
 import crypto from 'node:crypto'
 
 // These wire formats were checked against the official click SDKs. A new SDK
@@ -26,7 +29,7 @@ export function clickProtocol(resource: string) {
   const version =
     String(resource || '').match(/(?:^|\/)click\.(\d+\.\d+\.\d+)\.js(?:\?.*)?$/)?.[1] || ''
   if (!CLICK_PROTOCOLS[version]!)
-    throw new Error('本地尚未支持该极验点击协议版本，请使用后续过码方案')
+    throw new Error($t("src.protocols.v3.codec.text_d793db508a"))
   return { version, touchKey: CLICK_PROTOCOLS[version]! }
 }
 
@@ -34,7 +37,7 @@ export function fullpageProtocol(resource: string) {
   const version =
     String(resource || '').match(/(?:^|\/)fullpage\.([\w.-]+)\.js(?:\?.*)?$/)?.[1] || ''
   if (!FULLPAGE_PROTOCOLS[version]!)
-    throw new Error('本地尚未支持该极验初始协议版本，请使用后续过码方案')
+    throw new Error($t("src.protocols.v3.codec.text_0ecaa562fd"))
   return { version, ...FULLPAGE_PROTOCOLS[version]! }
 }
 
@@ -44,7 +47,7 @@ export function geetestAssetUrl(resource: string | URL, origin?: string | URL) {
     url.protocol !== 'https:' ||
     !/(^|\.)(geetest\.com|geevisit\.com|geetest\.net)$/.test(url.hostname)
   )
-    throw new Error('极验资源服务器无效')
+    throw new Error($t("src.protocols.v3.codec.text_d42a666438"))
   return url
 }
 
@@ -56,7 +59,7 @@ export function knownGctScript(resource: string | URL) {
 export function gctFields(resource: string | URL, source: Uint8Array) {
   const script = knownGctScript(resource)
   if (!script || crypto.createHash('sha256').update(source).digest('hex') !== script.sha256) {
-    throw new Error('本地尚未支持该极验动态协议，请使用后续过码方案')
+    throw new Error($t("src.protocols.v3.codec.text_5d6e6dc70b"))
   }
   return { ...script.fields }
 }

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, parseDocument } from "yaml";
@@ -26,7 +29,7 @@ type Field = {
 };
 
 const maxConfigBytes = 64 * 1024;
-const restartHint = "保存后在下次宿主重启时生效。";
+const restartHint = $t("lib.panel-status-settings.text_19157e61a7");
 const resourceOrder = ["CPU", "RAM", "SWAP", "Bun", "GPU"];
 const background = /^(?:random|[^./\\:\p{Cc}][^/\\:\p{Cc}]{0,180}\.(?:jpe?g|png|webp|gif|avif|bmp))$/iu;
 
@@ -54,8 +57,8 @@ function listField(key: string, label: string, hint?: string, options?: readonly
     (!options || new Set(value).size === value.length) };
 }
 
-const colorHint = "支持十六进制、RGB、RGBA、HSL 和常用色名。";
-const gradientHint = "可填颜色，或填写渐变，例如 gradient:90deg, #001bff 0%, #f34628 100%。";
+const colorHint = $t("lib.panel-status-settings.text_ab5e8b08a5");
+const gradientHint = $t("lib.panel-status-settings.text_9c830182fc");
 const isColor = (value: unknown): value is string => typeof value === "string" &&
   statusCardStyle({ style: { BotNameColor: value } }).nameColor === value;
 
@@ -66,7 +69,7 @@ function colorField(key: string, label: string, gradient = false): Field {
 }
 
 function paletteField(key: string, label: string): Field {
-  return { key, label, type: "list", separator: "line", rows: 3, hint: `每行一种颜色，最多 12 种。${colorHint}`,
+  return { key, label, type: "list", separator: "line", rows: 3, hint: $t("lib.panel-status-settings.text_91f695f20b", { "colorHint": colorHint }),
     accepts: value => Array.isArray(value) && value.length > 0 && value.length <= 12 && value.every(isColor) };
 }
 
@@ -85,54 +88,54 @@ function cleanProbeSites(input: unknown) {
 }
 
 const orderOptions = [
-  { label: "按内存", value: "mem" }, { label: "按 CPU", value: "cpu" }, { label: "CPU 与内存各半", value: "cpu_mem" },
+  { label: $t("lib.panel-status-settings.text_de7d99729b"), value: "mem" }, { label: $t("lib.panel-status-settings.text_1fa83c3a02"), value: "cpu" }, { label: $t("lib.panel-status-settings.text_fc0f1ef272"), value: "cpu_mem" },
 ] as const;
 const chartVisibility = [
-  { label: "关闭", value: "off" }, { label: "仅状态 Pro", value: "pro" },
-  { label: "普通状态及状态 Pro", value: "all" },
+  { label: $t("lib.panel-status-settings.text_3fd47edce4"), value: "off" }, { label: $t("lib.panel-status-settings.text_8ca4e5c223"), value: "pro" },
+  { label: $t("lib.panel-status-settings.text_9ebaeca40c"), value: "all" },
 ] as const;
 
 const fields: readonly Field[] = [
-  booleanField("defaultState", "允许直接发送「状态」"),
-  booleanField("noPro", "禁用状态 Pro"),
-  booleanField("showFastFetch", "显示主机概况"),
-  booleanField("showRedisInfo", "显示 Valkey 信息", "历史连接数采样在下次宿主重启时采用新设置。"),
-  booleanField("closedChart", "隐藏状态历史图表"),
-  { key: "chartsCfg.show", label: "网络历史图表可见范围", type: "select", options: chartVisibility,
-    hint: "普通状态仅显示汇总网速。Valkey 等诊断依旧只出现在状态 Pro。",
+  booleanField("defaultState", $t("lib.panel-status-settings.text_8b4aab6e7b")),
+  booleanField("noPro", $t("lib.panel-status-settings.text_ae27f44959")),
+  booleanField("showFastFetch", $t("lib.panel-status-settings.text_dc79ec37b6")),
+  booleanField("showRedisInfo", $t("lib.panel-status-settings.text_fb419336cf"), $t("lib.panel-status-settings.text_cd84860407")),
+  booleanField("closedChart", $t("lib.panel-status-settings.text_afe71cce16")),
+  { key: "chartsCfg.show", label: $t("lib.panel-status-settings.text_ab9da5db4e"), type: "select", options: chartVisibility,
+    hint: $t("lib.panel-status-settings.text_242fc47f6b"),
     accepts: value => chartVisibility.some(option => option.value === value) },
-  paletteField("chartsCfg.color", "网络历史图表配色"),
-  listField("systemResources", "资源卡片及顺序", "可用项为 CPU、RAM、SWAP、Bun 和 GPU。",
+  paletteField("chartsCfg.color", $t("lib.panel-status-settings.text_901cd82f33")),
+  listField("systemResources", $t("lib.panel-status-settings.text_24e094bab5"), $t("lib.panel-status-settings.text_d1a50a1a6a"),
     resourceOrder.map(value => ({ label: value, value }))),
-  { key: "style.backdropDefault", label: "背景图文件名", type: "text", hint: "填 random 随机选择，或填写主题内现有文件名。",
+  { key: "style.backdropDefault", label: $t("lib.panel-status-settings.text_8430e9bea2"), type: "text", hint: $t("lib.panel-status-settings.text_2df738dbe9"),
     accepts: value => typeof value === "string" && background.test(value) },
-  booleanField("style.startColumn", "状态长图自动分列"),
-  colorField("style.BotNameColor", "机器人昵称颜色", true),
-  colorField("style.progressBarColor.high", "资源使用率 90% 起颜色"),
-  colorField("style.progressBarColor.medium", "资源使用率 80% 起颜色"),
-  paletteField("style.progressBarColor.low", "资源使用率低于 80% 的配色"),
-  colorField("style.redisInfoValColor", "Valkey 数值颜色"),
-  colorField("style.botInfoColor.botVersion", "机器人版本徽标背景色"),
-  colorField("style.botInfoColor.platform", "机器人协议徽标背景色"),
-  colorField("style.botInfoColor.botRunTime", "机器人运行时长徽标背景色"),
-  paletteField("style.botInfoColor.contacts", "联系人及消息计数徽标配色"),
-  booleanField("monitor.open", "启用后台监控采样", restartHint),
-  numberField("monitor.getDataInterval", "采样间隔（毫秒）", 1_000, 3_600_000, restartHint),
-  numberField("monitor.saveDataNumber", "保留采样点数", 1, 720, restartHint),
-  booleanField("monitor.openRedisSaveData", "在 Valkey 保留监控历史", restartHint),
-  booleanField("processLoad.show", "显示进程负载"),
-  booleanField("processLoad.showMax.show", "显示资源占用最高的进程"),
-  numberField("processLoad.showMax.showNum", "高占用进程显示数量", 0, 16),
-  { key: "processLoad.showMax.order", label: "高占用进程排序", type: "select", options: orderOptions,
+  booleanField("style.startColumn", $t("lib.panel-status-settings.text_867ff14e90")),
+  colorField("style.BotNameColor", $t("lib.panel-status-settings.text_98eb98c600"), true),
+  colorField("style.progressBarColor.high", $t("lib.panel-status-settings.text_2f8534c7db")),
+  colorField("style.progressBarColor.medium", $t("lib.panel-status-settings.text_62b6ec3aaa")),
+  paletteField("style.progressBarColor.low", $t("lib.panel-status-settings.text_f9a7dbdf57")),
+  colorField("style.redisInfoValColor", $t("lib.panel-status-settings.text_4985804797")),
+  colorField("style.botInfoColor.botVersion", $t("lib.panel-status-settings.text_2258aa3106")),
+  colorField("style.botInfoColor.platform", $t("lib.panel-status-settings.text_acdbe4a8c7")),
+  colorField("style.botInfoColor.botRunTime", $t("lib.panel-status-settings.text_0f98c41f78")),
+  paletteField("style.botInfoColor.contacts", $t("lib.panel-status-settings.text_44f03bad93")),
+  booleanField("monitor.open", $t("lib.panel-status-settings.text_21f4fb3311"), restartHint),
+  numberField("monitor.getDataInterval", $t("lib.panel-status-settings.text_95e5d51c21"), 1_000, 3_600_000, restartHint),
+  numberField("monitor.saveDataNumber", $t("lib.panel-status-settings.text_f4f9270751"), 1, 720, restartHint),
+  booleanField("monitor.openRedisSaveData", $t("lib.panel-status-settings.text_2187f400c1"), restartHint),
+  booleanField("processLoad.show", $t("lib.panel-status-settings.text_d3023b460a")),
+  booleanField("processLoad.showMax.show", $t("lib.panel-status-settings.text_679742f75e")),
+  numberField("processLoad.showMax.showNum", $t("lib.panel-status-settings.text_f6d18c671e"), 0, 16),
+  { key: "processLoad.showMax.order", label: $t("lib.panel-status-settings.text_3644461b59"), type: "select", options: orderOptions,
     accepts: value => orderOptions.some(option => option.value === value) },
-  listField("processLoad.list", "额外关注的进程名"),
-  listField("processLoad.filterList", "忽略的进程名"),
-  booleanField("networkProbesEnabled", "允许状态 Pro 测试公网网站"),
-  booleanField("psTestSites.show", "显示网站测试结果"),
-  numberField("psTestSites.timeout", "网站测试超时（毫秒）", 200, 5_000),
-  numberField("psTestSites.concurNum", "同时测试的网站数量", 1, 5),
-  { key: "psTestSites.list", label: "公网测试网站", type: "json",
-    hint: '最多 8 个站点。每项包含 name、url 及 useProxy。填写不带账号、参数和片段的公网 HTTPS 地址。',
+  listField("processLoad.list", $t("lib.panel-status-settings.text_851b608957")),
+  listField("processLoad.filterList", $t("lib.panel-status-settings.text_49ebe85b90")),
+  booleanField("networkProbesEnabled", $t("lib.panel-status-settings.text_72fa5a62f2")),
+  booleanField("psTestSites.show", $t("lib.panel-status-settings.text_c1ae1ad592")),
+  numberField("psTestSites.timeout", $t("lib.panel-status-settings.text_ef0c0976c4"), 200, 5_000),
+  numberField("psTestSites.concurNum", $t("lib.panel-status-settings.text_b986abceba"), 1, 5),
+  { key: "psTestSites.list", label: $t("lib.panel-status-settings.text_df99da6aa9"), type: "json",
+    hint: $t("lib.panel-status-settings.text_7012574649"),
     accepts: value => isDeepStrictEqual(cleanProbeSites(value), value) },
 ];
 

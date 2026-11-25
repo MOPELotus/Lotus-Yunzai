@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -49,16 +52,16 @@ function unchanged(first: Stats, next: Stats | undefined) {
     first.mtimeMs === next.mtimeMs && first.ctimeMs === next.ctimeMs && first.mode === next.mode && first.nlink === next.nlink;
 }
 
-function invalid(subject: string) { return new Error(`${subject}配置无法安全迁移。`); }
+function invalid(subject: string) { return new Error($t("lib.migration-group-config.text_48403ab0c0", { "subject": subject })); }
 
 async function readSnapshot(path: string, signal?: AbortSignal): Promise<ConfigSnapshot | undefined> {
   signal?.throwIfAborted();
   const info = await named(path);
   if (!info) return;
   if (!info.isFile() || info.nlink !== 1 || info.size > 1024 * 1024 || await realpath(path) !== path) {
-    throw new Error("旧群管和通知配置须为快照内的普通文件。");
+    throw new Error($t("lib.migration-group-config.text_720d8b946e"));
   }
-  const changed = () => new Error("旧群管和通知配置在迁移期间发生变化，请重新取得停写后的副本。");
+  const changed = () => new Error($t("lib.migration-group-config.text_8da8681609"));
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     if (!unchanged(info, await handle.stat())) throw changed();
@@ -79,13 +82,13 @@ function decodedYaml(bytes: Buffer): unknown {
     const doc = parseDocument(new TextDecoder("utf-8", { fatal: true }).decode(bytes), { merge: true, strict: true, uniqueKeys: true });
     if (!doc.errors.length) return doc.toJS({ mapAsMap: true, maxAliasCount: 50 });
   } catch {}
-  throw invalid("旧群管和通知 YAML");
+  throw invalid($t("lib.migration-group-config.text_7a17ae2458"));
 }
 
 function decode(bytes: Buffer): Mapping {
   const parsed = decodedYaml(bytes);
   if (parsed === null || parsed instanceof Map) return parsed ?? new Map();
-  throw invalid("旧群管和通知 YAML");
+  throw invalid($t("lib.migration-group-config.text_7a17ae2458"));
 }
 
 function section(value: unknown, name: string) {
@@ -125,24 +128,24 @@ function mergeManagement(current: Mapping, legacy?: Mapping) {
     ["recallMsgPer", ["bot", "member"]]] as const) {
     if (!old.has(name) && !current.has(name)) continue;
     if (name === "recallMsgPer" && ((old.has(name) && old.get(name) == null) || (current.has(name) && current.get(name) == null))) {
-      throw invalid("引用撤回权限");
+      throw invalid($t("lib.migration-group-config.text_18c84303ad"));
     }
     const previous = section(old.get(name), name);
     const modern = section(current.get(name), name);
     const merged = fields(new Map([...previous, ...modern]), supported);
     if (name === "recallMsgPer" && [...merged.values()].some(value => typeof value !== "string" || !["all", "admin", "owner", "master"].includes(value))) {
-      throw invalid("引用撤回权限");
+      throw invalid($t("lib.migration-group-config.text_18c84303ad"));
     }
     if (name === "groupVerify") {
-      const oldRange = section(previous.get("range"), "入群验证运算范围");
-      const range = section(modern.get("range"), "入群验证运算范围");
+      const oldRange = section(previous.get("range"), $t("lib.migration-group-config.text_a8ba75378e"));
+      const range = section(modern.get("range"), $t("lib.migration-group-config.text_a8ba75378e"));
       const limits = new Map(["min", "max"].flatMap(field => {
         const value = range.get(field) ?? oldRange.get(field);
         return value === undefined ? [] : [[field, value] as const];
       }));
       if (limits.size) merged.set("range", limits);
-      const oldMessages = section(previous.get("SuccessMsgs"), "入群验证成功消息");
-      const messages = section(modern.get("SuccessMsgs"), "入群验证成功消息");
+      const oldMessages = section(previous.get("SuccessMsgs"), $t("lib.migration-group-config.text_5c60bf6980"));
+      const messages = section(modern.get("SuccessMsgs"), $t("lib.migration-group-config.text_5c60bf6980"));
       const ids = new Set([...oldMessages.keys(), ...messages.keys()].filter(key => scope(key, /^(?:0|[1-9]\d*)$/u)).map(String));
       if (ids.size) merged.set("SuccessMsgs", new Map([...ids].map(key => [key,
         messages.get(Number(key)) ?? messages.get(key) ?? oldMessages.get(Number(key)) ?? oldMessages.get(key),
@@ -168,9 +171,9 @@ function scheduleSettings(load: (path: string) => Mapping | undefined) {
       const candidate = fields(new Map([...defaults ?? [], ...custom ?? []]), supported);
       const parsed = parseNoticeSchedule(stringify(candidate));
       if (selected && (parsed?.start !== expected?.start || parsed?.end !== expected?.end)) {
-        throw new Error("两处旧公告定时窗口不一致，请先核对使用的公告配置。");
+        throw new Error($t("lib.migration-group-config.text_859a0d44aa"));
       }
-      if (selected && logLevel(selected) !== logLevel(candidate)) throw new Error("两处旧公告日志级别不一致，请先核对配置。");
+      if (selected && logLevel(selected) !== logLevel(candidate)) throw new Error($t("lib.migration-group-config.text_b2408de686"));
       selected = candidate;
       expected = parsed;
     }
@@ -192,7 +195,7 @@ function mysAnnouncementSettings(load: (path: string) => Mapping | undefined) {
   if (!defaults && !legacy) return;
   const settings = new Map([...defaults ?? [], ...legacy ?? []]);
   if (settings.has("banWord")) {
-    const words = new Map(section(settings.get("banWord"), "米游社标题过滤"));
+    const words = new Map(section(settings.get("banWord"), $t("lib.migration-group-config.text_ef5cfd1171")));
     // An explicit old banWord mapping replaced the entire default mapping.
     for (const game of announcementGameKeys) if (!words.has(game)) words.set(game, "");
     settings.set("banWord", words);
@@ -214,7 +217,7 @@ function project(load: (path: string) => Mapping | undefined) {
 
   const modernGroup = load("config/group.yaml");
   const oldLikes = load(`${yenai}thumbUp.yaml`);
-  const routing = scopedSettings(modernGroup ?? new Map(), groupRoutingScopePattern, routingFields, "群派发");
+  const routing = scopedSettings(modernGroup ?? new Map(), groupRoutingScopePattern, routingFields, $t("lib.migration-group-config.text_91e9aab113"));
   if (modernGroup || oldLikes) {
     const likes = fields(new Map([...oldLikes ?? [], ...modernGroup ?? []]), likeFields);
     if (oldLikes && !likes.has("recall")) likes.set("recall", 20);
@@ -222,14 +225,14 @@ function project(load: (path: string) => Mapping | undefined) {
   }
   if (!routing.size) {
     const defaults = load(legacyGroupDefaults);
-    if (defaults) active.set(legacyGroupDefaults, scopedSettings(defaults, groupRoutingScopePattern, routingFields, "旧群派发默认值"));
+    if (defaults) active.set(legacyGroupDefaults, scopedSettings(defaults, groupRoutingScopePattern, routingFields, $t("lib.migration-group-config.text_79e9c3e816")));
   }
   const oldManagement = load(`${yenai}groupAdmin.yaml`);
   const modernManagement = load("config/groupAdmin.yaml");
   if (oldManagement || modernManagement) active.set("config/groupAdmin.yaml", mergeManagement(modernManagement ?? new Map(), oldManagement));
   const notices = load("config/group-notice.yaml") ?? load(`${yenai}notice.yaml`);
   if (notices) active.set("config/group-notice.yaml", scopedSettings(notices,
-    /^(?:default|[1-9]\d*|bot:[1-9]\d*(?::[1-9]\d*)?)$/u, noticeFields, "群通知"));
+    /^(?:default|[1-9]\d*|bot:[1-9]\d*(?::[1-9]\d*)?)$/u, noticeFields, $t("lib.migration-group-config.text_a6d489ae13")));
   const schedule = scheduleSettings(load);
   if (schedule) active.set("config/notice.yaml", schedule);
   const community = mysAnnouncementSettings(load);
@@ -242,7 +245,7 @@ async function screenedWordSources(source: string) {
     const path = join(source, relative);
     const info = await named(path);
     if (!info) return [];
-    if (!info.isDirectory() || await realpath(path) !== path) throw invalid("旧屏蔽词目录");
+    if (!info.isDirectory() || await realpath(path) !== path) throw invalid($t("lib.migration-group-config.text_15a9ef9c9d"));
     return (await readdir(path, { withFileTypes: true })).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
   }
   const validScope = (value: string) => value === "global" || /^[1-9]\d*$/u.test(value) && Number.isSafeInteger(Number(value));
@@ -255,7 +258,7 @@ async function screenedWordSources(source: string) {
     if (!entry.isDirectory() || !validScope(entry.name)) continue;
     const folder = join(screenedLegacyWords, entry.name);
     const files = (await entries(folder)).filter(file => file.isFile() && file.name.endsWith(".yaml"));
-    if (files.length > screenedWordLimits.files) throw invalid("屏蔽词词表数量");
+    if (files.length > screenedWordLimits.files) throw invalid($t("lib.migration-group-config.text_3aab2233b6"));
     if (files.length) legacy.set(entry.name, files.reverse().map(file => join(folder, file.name)));
   }
   return [...new Set([...modern.keys(), ...legacy.keys()])].map(scope => ({ scope, modern: modern.get(scope), legacy: legacy.get(scope) ?? [] }));
@@ -277,12 +280,12 @@ function projectScreenedWords(load: (path: string) => Mapping | undefined, scope
     for (const path of paths) {
       const bytes = snapshots.get(path)!.bytes;
       size += bytes.length;
-      if (size > screenedWordLimits.bytes) throw invalid("屏蔽词词表大小");
+      if (size > screenedWordLimits.bytes) throw invalid($t("lib.migration-group-config.text_dbd9029318"));
       for (const text of readScreenedWordList(decodedYaml(bytes), !scope.modern)) words.add(text);
-      if (words.size > screenedWordLimits.words) throw invalid("屏蔽词数量");
+      if (words.size > screenedWordLimits.words) throw invalid($t("lib.migration-group-config.text_8704b4905e"));
     }
     const content = stringify([...words]);
-    if (Buffer.byteLength(content) > screenedWordLimits.bytes) throw invalid("屏蔽词词表大小");
+    if (Buffer.byteLength(content) > screenedWordLimits.bytes) throw invalid($t("lib.migration-group-config.text_dbd9029318"));
     files.set(join(screenedCurrentWords, scope.scope + ".yaml"), content);
   }
   return files;
@@ -296,7 +299,7 @@ export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory:
   const stageInfo = await lstat(stage);
   if (withinInstallation(source, stage) || withinInstallation(stage, source) || !(await lstat(source)).isDirectory() ||
       stage !== resolve(stateDirectory) || !stageInfo.isDirectory() || (stageInfo.mode & 0o077)) {
-    throw new Error("群管和通知配置须暂存到独立私有实体目录。");
+    throw new Error($t("lib.migration-group-config.text_00a78f8fc7"));
   }
   const inputs = new Map<string, ConfigSnapshot>();
   const screenedScopes = await screenedWordSources(source);
@@ -304,7 +307,7 @@ export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory:
   for (const path of [...sourcePaths, ...screenedInputs]) {
     const result = await readSnapshot(join(source, path), signal);
     if (result) inputs.set(path, result);
-    else if (screenedInputs.has(path)) throw invalid("并发变动的屏蔽词");
+    else if (screenedInputs.has(path)) throw invalid($t("lib.migration-group-config.text_fe464903d3"));
   }
   const decoded = new Map<string, Mapping>();
   const load = (path: string) => {
@@ -328,17 +331,17 @@ export async function stageLegacyGroupConfig(sourcePath: string, stateDirectory:
   const screened = projectScreenedWords(load, screenedScopes, inputs);
   const archives = new Map([...inputs].map(([path, config]) => [join("backup", "legacy-group-config", path), config.bytes]));
   const files = [...[...active].map(([path, settings]) => [path, stringify(settings)] as const), ...screened, ...archives];
-  if (JSON.stringify(screenedScopes) !== JSON.stringify(await screenedWordSources(source))) throw invalid("并发变动的屏蔽词目录");
+  if (JSON.stringify(screenedScopes) !== JSON.stringify(await screenedWordSources(source))) throw invalid($t("lib.migration-group-config.text_a7537a6663"));
   for (const [path, config] of inputs) {
     const absolute = join(source, path);
-    if (!unchanged(config.info, await named(absolute)) || await realpath(absolute) !== absolute) throw invalid("并发变动的旧群管和通知");
+    if (!unchanged(config.info, await named(absolute)) || await realpath(absolute) !== absolute) throw invalid($t("lib.migration-group-config.text_0f53ba02ae"));
   }
   async function ensureDirectory(path: string) {
     if (path === stage) return;
     await ensureDirectory(dirname(path));
     if (!await named(path)) await mkdir(path, { mode: 0o700 });
     const info = await lstat(path);
-    if (!info.isDirectory() || (info.mode & 0o077) || await realpath(path) !== path) throw invalid("群管和通知暂存目录");
+    if (!info.isDirectory() || (info.mode & 0o077) || await realpath(path) !== path) throw invalid($t("lib.migration-group-config.text_a932184c0f"));
   }
   for (const [path, bytes] of files) {
     signal?.throwIfAborted();

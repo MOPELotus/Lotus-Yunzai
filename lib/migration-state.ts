@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
@@ -31,7 +34,7 @@ function sameFile(expected: Stats, actual: Stats | undefined) {
 }
 
 function sourceChanged() {
-  return new Error("迁移源在读取期间发生变化，请重新取得已停写的旧安装副本。");
+  return new Error($t("lib.migration-state.text_0ceef0b1c7"));
 }
 
 function within(parent: string, path: string) {
@@ -46,7 +49,7 @@ async function sourceInventory(source: string) {
     const info = await optionalStat(join(source, path));
     if (!info) return false;
     if (!info.isDirectory() || await realpath(join(source, path)) !== join(source, path)) {
-      throw new Error("列入迁移的配置或逐抽路径须为实体目录。");
+      throw new Error($t("lib.migration-state.text_a5fc0f4e3b"));
     }
     dirs.set(path, info);
     return true;
@@ -54,12 +57,12 @@ async function sourceInventory(source: string) {
   async function file(scope: StateScope, path: string) {
     const info = await optionalStat(join(source, path));
     if (!info) return;
-    if (!info.isFile() || info.nlink !== 1) throw new Error("列入迁移的配置或逐抽文件须为无硬链接的普通文件。");
-    if (info.size > maxFileBytes) throw new Error("列入迁移的配置或逐抽文件超过读取上限。");
+    if (!info.isFile() || info.nlink !== 1) throw new Error($t("lib.migration-state.text_9e93a87284"));
+    if (info.size > maxFileBytes) throw new Error($t("lib.migration-state.text_6d53369312"));
     files.push({ scope, path, info });
   }
 
-  if (!await directory("")) throw new Error("旧安装副本须为实体目录。");
+  if (!await directory("")) throw new Error($t("lib.migration-state.text_3e8a229c32"));
   if (await directory("config") && await directory("config/config")) await file(groupConfig, groupConfig);
   if (await directory("data")) {
     for (const scope of ["data/srJson", "data/srJson.backup"] as const) {
@@ -131,14 +134,14 @@ function checkPool(bytes: Uint8Array) {
   try {
     if (Array.isArray(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)))) return;
   } catch {}
-  throw new Error("星铁旧逐抽卡池须为有效的 UTF-8 JSON 数组。");
+  throw new Error($t("lib.migration-state.text_06fd3181da"));
 }
 
 /** Creates a fresh private overlay. The caller alone decides how to adopt it. */
 export async function stageLegacyState(sourcePath: string, stagingParent: string, signal?: AbortSignal) {
   const [source, parent] = await Promise.all([realpath(sourcePath), realpath(stagingParent)]);
   if (within(source, parent) || !(await lstat(parent)).isDirectory()) {
-    throw new Error("迁移暂存须位于旧安装副本之外的实体目录。");
+    throw new Error($t("lib.migration-state.text_c3ffdb8a4d"));
   }
   const inventory = await sourceInventory(source);
   signal?.throwIfAborted();

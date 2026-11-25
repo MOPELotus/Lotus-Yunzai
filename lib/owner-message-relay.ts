@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { setTimeout as delay } from "node:timers/promises";
 import { delegationSession } from "./command-delegation.ts";
 import { readFriendReplyParts, type OwnerFriendReplyBody } from "./adapters/owner-friend-reply.ts";
@@ -202,21 +205,21 @@ export function createOwnerMessageRelay({
     };
     if (draft && event.msg === "#取消") {
       clearDraft();
-      await reply("已取消发送。");
+      await reply($t("lib.owner-message-relay.text_d5c45fed1c"));
       return true;
     }
     const command = explicit ? ownerRelayCommand(event.msg) : undefined;
     if ((explicit && !command) || (command?.kind === "list" && (!command.indexes.every(positive) ||
         command.indexes.length > 3 || new Set(command.indexes).size !== command.indexes.length)) ||
         (command && command.kind !== "list" && (!positive(command.target) || (command.botId !== undefined && !positive(command.botId))))) {
-      await reply("请指定好友 QQ、群号或不重复的群列表序号（最多 3 个）。");
+      await reply($t("lib.owner-message-relay.text_e877de98d5"));
       return true;
     }
     const botId = command && command.kind !== "list" ? command.botId ?? origin.botId : origin.botId;
     const account = command ? resolveAccount(botId, botId === origin.botId ? origin.adapter : undefined) : draft?.account;
     if (!account || !isMaster(account.botId, origin.actorId) || (!command && draft?.source !== origin.source)) {
       clearDraft();
-      await reply("未能确认发送账号及主人权限。");
+      await reply($t("lib.owner-message-relay.text_855554bc88"));
       return true;
     }
     const permitted = () => active() && isMaster(account.botId, origin.actorId);
@@ -226,12 +229,12 @@ export function createOwnerMessageRelay({
       kind = "group";
       const shown = displayedGroups(event);
       if (!shown) {
-        await reply("请先在当前机器人的主人好友私聊查询 #群列表，再使用序号发送。");
+        await reply($t("lib.owner-message-relay.text_b41dfa3982"));
         return true;
       }
       const selected = command.indexes.map(index => shown[index - 1]?.id);
       if (!selected.every(positive) || new Set(selected).size !== selected.length) {
-        await reply("群列表序号无效，请核对已收到的名单。");
+        await reply($t("lib.owner-message-relay.text_4dad130baa"));
         return true;
       }
       ids = selected;
@@ -240,7 +243,7 @@ export function createOwnerMessageRelay({
       ids = [command?.target ?? draft!.id];
     }
     if (kind === "friend" && ids.includes(account.botId)) {
-      await reply("请指定发送账号以外的好友。");
+      await reply($t("lib.owner-message-relay.text_d3286cd5b3"));
       return true;
     }
     const readTargets = async (targets: readonly number[]) => kind === "friend"
@@ -249,7 +252,7 @@ export function createOwnerMessageRelay({
     const part = messageParts(event, command?.text);
     if (part === undefined) {
       clearDraft();
-      await reply("无法识别要发送的消息正文。");
+      await reply($t("lib.owner-message-relay.text_4bc353519c"));
       return true;
     }
     const source = event.message;
@@ -259,24 +262,24 @@ export function createOwnerMessageRelay({
     });
     if (indexedParts.some(segment => segment.type === "reply")) {
       clearDraft();
-      await reply("引用属于来源会话。请直接发送正文或原件，本次代发未发出。");
+      await reply($t("lib.owner-message-relay.text_5f2374aeaa"));
       return true;
     }
     const includesFile = indexedParts.some(segment => segment.type === "file");
     if (includesFile && (indexedParts.length !== 1 || typeof part === "string" ||
         part.some(value => typeof value === "string" && value.trim()))) {
       clearDraft();
-      await reply("文件须单独发送，本次含其他内容的代发未发出。");
+      await reply($t("lib.owner-message-relay.text_4d8adfec23"));
       return true;
     }
     const empty = typeof part === "string" ? !part.trim() : !part.some(item => typeof item !== "string" || item.trim());
     if (privateCredential(event.msg) || privateCredential(event.raw_message)) {
       clearDraft();
-      await reply("已停止发送，请勿转发登录凭据。");
+      await reply($t("lib.owner-message-relay.text_e37858e135"));
       return true;
     }
     if (empty && command?.kind === "list") {
-      await reply("消息不能为空。");
+      await reply($t("lib.owner-message-relay.text_c9a94da0c0"));
       return true;
     }
     if (fileKey) rememberFile(fileKey, { consumed: true });
@@ -285,22 +288,22 @@ export function createOwnerMessageRelay({
     if (!permitted()) return true;
     if (!verified) {
       clearDraft();
-      await reply(verified === false ? "当前发送账号的名单中没有这个目标。" : "未能核对发送账号的名单。");
+      await reply(verified === false ? $t("lib.owner-message-relay.text_92087bd426") : $t("lib.owner-message-relay.text_ff74f15a0e"));
       return true;
     }
     if (empty && command) {
       clearDraft();
       if (drafts.size >= maximumSnapshots) {
-        await reply("待发送会话过多，请稍后重试。");
+        await reply($t("lib.owner-message-relay.text_67b6445567"));
         return true;
       }
       const timer = setTimeout(() => {
         if (drafts.get(key)?.timer !== timer) return;
         drafts.delete(key);
-        void reply("发送消息超时，已取消。").catch(() => {});
+        void reply($t("lib.owner-message-relay.text_8e078a936f")).catch(() => {});
       }, lifetime).unref();
       drafts.set(key, { kind, id: ids[0]!, account, timer, source: origin.source, reservation: Symbol() });
-      await reply("请发送需要发送的消息，或发送 #取消。");
+      await reply($t("lib.owner-message-relay.text_6b96a11e70"));
       return true;
     }
     clearDraft();
@@ -319,10 +322,10 @@ export function createOwnerMessageRelay({
     }
     if (!permitted()) return true;
     if (!body && !file) {
-      await reply("无法读取或发送这种消息内容。");
+      await reply($t("lib.owner-message-relay.text_4cdff4b2c5"));
       return true;
     }
-    if (ids.length > 1) await reply("将按已确认的群列表顺序发送，间隔 5 秒。");
+    if (ids.length > 1) await reply($t("lib.owner-message-relay.text_0fcb300110"));
     for (const [position, id] of ids.entries()) {
       if (position) {
         await delay(5_000, undefined, { signal }).catch(() => {});
@@ -330,7 +333,7 @@ export function createOwnerMessageRelay({
       }
       const recheck = position > 0 || typeof part !== "string";
       if (recheck && !await readTargets([id])) {
-        await reply(`${id} 已无法核对，未发送。`);
+        await reply($t("lib.owner-message-relay.text_609ad32991", { "id": id }));
         continue;
       }
       if (!permitted()) break;
@@ -344,9 +347,9 @@ export function createOwnerMessageRelay({
         }
         return body === undefined ? Promise.resolve("unavailable") : account.send(kind, id, body);
       });
-      await reply(status === "confirmed" ? `${id} 的${kind === "friend" ? "私聊" : "群聊"}消息已送达。`
-        : status === "unknown" ? `${id} 的发送结果未确认，请先核对原会话。`
-          : `${id} 的消息未发出。`);
+      await reply(status === "confirmed" ? $t("lib.owner-message-relay.text_c2915b086b", { "id": id, "value2": kind === "friend" ? $t("lib.owner-message-relay.text_6add2714c4") : $t("lib.owner-message-relay.text_35b49ee58a") })
+        : status === "unknown" ? $t("lib.owner-message-relay.text_75e189b3d1", { "id": id })
+          : $t("lib.owner-message-relay.text_96f9c30b6f", { "id": id }));
     }
     return true;
   }

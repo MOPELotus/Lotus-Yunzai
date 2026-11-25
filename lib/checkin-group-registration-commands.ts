@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
 import { renderStatusCard } from "@lotus-yunzai/skia/status-card";
 import type { CommandContext, CommandModule } from "./commands.ts";
@@ -5,13 +8,13 @@ import { segment } from "./messages.ts";
 import { isCheckinCommandOwner } from "./command-permissions.ts";
 
 const register = /^#注册本群签到([1-9]\d{0,2})?$/u;
-const title = "注册本群签到";
-const cannotRead = "无法读取本群成员列表，暂时不能批量注册签到。";
+const title = $t("lib.checkin-group-registration-commands.text_d39ecd5125");
+const cannotRead = $t("lib.checkin-group-registration-commands.text_131fbfab6c");
 const skipLabels = {
-  missing: "未找到 profile",
-  "login-required": "缺少 cookie/stoken",
-  changed: "档案已变化，请重试",
-  failed: "暂时无法保存档案",
+  missing: $t("lib.checkin-group-registration-commands.text_47a8562fff"),
+  "login-required": $t("lib.checkin-group-registration-commands.text_f353aceb05"),
+  changed: $t("lib.checkin-group-registration-commands.text_863e33a765"),
+  failed: $t("lib.checkin-group-registration-commands.text_0b0c231cd4"),
 } as const;
 type Status = "updated" | "existing" | keyof typeof skipLabels;
 
@@ -52,7 +55,7 @@ export function checkinGroupRegistrationCommands({
 }: CheckinGroupRegistrationOptions): CommandModule {
   async function card(badge: string, message: string, lines: readonly string[]) {
     if (signal.aborted) return;
-    const lead = `Lotus-Yunzai 签到 · ${badge}\n${message}`;
+    const lead = $t("lib.checkin-group-registration-commands.text_71f0e66ea2", { "badge": badge, "message": message });
     try {
       const { png } = await render(title, lead, lines, new Date(), {
         themeDirectory: Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || undefined, timeZone: "Asia/Shanghai",
@@ -71,13 +74,13 @@ export function checkinGroupRegistrationCommands({
       const match = register.exec(context.normalizedMessage);
       if (!match || signal.aborted) return;
       const profileId = Number(match[1] ?? 1);
-      if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
+      if (profileId > MAX_PROFILE_ID) return $t("lib.checkin-group-registration-commands.text_3dd62228d2");
       const { group_id: groupId, user_id: userId, listCheckinGroupMembers } = context;
       if (context.message_type !== "group" || !isQq(groupId) || !isQq(userId)) {
-        return "请在目标群内执行 #注册本群签到。普通用户可在目标群发送 #绑定通知群。";
+        return $t("lib.checkin-group-registration-commands.text_61c599670b");
       }
       if (!canRegister({ ...context, isMaster: isCheckinCommandOwner(context) })) {
-        return "当前会话无权为本群批量注册签到。普通用户可发送 #绑定通知群。";
+        return $t("lib.checkin-group-registration-commands.text_4bc8ee4971");
       }
       let members;
       try {
@@ -97,14 +100,14 @@ export function checkinGroupRegistrationCommands({
       }
       if (!names.has(String(userId))) return cannotRead;
 
-      const group = `群号：${groupId}`;
+      const group = $t("lib.checkin-group-registration-commands.text_64bbec1614", { "groupId": groupId });
       let available;
       try {
         const allowed = new Set(names.keys());
         available = new Map((await profiles.listCheckinProfiles(allowed, profileId))
           .filter(profile => profile.profileId === profileId && allowed.has(profile.qq)).map(profile => [profile.qq, profile]));
       } catch {
-        return card("失败", "暂时无法读取本群的签到档案。", [group]);
+        return card($t("lib.checkin-group-registration-commands.text_28384d7afd"), $t("lib.checkin-group-registration-commands.text_d5d2123bd8"), [group]);
       }
       const done: string[] = [];
       const skipped: string[] = [];
@@ -117,7 +120,7 @@ export function checkinGroupRegistrationCommands({
           try {
             const latest = await profiles.checkinSettings(qq, profileId);
             if (signal.aborted) return;
-            if (!latest.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
+            if (!latest.loggedIn) throw new ProfileError("login-required", $t("lib.checkin-group-registration-commands.text_ec1c922d00"));
             const result = await profiles.registerGroupCheckin(qq, profileId, latest.revision, groupId, name);
             status = result.status;
             if (signal.aborted) return;
@@ -130,20 +133,20 @@ export function checkinGroupRegistrationCommands({
             status = profileFailure(error);
           }
         }
-        const label = `${name ?? "群成员"} (${qq})`;
+        const label = `${name ?? $t("lib.checkin-group-registration-commands.text_9d8692671d")} (${qq})`;
         if (status === "updated" || status === "existing") {
           counts[status]++;
-          if (done.length < 10) done.push(`${label}：${status === "updated" ? "已注册" : "已存在"} P${profileId}`);
+          if (done.length < 10) done.push(`${label}：${status === "updated" ? $t("lib.checkin-group-registration-commands.text_1f4273cab1") : $t("lib.checkin-group-registration-commands.text_e8b1268c1e")} P${profileId}`);
         } else {
           counts.skipped++;
-          if (skipped.length < 6) skipped.push(`${label}：跳过 · ${skipLabels[status]}`);
+          if (skipped.length < 6) skipped.push($t("lib.checkin-group-registration-commands.text_2f33c7663e", { "label": label, "value2": skipLabels[status] }));
         }
       }
-      return card(`+${counts.updated}`, "只为本群已登录的指定档案注册签到通知。", [
-        group, `profile：P${profileId}`, `群成员：${names.size}`,
-        `注册/已有/跳过：${counts.updated}/${counts.existing}/${counts.skipped}`,
-        ...(counts.schedule ? [`签到计划暂未更新：${counts.schedule} 个档案`] : []),
-        "明细：注册/已有前10条，跳过前6条", ...done, ...skipped,
+      return card(`+${counts.updated}`, $t("lib.checkin-group-registration-commands.text_fc6249cf92"), [
+        group, `profile：P${profileId}`, $t("lib.checkin-group-registration-commands.text_751910cb56", { "size": names.size }),
+        $t("lib.checkin-group-registration-commands.text_95ad03dc7a", { "updated": counts.updated, "existing": counts.existing, "skipped": counts.skipped }),
+        ...(counts.schedule ? [$t("lib.checkin-group-registration-commands.text_de4da3b3a9", { "schedule": counts.schedule })] : []),
+        $t("lib.checkin-group-registration-commands.text_df5115243d"), ...done, ...skipped,
       ]);
     },
   };

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { HoyoTransport } from "./credentials.ts";
 import type { HoYoLabCheckinAccount, HoYoLabCheckinOptions } from "./hoyolab-checkin-transport.ts";
 import {
@@ -5,7 +8,7 @@ import {
 } from "./hoyolab-default-checkin.ts";
 
 const game = {
-  gameBiz: "bh3_global", name: "崩坏3", activity: "e202110291205111",
+  gameBiz: "bh3_global", name: $t("hoyolab-bh3-checkin.text_6d3d8653d7"), activity: "e202110291205111",
   endpoint: "https://sg-act-public-api.hoyolab.com/event/mani", signgame: "bh3",
   regions: ["overseas01", "jp01", "kr01", "usa01", "asia01", "eur01"], uidPattern: /^[1-9]\d{0,19}$/u,
   credential: "ltoken", perRegionUid: true,

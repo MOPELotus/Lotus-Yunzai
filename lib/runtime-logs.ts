@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants } from "node:fs";
 import { open, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
@@ -10,11 +13,11 @@ type Query = { readonly limit: number; readonly search?: string };
 
 const maxTailBytes = 4 * 1024 * 1024;
 const maxLineLength = 2_000;
-const hidden = "[已隐藏]";
+const hidden = $t("lib.runtime-logs.text_3c019359a3");
 const headers = "(?:cookie|set[-_]?cookie|(?:proxy[-_]?)?authorization)";
 const secrets = "(?:access[-_]?token|refresh[-_]?token|id[-_]?token|session[-_]?token|csrf[-_]?token|cookie[-_]?token|" +
   "stoken[-_]?cookie|[sl]token|token|auth[-_]?key|api[-_]?key|x[-_]?server[-_]?key|password|passwd|passphrase|" +
-  "client[-_]?secret|secret|login[-_]?ticket|service[-_]?token|_mhyuuid|密码|令牌|凭据|验证码)(?:[_-]?v?\\d+)?";
+  $t("lib.runtime-logs.text_f03c6096c3");
 // Consume escaped bytes and, if the final quote is missing, the rest of the field.
 const quotedValue = String.raw`(?:"(?:\\.|[^"\\])*"?|'(?:\\.|[^'\\])*'?)`;
 const hiddenValue = String.raw`\[已隐藏\]`;
@@ -29,7 +32,7 @@ const inlineMedia = /(\bbase64:\/\/)[a-z0-9+\/_=-]+/gi;
 
 export function runtimeLogFilename(kind: LogKind, now: Date): string {
   if (kind === "error") return "error.log";
-  if (!Number.isFinite(now.getTime())) throw new Error("运行日志日期无效。");
+  if (!Number.isFinite(now.getTime())) throw new Error($t("lib.runtime-logs.text_87a1049432"));
   return `command.${formatShanghaiDate(now)}.log`;
 }
 
@@ -38,7 +41,7 @@ export function sanitizeRuntimeLog(line: string, maxLength = maxLineLength): str
     .replace(/[\r\n\t\u2028\u2029]/gu, " ")
     .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/gu, "")
     .replace(inlineImage, (_match, before: string, prefix: string, body: string) =>
-      `${before}${prefix}[图片 Base64 省略，${body.length} 字符]`)
+      $t("lib.runtime-logs.text_bf39bb1ed3", { "before": before, "prefix": prefix, "length": body.length }))
     .replace(inlineMedia, "$1[媒体 Base64 省略]")
     .replace(headerField, `$1$2${hidden}`)
     .replace(secretField, `$1$2${hidden}`)
@@ -64,7 +67,7 @@ function inside(directory: string, target: string): boolean {
 
 export async function runtimeLogDirectory(host: string): Promise<string> {
   const directory = await realpath(join(host, "logs"));
-  if (!inside(host, directory)) throw new Error("日志目录须位于宿主目录内。");
+  if (!inside(host, directory)) throw new Error($t("lib.runtime-logs.text_a585f4a419"));
   return directory;
 }
 
@@ -98,7 +101,7 @@ async function loadTail(root: URL, filename: string) {
     }
   } catch (error) {
     if (missing(error)) return;
-    throw new Error("无法安全读取运行日志。");
+    throw new Error($t("lib.runtime-logs.text_b474cebc6f"));
   }
 }
 

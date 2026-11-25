@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants } from "node:fs";
 import { link, mkdir, open, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -137,11 +140,11 @@ export function createProcessReceipts(root: URL) {
   function receiptPath(botId: number | undefined, adapter: ReceiptAdapter | undefined, slot: ReceiptSlot): string {
     const suffix = slot === "install" ? ".install.json" : slot ? ".update.json" : ".json";
     if (adapter !== undefined && (adapter !== "milky" || botId === undefined)) {
-      throw new Error("进程回执的适配器无效。");
+      throw new Error($t("lib.process-receipts.text_d073f11fc2"));
     }
     if (botId === undefined) return join(directory, `terminal${suffix}`);
     if (positiveInteger(botId)) return join(directory, `${adapter === "milky" ? "milky-" : ""}${botId}${suffix}`);
-    throw new Error("进程回执的机器人账号无效。");
+    throw new Error($t("lib.process-receipts.text_4171ad36a0"));
   }
 
   async function claim(botId: number | undefined, adapter: ReceiptAdapter | undefined, slot: ReceiptSlot): Promise<ProcessReceipt | undefined> {
@@ -174,10 +177,10 @@ export function createProcessReceipts(root: URL) {
 
   async function write(receipt: ProcessReceipt, retry: boolean): Promise<void> {
     const value = receiptFrom(receipt);
-    if (!value) throw new Error("进程回执无效。");
+    if (!value) throw new Error($t("lib.process-receipts.text_aa7d61e34a"));
     if (retry && !isFresh(value)) return;
     const content = JSON.stringify(value);
-    if (Buffer.byteLength(content) > maxFileBytes) throw new Error("进程回执超出可保存大小。");
+    if (Buffer.byteLength(content) > maxFileBytes) throw new Error($t("lib.process-receipts.text_b2f3c87708"));
     const { target } = value;
     const slot = receiptSlot(value.kind);
     const file = target.type === "terminal" ? receiptPath(undefined, undefined, slot) : receiptPath(target.botId, target.adapter, slot);

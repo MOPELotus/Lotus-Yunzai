@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, readdir, realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -9,13 +12,13 @@ async function sourceConfig(git: LocalGit, source: string, key: string): Promise
   const value = await git(source, ["config", "--local", "--no-includes", "--null", "--get-all", key], true);
   if (value === "") return;
   const parsed = value && /^([^\u0000-\u001f\u007f]+)\0$/u.exec(value)?.[1];
-  if (!parsed) throw new Error("更新来源的 Git 配置无法安全保留。");
+  if (!parsed) throw new Error($t("lib.update-checkout.text_dffb5165ce"));
   return parsed;
 }
 
 async function sourceOrigin(git: LocalGit, source: string): Promise<string | undefined> {
   const ref = await git(source, ["symbolic-ref", "--quiet", "HEAD"], true);
-  if (ref === undefined) throw new Error("无法检查更新来源的 Git 分支。");
+  if (ref === undefined) throw new Error($t("lib.update-checkout.text_a400e063fa"));
   const branch = ref.trimEnd();
   let remote = "origin";
   if (branch.startsWith("refs/heads/")) {
@@ -25,16 +28,16 @@ async function sourceOrigin(git: LocalGit, source: string): Promise<string | und
     ]);
     if (upstream && upstream !== "." && merge?.startsWith("refs/heads/")) remote = upstream;
   }
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(remote)) throw new Error("更新来源的上游名称无效。");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(remote)) throw new Error($t("lib.update-checkout.text_85490f24d2"));
   const url = await sourceConfig(git, source, `remote.${remote}.url`);
   if (!url) return;
   if (/^[^/:]+::/u.test(url) || await git(source, ["remote", "get-url", "--all", remote]) !== `${url}\n`) {
-    throw new Error("更新来源的 origin 无法安全保留。");
+    throw new Error($t("lib.update-checkout.text_dcb385c8fa"));
   }
   const scheme = /^([a-z][a-z0-9+.-]*):\/\//iu.exec(url)?.[1]?.toLowerCase();
   if (scheme) {
-    if (!["file", "git", "http", "https", "ssh"].includes(scheme)) throw new Error("更新来源的 origin 协议不受支持。");
-    if (url.includes("?") || url.includes("#")) throw new Error("更新来源的 origin 不支持查询参数或片段。");
+    if (!["file", "git", "http", "https", "ssh"].includes(scheme)) throw new Error($t("lib.update-checkout.text_c7f41f4424"));
+    if (url.includes("?") || url.includes("#")) throw new Error($t("lib.update-checkout.text_a6e1123427"));
     const parsed = new URL(url);
     if (parsed.password || (scheme !== "ssh" && parsed.username)) {
       parsed.password = "";
@@ -52,11 +55,11 @@ async function destinationDirectory(source: string, destination: string): Promis
   const target = join(await realpath(dirname(requested)), basename(requested));
   const fromSource = relative(source, target);
   if (!fromSource || (!isAbsolute(fromSource) && fromSource !== ".." && !fromSource.startsWith(`..${sep}`))) {
-    throw new Error("候选检出目录须与当前工作区独立。");
+    throw new Error($t("lib.update-checkout.text_fdd048c87c"));
   }
   try {
     if (!(await lstat(target)).isDirectory() || (await readdir(target)).length) {
-      throw new Error("候选检出目录须为空目录。");
+      throw new Error($t("lib.update-checkout.text_c08b267fb8"));
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") throw error;
@@ -77,7 +80,7 @@ async function run(binary: string, cwd: string, args: string[], signal?: AbortSi
     signal?.throwIfAborted();
     // Report only which operation failed; Git may print local or remote credentials.
   }
-  throw new Error(`无法完成候选 Git ${args[0]} 操作。`);
+  throw new Error($t("lib.update-checkout.text_38bd9912a4", { "value1": args[0] }));
 }
 
 export async function checkoutUpdateRevision(
@@ -87,17 +90,17 @@ export async function checkoutUpdateRevision(
   const git = createLocalGit();
   const binary = Bun.which("git");
   if (!git || !binary || !isGitRevision(revision) || revision.trim() !== revision) {
-    throw new Error("候选检出需要本地 Git 和完整提交号。");
+    throw new Error($t("lib.update-checkout.text_2171e87857"));
   }
 
   const directory = await realpath(source);
   const valid = await isGitCheckout(git, directory);
   signal?.throwIfAborted();
-  if (!valid) throw new Error("候选来源须为真实 Git 工作区。");
+  if (!valid) throw new Error($t("lib.update-checkout.text_9b604da943"));
   const type = await git(directory, ["cat-file", "-t", revision]);
   signal?.throwIfAborted();
   if (type?.trim() !== "commit") {
-    throw new Error("候选提交在本地 Git 中不可用。");
+    throw new Error($t("lib.update-checkout.text_b58b93e249"));
   }
   const origin = await sourceOrigin(git, directory);
   signal?.throwIfAborted();
@@ -111,7 +114,7 @@ export async function checkoutUpdateRevision(
     await verify(target, ["symbolic-ref", "--quiet", "HEAD"], true) === "";
   signal?.throwIfAborted();
   if (!expectsDetached) {
-    throw new Error("候选检出未到达指定的 detached 提交。");
+    throw new Error($t("lib.update-checkout.text_fce2679ba6"));
   }
   if (origin) await run(binary, target, ["remote", "add", "--", "origin", origin], signal);
 }

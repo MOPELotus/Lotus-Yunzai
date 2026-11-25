@@ -1,11 +1,14 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { builtInDirectories } from "../builtin-modules.ts";
 import { rejectionReason, repositoryKey } from "./policy.ts";
 
 export const pluginScriptExtensions: ReadonlySet<string> = new Set([".js", ".mjs", ".cjs", ".ts"]);
 const retiredGalleryManager = {
-  name: "图库管理器",
-  reason: "Atlas 提供三款支持游戏的图库和原图。独立图库管理后台需要适配 Lotus-Yunzai。",
+  name: $t("lib.plugins.metadata.text_961c593f85"),
+  reason: $t("lib.plugins.metadata.text_b58131a40d"),
   module: "@lotus-yunzai/atlas",
 };
 export const legacyAutoGroupCardScript = Object.freeze({
@@ -16,33 +19,33 @@ const retiredScripts = new Map([
   ["c56d66b96534430c0b144051ffb5fbec74f8febec3acbb85ddc9c00427faba98", retiredGalleryManager],
   ["9cf87bee119f580ae7ce93756f187ff2eb8766ef3308cd1136f42ae60e541124", retiredGalleryManager],
   [legacyAutoGroupCardScript.identity,
-    { name: "自动群名片", reason: "批量群名片已归并到 group。", module: "@lotus-yunzai/group" }],
+    { name: $t("lib.plugins.metadata.text_7473450ca8"), reason: $t("lib.plugins.metadata.text_c7e6ab283a"), module: "@lotus-yunzai/group" }],
   ["9d03582599fff6214732f963fceccde151a1307169c956e28c2f52327734180f",
-    { name: "主动复读", reason: "主人主动复读已归并到 group。", module: "@lotus-yunzai/group" }],
+    { name: $t("lib.plugins.metadata.text_51a7f50614"), reason: $t("lib.plugins.metadata.text_c57247a27f"), module: "@lotus-yunzai/group" }],
   ["150399f358647ea2f306b74595c33db2e2a789a4f763e48eb5804300f70e9359",
-    { name: "自动复读", reason: "群自动复读已归并到 group。", module: "@lotus-yunzai/group" }],
+    { name: $t("lib.plugins.metadata.text_a35768178c"), reason: $t("lib.plugins.metadata.text_935fa541b3"), module: "@lotus-yunzai/group" }],
   ["1babeb445b80a5c10ba3442e3a97d1716762931677460259b3b274d1c49d7368",
-    { name: "进群退群通知", reason: "进群和退群通知已归并到 group。", module: "@lotus-yunzai/group" }],
+    { name: $t("lib.plugins.metadata.text_6a2e10aa46"), reason: $t("lib.plugins.metadata.text_d9ea996b0d"), module: "@lotus-yunzai/group" }],
   ["bbd4e6adedab7bbef1c336b5add6ab43c725b78ed0d85c40d158b5614e75d7bf",
-    { name: "退群自动拉黑", reason: "退群黑名单已归并到 group。", module: "@lotus-yunzai/group" }],
+    { name: $t("lib.plugins.metadata.text_6ea86e4d0a"), reason: $t("lib.plugins.metadata.text_eb01e899cd"), module: "@lotus-yunzai/group" }],
   ["629da5e8260364f2da2c13da42be13772b065534372c63ddf3a497adc8e904c4",
-    { name: "标准输入", reason: "标准输入已由宿主终端提供。", module: "@lotus-yunzai/system" }],
+    { name: $t("lib.plugins.metadata.text_a104e04e7f"), reason: $t("lib.plugins.metadata.text_88a493d665"), module: "@lotus-yunzai/system" }],
   ["f08fae9f680d281d9ed066b80e427908884b0f587e5221f8a2d468911ba828ca",
-    { name: "原神背包查询", reason: "原神背包查询已归并到 genshin。", module: "@lotus-yunzai/genshin" }],
+    { name: $t("lib.plugins.metadata.text_42c50e3155"), reason: $t("lib.plugins.metadata.text_2ce71a47eb"), module: "@lotus-yunzai/genshin" }],
   ["5965452098afb917602bfcc63bcd63f0162e480b523cade00b0f0e6eb21d89ab",
-    { name: "原神世界BOSS", reason: "世界 BOSS 战绩和排行已归并到 genshin。", module: "@lotus-yunzai/genshin" }],
+    { name: $t("lib.plugins.metadata.text_30e08a3a4e"), reason: $t("lib.plugins.metadata.text_1af0a32ab9"), module: "@lotus-yunzai/genshin" }],
   ["baa463126c6a8d8421ff80c29614b572a141b02870811e3ca24c5e61c3ace502",
-    { name: "mcwiki", reason: "Minecraft Wiki 条目预览已归并到 media。", module: "@lotus-yunzai/media" }],
+    { name: "mcwiki", reason: $t("lib.plugins.metadata.text_a580fd6db3"), module: "@lotus-yunzai/media" }],
   ["a82020972ef0b317cc617136757f268feb61fdc397df58e2b331deb0507f6b9d",
-    { name: "定时日历", reason: "定时日历已归并到 guides。", module: "@lotus-yunzai/guides" }],
+    { name: $t("lib.plugins.metadata.text_2b63a57e40"), reason: $t("lib.plugins.metadata.text_af25f63d40"), module: "@lotus-yunzai/guides" }],
   ["22779ce7c2e87de4653cd9d2ee8187cfe436e7d4ae42e6dfeaebde14b9bb6ed1",
-    { name: "抽卡期望计算", reason: "抽卡期望和分布已由宿主提供。", module: "@lotus-yunzai/gacha-expectation" }],
+    { name: $t("lib.plugins.metadata.text_93c36600db"), reason: $t("lib.plugins.metadata.text_ea036dec52"), module: "@lotus-yunzai/gacha-expectation" }],
 ]);
 
 // Byte identities from the fixed TRSS host. Names alone cannot establish that a directory is the old host.
 const trssHostScripts = new Map([
   ["other", {
-    reason: "旧宿主的安装、进程管理、日志、更新与版本入口已归并到 Lotus-Yunzai。",
+    reason: $t("lib.plugins.metadata.text_7a8281bc3a"),
     scripts: new Map([
       ["install.js", "0fc91238477da8336038a75c244457845857e6d2a37c27acccc688165c4a28b7"],
       ["restart.js", "b5ee163ffa77cd019b9da68f7e15b10ec6374e40400cb63c74b841044bcd4c4c"],
@@ -52,7 +55,7 @@ const trssHostScripts = new Map([
     ]),
   }],
   ["system", {
-    reason: "旧宿主的主人、私聊、群与系统入口已归并到 Lotus-Yunzai。",
+    reason: $t("lib.plugins.metadata.text_01239bb0e5"),
     scripts: new Map([
       ["add.js", "6fff15bd4bc364ca7386b0bf436fdaccc14b48130308965c253388b17f8887b2"],
       ["botOperate.js", "51c0db7b8c34dcf535ba6d7804b7f221640d9b12fd23d5779533c3a4feeabfb4"],
@@ -127,11 +130,11 @@ export function inspectPluginMetadata(directory: string, source: string | undefi
 
   const { entry } = meta;
   if (entry !== undefined && (typeof entry !== "string" || !declaredName)) {
-    throw new Error("清单模块须声明包名和入口路径。");
+    throw new Error($t("lib.plugins.metadata.text_22ec586ed1"));
   }
   const builtInDirectory = builtInDirectories.get(name);
   if (builtInDirectory !== undefined && directory !== builtInDirectory) {
-    return { ...result, rejection: `${name} 的内置目录为 plugins/${builtInDirectory}。`, rejectionKind: "built-in-directory" };
+    return { ...result, rejection: $t("lib.plugins.metadata.text_7973faa773", { "name": name, "builtInDirectory": builtInDirectory }), rejectionKind: "built-in-directory" };
   }
   return { ...result, entry };
 }

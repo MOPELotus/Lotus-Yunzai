@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { link, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isChatFileName, type ChatFileResult } from "./chat-files.ts";
@@ -100,11 +103,11 @@ export function createMediaDelivery(dataDirectory: string, baseUrl: () => URL | 
     try {
       directory ??= prepareDirectory().catch((error) => { directory = undefined; throw error; });
       target = join(await directory, token);
-      if (closed) throw new Error("媒体递送已关闭。");
+      if (closed) throw new Error($t("lib.media-delivery.text_e2d6559245"));
       await link(source.file, target);
       const linked = await lstat(target);
       if (closed || !linked.isFile() || linked.ino !== source.stat.ino || linked.dev !== source.stat.dev || linked.size !== source.stat.size) {
-        throw new Error("媒体文件在递送前发生变化。");
+        throw new Error($t("lib.media-delivery.text_1579d5bb83"));
       }
       entries.set(token, {
         path: target, size: linked.size, expiry: performance.now() + ttl,

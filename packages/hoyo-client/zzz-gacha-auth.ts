@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -21,7 +24,7 @@ export interface ZzzGachaAuthKey {
 
 class ZzzGachaAuthKeyError extends HoyoRequestError {
   constructor(retcode: number) {
-    super("api", "绝区零抽卡链接授权已失效，请刷新当前档案后重试。", undefined, retcode);
+    super("api", $t("zzz-gacha-auth.text_9877c3f652"), undefined, retcode);
   }
 }
 
@@ -34,7 +37,7 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 function invalidResponse(): never {
-  throw new HoyoRequestError("response", "绝区零抽卡链接授权响应格式有误。");
+  throw new HoyoRequestError("response", $t("zzz-gacha-auth.text_41c31f1d4c"));
 }
 
 async function readCredentialResponse(response: Response, signal: AbortSignal): Promise<unknown> {
@@ -58,7 +61,7 @@ async function readCredentialResponse(response: Response, signal: AbortSignal): 
     signal.throwIfAborted();
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks, size))) as unknown;
   } catch (error) {
-    if (signal.aborted) throw new HoyoRequestError("transport", "绝区零抽卡链接授权请求已取消或超时。");
+    if (signal.aborted) throw new HoyoRequestError("transport", $t("zzz-gacha-auth.text_01e8e3c81f"));
     if (error instanceof HoyoRequestError) throw error;
     invalidResponse();
   } finally {
@@ -82,21 +85,21 @@ export async function readZzzGachaAuthKey(source: ProfileRequestContext, transpo
   { signal }: { readonly signal?: AbortSignal } = {}, verifyProfile?: () => Promise<void>): Promise<ZzzGachaAuthKey> {
   const { uid, region } = resolveZzzGachaLinkRole(source.role);
   if (source.game !== "zzz" || (region !== "prod_gf_cn" && region !== "prod_qd_cn")) {
-    throw new HoyoRequestError("invalid-input", "自动获取绝区零抽卡链接仅支持已确认的国服档案。");
+    throw new HoyoRequestError("invalid-input", $t("zzz-gacha-auth.text_4ee30b6ced"));
   }
-  const cookie = gachaStokenCookie(source, "绝区零");
+  const cookie = gachaStokenCookie(source, $t("zzz-gacha-auth.text_b1110352c9"));
   let headers: Headers;
   try {
     headers = gachaAuthHeaders(cookie, source);
     headers.set("Host", "api-takumi.mihoyo.com");
   } catch {
-    throw new HoyoRequestError("invalid-input", "绝区零抽卡的档案设备信息无效。");
+    throw new HoyoRequestError("invalid-input", $t("zzz-gacha-auth.text_a99ef177b3"));
   }
 
   async function guard() {
-    if (signal?.aborted) throw new HoyoRequestError("transport", "绝区零抽卡链接授权请求已取消。");
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("zzz-gacha-auth.text_5b56d34df4"));
     await verifyProfile?.();
-    if (signal?.aborted) throw new HoyoRequestError("transport", "绝区零抽卡链接授权请求已取消。");
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("zzz-gacha-auth.text_5b56d34df4"));
   }
 
   await guard();
@@ -110,12 +113,12 @@ export async function readZzzGachaAuthKey(source: ProfileRequestContext, transpo
     });
   } catch {
     await guard();
-    throw new HoyoRequestError("transport", "绝区零抽卡链接授权请求未完成。");
+    throw new HoyoRequestError("transport", $t("zzz-gacha-auth.text_dbb3884f0c"));
   }
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
     await guard();
-    throw new HoyoRequestError("http", "绝区零抽卡链接授权接口返回 HTTP 错误。", response.status);
+    throw new HoyoRequestError("http", $t("zzz-gacha-auth.text_5306a4316c"), response.status);
   }
   const payload = await readCredentialResponse(response, deadline);
   await guard();
@@ -124,9 +127,9 @@ export async function readZzzGachaAuthKey(source: ProfileRequestContext, transpo
   if (!record(payload) || typeof retcode !== "number" || !Number.isSafeInteger(retcode)) invalidResponse();
   if (expiredCodes.has(retcode)) throw new ZzzGachaAuthKeyError(retcode);
   if (riskCodes.has(retcode)) {
-    throw new HoyoRequestError("api", "绝区零抽卡链接授权要求完成验证，请在官方客户端处理后重试。", response.status, retcode);
+    throw new HoyoRequestError("api", $t("zzz-gacha-auth.text_6e0b1412d9"), response.status, retcode);
   }
-  if (retcode !== 0) throw new HoyoRequestError("api", "绝区零抽卡链接授权接口拒绝请求。", response.status, retcode);
+  if (retcode !== 0) throw new HoyoRequestError("api", $t("zzz-gacha-auth.text_ae9724debe"), response.status, retcode);
   const credential = payload.data;
   if (!record(credential)) invalidResponse();
   const { authkey } = credential;

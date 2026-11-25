@@ -31,7 +31,8 @@
     "logs": "bun --no-env-file scripts/launcher.ts logs",
     "status": "bun --no-env-file scripts/launcher.ts status",
     "build:panel": "bun run --filter @lotus-yunzai/panel build",
-    "typecheck": "tsc --noEmit && bun run --filter @lotus-yunzai/panel typecheck"
+    "typecheck": "tsc --noEmit && bun run --filter @lotus-yunzai/panel typecheck",
+    "i18n:check": "bun scripts/i18n/check.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../../i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("captcha", messageCatalog.messages);
 // Ports the existing HGNet and public SigLIP matcher without training weights.
 import sharp from 'sharp'
 import * as ort from 'onnxruntime-node'
@@ -105,7 +108,7 @@ export class GridClassifier implements Solver {
       const agreed = agreeNonempty(alternatives)
       if (agreed) return { kind: 'grid', indices: agreed }
     }
-    throw new Error('九宫格模型未识别到匹配项')
+    throw new Error($t("src.solvers.grid.text_f6ffa1f886"))
   }
   private async predict(puzzle: Grid, quality: number | null, flip = false): Promise<number[]> {
     const labels = await this.classify(puzzle, quality, flip)

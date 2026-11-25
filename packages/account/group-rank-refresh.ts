@@ -1,10 +1,13 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("account", messageCatalog.messages);
 export type GroupRankRefreshResult<Entry, Value> =
   | { readonly entry: Entry; readonly status: "fresh"; readonly value: Value }
   | { readonly entry: Entry; readonly status: "not-listed" | "failed" };
 
 /** Share one refresher across queries to the same provider. Callers provide unique, authorized entries. */
 export function createGroupRankRefresh(concurrency = 3) {
-  if (!Number.isSafeInteger(concurrency) || concurrency < 1) throw new RangeError("无效的群榜刷新并发数。");
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1) throw new RangeError($t("group-rank-refresh.text_c8272e9db8"));
   const waiting = new Set<() => void>();
   let active = 0;
 

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isMap, parseDocument } from "yaml";
 import { readLocalConfig } from "./config.ts";
 import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global-config-write.ts";
@@ -89,7 +92,7 @@ export function createUpdateNotices(options: {
       sent.add(result.candidate);
       if (sent.size > 64) sent.delete(sent.values().next().value!);
     }).catch(() => {
-      if (!signal.aborted) console.warn("[更新推送] 无法检查候选或确认主人通知。");
+      if (!signal.aborted) console.warn($t("lib.update-notice.text_cf64df56b4"));
     }).finally(() => { active = undefined; });
     active = { controller, done };
     return done;
@@ -103,7 +106,7 @@ export function createUpdateNotices(options: {
   function apply(next: UpdateNoticeSettings) {
     if (options.signal.aborted || settings?.update_notice === next.update_notice &&
         settings.update_notice_cron === next.update_notice_cron) return;
-    const name = "宿主更新推送";
+    const name = $t("lib.update-notice.text_6634644f30");
     const app = { name, task: { cron: next.update_notice_cron, fnc: trigger, log: false } };
     const prepared = tasks.prepare(next.update_notice ? [{ owner, app }] : [], new Set([owner]));
     void interrupt();

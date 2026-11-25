@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { BbsCheckinForum } from "./bbs-checkin.ts";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -26,7 +29,7 @@ function object(value: unknown): Record<string, unknown> | undefined {
 }
 
 function parsePosts(list: unknown, forumId: number, gameId: number): BbsForumPost[] {
-  const invalid = () => new HoyoRequestError("response", "米游社论坛目录返回的数据无效。");
+  const invalid = () => new HoyoRequestError("response", $t("bbs-forum-posts.text_d6f2d91ea7"));
   if (!Array.isArray(list) || list.length > pageSize) throw invalid();
   const posts: BbsForumPost[] = [];
   const seen = new Set<string>();
@@ -50,7 +53,7 @@ export async function readBbsForumPosts(game: BbsCheckinForum, transport: HoyoTr
   { signal }: BbsForumPostsOptions = {},
 ): Promise<readonly BbsForumPost[]> {
   if (typeof game !== "string" || !Object.hasOwn(forumIds, game)) {
-    throw new HoyoRequestError("invalid-input", "请选择支持的米游社版块。");
+    throw new HoyoRequestError("invalid-input", $t("bbs-forum-posts.text_4c9d96afdf"));
   }
   const forumId = forumIds[game];
   const endpoint = new URL(forumUrl);
@@ -60,7 +63,7 @@ export async function readBbsForumPosts(game: BbsCheckinForum, transport: HoyoTr
   const expectedUrl = endpoint.href;
   const timeout = AbortSignal.timeout(10_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
-  const unavailable = () => new HoyoRequestError("transport", "暂时无法读取米游社论坛目录。");
+  const unavailable = () => new HoyoRequestError("transport", $t("bbs-forum-posts.text_3b59e5f86f"));
   signal?.throwIfAborted();
   let response: Response;
   try {
@@ -78,15 +81,15 @@ export async function readBbsForumPosts(game: BbsCheckinForum, transport: HoyoTr
     void response.body?.cancel().catch(() => undefined);
     signal?.throwIfAborted();
     if (timeout.aborted) throw unavailable();
-    throw new HoyoRequestError("http", "米游社论坛目录返回异常 HTTP 响应。", response.status);
+    throw new HoyoRequestError("http", $t("bbs-forum-posts.text_a1c6becc82"), response.status);
   }
   const payload = await readGameRecordPayload(response, maxResponseBytes, deadline);
   signal?.throwIfAborted();
   if (timeout.aborted) throw unavailable();
   const retcode = payload?.retcode;
   if (typeof retcode !== "number" || !Number.isSafeInteger(retcode)) {
-    throw new HoyoRequestError("response", "米游社论坛目录返回的数据无效。");
+    throw new HoyoRequestError("response", $t("bbs-forum-posts.text_d6f2d91ea7"));
   }
-  if (retcode !== 0) throw new HoyoRequestError("api", "米游社论坛目录拒绝请求。", response.status, retcode);
+  if (retcode !== 0) throw new HoyoRequestError("api", $t("bbs-forum-posts.text_efca073e18"), response.status, retcode);
   return parsePosts(object(payload?.data)?.list, forumId, Number(game));
 }

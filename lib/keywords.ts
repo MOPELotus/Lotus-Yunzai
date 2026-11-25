@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { decodeChatFileBytes, maxChatFileBytes, readQqMessageMedia } from "./chat-files.ts";
 import { delegationSession } from "./command-delegation.ts";
 import { isMilkyOwnerSession } from "./command-permissions.ts";
@@ -58,7 +61,7 @@ const maxDraftMediaBytes = maxMediaDownloads * maxChatFileBytes;
 const finishCommand = "#结束添加";
 const managementCommand = /^#(全局)?(添加|删除|消息|词条)([\s\S]*)$/u;
 const compatibilityDirectory = /^#(全局表情|合并词条)([\s\S]*)$/u;
-const unboundMessage = "请通过已绑定的机器人连接管理词条。";
+const unboundMessage = $t("lib.keywords.text_072740aadb");
 
 function isId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
@@ -226,10 +229,10 @@ export function createKeywords(
   async function permission(event: MessageEvent, scope: Scope, verifiedRole?: GroupRole): Promise<string | undefined> {
     if (!hasKeywordSession(event)) return unboundMessage;
     if (event.adapter === "milky" ? isMilkyOwnerSession(event) : event.isMaster) return;
-    if (scope === "global") return "暂无权限，只有主人才能操作全局词条。";
+    if (scope === "global") return $t("lib.keywords.text_47de5af6a2");
     const settings = resolveSettings(event, scope);
-    if (settings.addLimit === 2) return "暂无权限，只有主人才能操作。";
-    if (event.message_type === "private" && !settings.addPrivate) return "禁止私聊管理词条。";
+    if (settings.addLimit === 2) return $t("lib.keywords.text_bc401012d5");
+    if (event.message_type === "private" && !settings.addPrivate) return $t("lib.keywords.text_d3f42bec82");
     if (settings.addLimit !== 1) return;
 
     if (event.message_type === "group") {
@@ -237,9 +240,9 @@ export function createKeywords(
     } else {
       const role = verifiedRole ?? await event.getGroupRole?.(scope).catch(() => undefined);
       if (role === "owner" || role === "admin") return;
-      if (role !== "member") return "无法确认管理员权限，请在群内操作。";
+      if (role !== "member") return $t("lib.keywords.text_1f06b14526");
     }
-    return "暂无权限，只有群管理员才能操作。";
+    return $t("lib.keywords.text_6ac4a2bd22");
   }
 
   async function list(event: MessageEvent, scope: Scope, argument: string, {
@@ -251,7 +254,7 @@ export function createKeywords(
     const listMode = !argument || argument.startsWith("列表");
     const page = listMode && argument ? Number(argument.slice(2).trim() || "1") : 1;
     if (listMode && ((!/^列表\s*\d*$/u.test(argument) && argument !== "") || !Number.isSafeInteger(page) || page < 1)) {
-      await event.reply("页码须为大于 0 的整数。");
+      await event.reply($t("lib.keywords.text_2d1d15824f"));
       return;
     }
 
@@ -261,7 +264,7 @@ export function createKeywords(
       // The original merged catalog kept the group entry for a duplicate key.
       entries = global ? new Map([...global, ...local]) : local;
     } catch {
-      if (active()) await event.reply("读取词条失败，请稍后重试。");
+      if (active()) await event.reply($t("lib.keywords.text_9c86949118"));
       return;
     }
     if (!active()) return;
@@ -270,20 +273,20 @@ export function createKeywords(
       .map(([name, versions], index) => `${index + 1}. ${name}(${versions.length})`)
       .reverse();
     if (!rows.length) {
-      await event.reply("暂无消息。");
+      await event.reply($t("lib.keywords.text_f5464b757d"));
       return;
     }
     const pages = Math.ceil(rows.length / pageSize);
     if (page > pages) {
-      await event.reply(`消息列表共有 ${pages} 页。`);
+      await event.reply($t("lib.keywords.text_2b993abb73", { "pages": pages }));
       return;
     }
 
-    const title = listMode ? `消息列表：第${page}页，共${rows.length}条` : `消息${argument}：共${rows.length}条`;
+    const title = listMode ? $t("lib.keywords.text_874a492aaf", { "page": page, "length": rows.length }) : $t("lib.keywords.text_9194f03c50", { "argument": argument, "length": rows.length });
     const body = rows.slice((page - 1) * pageSize, page * pageSize).join("\n");
     const pageCommand = includeGlobal ? "#合并词条列表" : scope === "global" ? "#全局消息列表" : "#消息列表";
     const pagesHint = listMode && page < pages
-      ? `更多内容请翻页查看\n如：${pageCommand}${page + 1}` : undefined;
+      ? $t("lib.keywords.text_924cca5720", { "pageCommand": pageCommand, "value2": page + 1 }) : undefined;
     const plain = pagesHint ? [title, body, pagesHint] : [title, body];
     const preview = compatibility && event.forward ? await previewKeywordList(body, {
       group: scope === "global" ? (event.isGroup ? event.group_id : undefined) : scope,
@@ -297,7 +300,7 @@ export function createKeywords(
     try {
       forwarded = await event.forward?.(nodes);
     } catch {
-      if (active()) await event.reply("词条列表转发结果未确认，请在聊天中核对。");
+      if (active()) await event.reply($t("lib.keywords.text_f50db0bac0"));
       return;
     }
     if (!forwarded && active()) await event.reply(plain.join("\n"));
@@ -313,10 +316,10 @@ export function createKeywords(
       removed = await store.remove(scope, indexed?.key ?? argument, indexed?.order);
       if (indexed) label = `${indexed.key}(${indexed.order})`;
     } catch {
-      await event.reply("删除词条失败，请稍后重试。");
+      await event.reply($t("lib.keywords.text_52c5172a0a"));
       return;
     }
-    await event.reply(removed ? `删除成功：${label}` : "删除错误：没有添加此关键词。");
+    await event.reply(removed ? $t("lib.keywords.text_2267d79251", { "label": label }) : $t("lib.keywords.text_c2fb99edf8"));
   }
 
   async function resume(event: MessageEvent): Promise<boolean> {
@@ -329,7 +332,7 @@ export function createKeywords(
       draft.controller.abort();
       if (!finishing || !hasKeywordSession(event)) return false;
       drafts.delete(sender.chat);
-      await event.reply("添加已失效，请重新添加。");
+      await event.reply($t("lib.keywords.text_5fd9cb77f4"));
       return true;
     }
     if (!hasKeywordSession(event) || draft.signal !== event[delegationSession]?.signal) return false;
@@ -337,7 +340,7 @@ export function createKeywords(
     if (!finishing) {
       const parts = content(event);
       if (draft.segments.length + parts.length > maxDraftSegments) {
-        await event.reply("词条片段过多，未收录这条消息。请发送 #结束添加 保存已收录的内容。");
+        await event.reply($t("lib.keywords.text_c40de7c1ae"));
       } else {
         addParts(draft, parts);
       }
@@ -351,27 +354,27 @@ export function createKeywords(
       const legacyGroup = draft.legacyGroup;
       const role = legacyGroup !== undefined && await readLegacyGroup(event) === legacyGroup
         ? await checkLegacyMember(event, legacyGroup) : undefined;
-      const denied = legacyGroup !== undefined && role === undefined ? "添加已失效，请重新添加。"
+      const denied = legacyGroup !== undefined && role === undefined ? $t("lib.keywords.text_5fd9cb77f4")
         : await permission(event, draft.scope, role);
       if (!hasKeywordSession(event)) return true;
       if (draft.active.aborted || draft.expires <= now()) {
-        await event.reply("添加已失效，请重新添加。");
+        await event.reply($t("lib.keywords.text_5fd9cb77f4"));
         return true;
       }
       const parts = draft.segments.filter(part => part !== undefined);
-      const omitted = draft.omitted ? `有 ${draft.omitted} 个媒体下载失败或超过限额，请重新发送。` : "";
+      const omitted = draft.omitted ? $t("lib.keywords.text_379679bea4", { "omitted": draft.omitted }) : "";
       if (denied || !parts.length) {
-        await event.reply(denied ?? `添加错误：没有添加内容。${omitted}`);
+        await event.reply(denied ?? $t("lib.keywords.text_918f54e3ee", { "omitted": omitted }));
         return true;
       }
       let count: number;
       try {
         count = await store.append(draft.scope, draft.name, parts, draft.active);
       } catch {
-        if (hasKeywordSession(event)) await event.reply("保存词条失败，请重新添加。");
+        if (hasKeywordSession(event)) await event.reply($t("lib.keywords.text_e377110431"));
         return true;
       }
-      await event.reply(`添加成功：${draft.name}${count > 1 ? `(${count})` : ""}${omitted ? `。${omitted}` : ""}`);
+      await event.reply($t("lib.keywords.text_91033bfab8", { "name": draft.name, "value2": count > 1 ? `(${count})` : "", "value3": omitted ? `。${omitted}` : "" }));
       return true;
     } finally {
       draft.controller.abort();
@@ -402,7 +405,7 @@ export function createKeywords(
 
     if (authorize && !allowsLegacyGroup(event, group)) return false;
     if (reply === undefined) {
-      await event.reply("该词条的内容当前无法发送。");
+      await event.reply($t("lib.keywords.text_3c0d3330ec"));
     } else {
       const { addReply, addAt, addRecall } = resolveSettings(event, group);
       await event.reply(reply, addReply, { at: addAt, recallMsg: addRecall });
@@ -418,7 +421,7 @@ export function createKeywords(
     if (!name) return false;
     if (name === finishCommand) {
       if (event.isDelegated) return false;
-      await event.reply("目前没有正在添加的词条。");
+      await event.reply($t("lib.keywords.text_c4650e8077"));
       return true;
     }
     const directory = compatibilityDirectory.exec(name);
@@ -440,7 +443,7 @@ export function createKeywords(
       if (!hasKeywordSession(event)) return true;
       if (group === undefined || !allowsCompatibilityList(event, group) || (sender.group === undefined && (!role ||
           (legacyGroup === undefined && (await recent(sender.actor)).group !== group)))) {
-        if (hasKeywordSession(event)) await event.reply("请在所属群发送 #合并词条列表。");
+        if (hasKeywordSession(event)) await event.reply($t("lib.keywords.text_70e164f18e"));
         return true;
       }
       await list(event, group, argument, { legacyGroup, includeGlobal: true, compatibility: true });
@@ -462,7 +465,7 @@ export function createKeywords(
     const role = await authorizeLegacy?.();
     const scope = global ? "global" : group ?? (role ? legacyGroup : undefined);
     if (scope === undefined) {
-      await event.reply("请先在群内发送消息，确定词条所属的群。");
+      await event.reply($t("lib.keywords.text_c4b8a1ccbf"));
       return true;
     }
     if (action === "消息" || action === "词条") {
@@ -471,7 +474,7 @@ export function createKeywords(
     }
     const denied = await permission(event, scope, role);
     if (denied || !argument) {
-      await event.reply(denied ?? `${action}错误：没有关键词。`);
+      await event.reply(denied ?? $t("lib.keywords.text_9c321d3151", { "action": action }));
       return true;
     }
     if (!hasKeywordSession(event)) return true;
@@ -487,7 +490,7 @@ export function createKeywords(
       draft.controller.abort();
     }
     if (drafts.size >= maxDrafts && !drafts.has(sender.chat)) {
-      await event.reply("当前添加会话较多，请稍后重试。");
+      await event.reply($t("lib.keywords.text_0c22254bca"));
       return true;
     }
     drafts.get(sender.chat)?.controller.abort();
@@ -503,7 +506,7 @@ export function createKeywords(
       draft.segments.length = 0;
     }, { once: true });
     drafts.set(sender.chat, draft);
-    await event.reply("请发送添加内容，完成后发送#结束添加", true, { at: true });
+    await event.reply($t("lib.keywords.text_81eda401a9"), true, { at: true });
     return true;
   }
 

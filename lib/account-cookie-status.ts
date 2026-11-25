@@ -1,7 +1,10 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createProfileStore } from "@lotus-yunzai/account";
 import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
 
-export const accountCookieStatusFeatures = ["[account] 登录状态检查", "account", "@lotus-yunzai/account"] as const;
+export const accountCookieStatusFeatures = [$t("lib.account-cookie-status.text_10978d99f7"), "account", "@lotus-yunzai/account"] as const;
 const command = /^#\s*(?:检查(?:我的)?c(?:oo)?k(?:ie)?(?:状态)?|c(?:oo)?k(?:ie)?(?:状态)?|我的c(?:oo)?k(?:ie)?状态)$/iu;
 
 export function matchesAccountCookieStatus(message: string) {
@@ -9,12 +12,12 @@ export function matchesAccountCookieStatus(message: string) {
 }
 
 const statusLabels = {
-  "not-logged-in": "未登录",
-  valid: "有效，已通过米游社在线核验",
-  "read-only": "有效，仅保存旧 Cookie，不能自动续期",
-  recovered: "已自动续期并通过在线核验",
-  expired: "凭据已失效，请重新扫码登录",
-  unknown: "暂无法核验，已保留原档案",
+  "not-logged-in": $t("lib.account-cookie-status.text_c1f6583730"),
+  valid: $t("lib.account-cookie-status.text_776cb09f85"),
+  "read-only": $t("lib.account-cookie-status.text_feb913547e"),
+  recovered: $t("lib.account-cookie-status.text_65c24ea3a3"),
+  expired: $t("lib.account-cookie-status.text_41738ba766"),
+  unknown: $t("lib.account-cookie-status.text_792e0fc1a4"),
 } as const;
 
 export function createAccountCookieStatus(profiles: ReturnType<typeof createProfileStore>,
@@ -29,8 +32,8 @@ export function createAccountCookieStatus(profiles: ReturnType<typeof createProf
     if (!active()) return;
     const ids = await profiles.listIds(qq).catch(() => undefined);
     if (!active()) return;
-    if (!ids) return "无法读取本人登录档案，请稍后重试。";
-    if (!ids.length) return "没有本人登录档案，可发送 #扫码登录。";
+    if (!ids) return $t("lib.account-cookie-status.text_0e7147c6b4");
+    if (!ids.length) return $t("lib.account-cookie-status.text_a601f3257b");
 
     const results: { id: number; status: keyof typeof statusLabels; revision?: string }[] = [];
     for (const id of ids) {
@@ -44,7 +47,7 @@ export function createAccountCookieStatus(profiles: ReturnType<typeof createProf
         }
         const verifyReadOnly = kind === "read-only" ? async () => {
           const current = await profiles.cookieCheckContext(qq, id);
-          if (!active() || current.context.revision !== context.revision) throw new DOMException("账号档案已变化。", "AbortError");
+          if (!active() || current.context.revision !== context.revision) throw new DOMException($t("lib.account-cookie-status.text_001fe58ae6"), "AbortError");
         } : undefined;
         const { state, revision } = await client.checkLoginCookie(context, { signal, verifyReadOnly });
         results.push({ id, status: state === "valid" && kind === "read-only" ? kind : state, revision });
@@ -56,8 +59,8 @@ export function createAccountCookieStatus(profiles: ReturnType<typeof createProf
 
     const lines = await Promise.all(results.map(async ({ id, status, revision }) => {
       const current = revision && await profiles.cookieCheckContext(qq, id).catch(() => undefined);
-      return `档案 ${id} · ${statusLabels[(current && current.context.revision === revision) ? status : "unknown"]}`;
+      return $t("lib.account-cookie-status.text_89406be5fa", { "id": id, "value2": statusLabels[(current && current.context.revision === revision) ? status : "unknown"] });
     }));
-    if (active()) return ["米游社登录状态", ...lines, "发送 #UID 查看并切换本人角色。需手动清理时输入 #清除登录 和档案编号，例如 #清除登录2。"].join("\n");
+    if (active()) return [$t("lib.account-cookie-status.text_7d7db0f135"), ...lines, $t("lib.account-cookie-status.text_a36beaa8a8")].join("\n");
   };
 }

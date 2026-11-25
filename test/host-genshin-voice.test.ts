@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, symlink } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -91,6 +92,6 @@ test("原神角色语音经 OneBot 群与 Milky 好友真实分发、确认列�
       const target = join(root, "plugins", "genshin");
       await cp(source, target, { recursive: true, filter: path => ![".git", "node_modules"].includes(basename(path)) });
       await symlink(join(source, "node_modules"), join(target, "node_modules"), "dir");
-      await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+      await linkHostPackages(root);
     });
 }, 35_000);

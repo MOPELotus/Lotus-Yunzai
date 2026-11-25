@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { MessageEvent } from "./messages.ts";
 
 // The standalone plugin also used sr. Limit its Latin suffixes to commands and panel names.
@@ -8,7 +11,7 @@ const genshinOrGeneric = /^#(?:原神)?/u;
 
 export function normalizeOriginalPictureCommand(message: string): string {
   const prefix = (starRail.exec(message) ?? zenless.exec(message) ?? genshinOrGeneric.exec(message))?.[0] ?? "";
-  return originalPicture.test(message.slice(prefix.length)) ? `${prefix}原图` : message;
+  return originalPicture.test(message.slice(prefix.length)) ? $t("lib.command-prefix.text_66fed98e1f", { "prefix": prefix }) : message;
 }
 
 export function normalizeGameCommand(event: MessageEvent): MessageEvent {

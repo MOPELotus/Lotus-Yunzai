@@ -1,11 +1,16 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { PageGotoParams, Runtime, ScreenshotOptions } from "@pixel.js/shotium";
+import { translateTemplate, translateTemplateStyles } from "../i18n-templates.ts";
 
 interface TemplateCompiler {
-  compile(source: string, options: { filename: string }): (data: object) => string;
+  compile(source: string, options: { filename: string; cache?: boolean; loader?: (filename: string) => string }): (data: object) => string;
 }
 
 let legacyRuntime: Promise<Runtime> | undefined;
@@ -73,16 +78,21 @@ export async function renderTemplate(data: TemplateData): Promise<Buffer[] | fal
   const temporary = await mkdtemp(join(tmpdir(), "lotus-shotium-"));
   try {
     const template = require("art-template") as TemplateCompiler;
-    const html = template.compile(await readFile(file, "utf8"), { filename: file })({
+    const compiled = template.compile(translateTemplate(await readFile(file, "utf8"), file), {
+      filename: file,
+      cache: false,
+      loader: filename => translateTemplate(readFileSync(filename, "utf8"), filename),
+    })({
       resPath: "./resources/",
       ...data,
     });
+    const html = await translateTemplateStyles(compiled, file);
     const expanded = join(temporary, "index.html");
     await writeFile(expanded, baseFor(html, dirname(file)), { mode: 0o600 });
     const runtime = await loadLegacyRuntime();
     if (!runtime.running) {
       runtime.start({ cacheDir: null });
-      console.log("[渲染] Shotium 静态 HTML CPU 后端已启动。");
+      console.log($t("lib.renderer.shotium.text_82d0bc0811"));
     }
 
     const options: ScreenshotOptions = {
@@ -115,7 +125,7 @@ export async function renderTemplate(data: TemplateData): Promise<Buffer[] | fal
     }
     return false;
   } catch {
-    console.warn("[渲染] Shotium 模板截图失败。");
+    console.warn($t("lib.renderer.shotium.text_d1d8f438f2"));
     return false;
   } finally {
     await rm(temporary, { recursive: true, force: true });

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { brandTextColor } from "./brand-color.ts";
 import { prepareBuiltinFonts, builtinFontFallback } from "./builtin-fonts.ts";
 import { builtinResourceDirectory } from "../../lib/builtin-resources.ts";
@@ -131,7 +134,7 @@ async function prepareInfoCard({ title, eyebrow, metadata, icon, width = 900 }: 
   { themeDirectory = Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || defaultTheme, backgroundPath, bodyFontPath, titleFontPath, typography }: InfoCardOptions) {
   prepareBuiltinFonts();
   if (typography) typography = { body: `${typography.body}, ${builtinFontFallback}`, title: `${typography.title}, ${builtinFontFallback}` };
-  if (!Number.isFinite(width) || width < 300) throw new RangeError("信息卡逻辑宽度最小为 300px。");
+  if (!Number.isFinite(width) || width < 300) throw new RangeError($t("info-card.text_28bf43cf12"));
   const [background, badge] = await Promise.all([
     backgroundPath ? loadImage(backgroundPath) : themeImage(themeDirectory),
     icon ? loadImage(Buffer.from(icon.buffer, icon.byteOffset, icon.byteLength)).catch(() => undefined) : undefined,
@@ -204,7 +207,7 @@ async function prepareInfoCard({ title, eyebrow, metadata, icon, width = 900 }: 
     ctx.shadowBlur = 2;
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
-    drawInfoText(ctx, ["Lotus-Yunzai"], width / 2, bottom + 30, { size: 12, align: "center" });
+    drawInfoText(ctx, [$t("info-card.text_3867834e77")], width / 2, bottom + 30, { size: 12, align: "center" });
   }
   return { width, height, draw };
 }
@@ -212,9 +215,9 @@ async function prepareInfoCard({ title, eyebrow, metadata, icon, width = 900 }: 
 export async function renderInfoCardPages(header: InfoCardHeader, buildBody: (layout: InfoCardBodyLayout) => InfoCardBody,
   { pageHeight, mode = "auto", scale = 4, allowHalfScale = scale === 4, ...options }: InfoCardOptions & { readonly pageHeight?: number } = {}):
   Promise<readonly PngRender[]> {
-  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("信息卡缩放比例须在 1 至 4 之间。");
+  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError($t("info-card.text_9a5c3b0f9a"));
   if (pageHeight !== undefined && (!Number.isFinite(pageHeight) || pageHeight < 1)) {
-    throw new RangeError("信息卡分页高度须至少为 1px。");
+    throw new RangeError($t("info-card.text_65a627fa1f"));
   }
   const { width, height, draw } = await prepareInfoCard(header, buildBody, options);
   const pages = pageHeight === undefined ? 1 : Math.ceil(height / pageHeight);

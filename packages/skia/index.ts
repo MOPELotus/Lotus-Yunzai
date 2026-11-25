@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { Canvas, loadImage, type CanvasRenderingContext2D, type EngineDetails } from "skia-canvas";
 import { encodeBandedPng, ImageSizeLimitError } from "./banded-png.ts";
@@ -38,10 +41,10 @@ function checkEngine(canvas: Canvas, mode: "gpu" | "cpu"): EngineDetails {
   const engine = canvas.engine;
   if (mode === "gpu" &&
       (engine.renderer !== "GPU" || !engine.device || /llvmpipe|lavapipe|swiftshader|software/iu.test(engine.device))) {
-    throw new BackendError(engine.error || "Skia 未启用物理 GPU。");
+    throw new BackendError(engine.error || $t("index.text_87b1797b93"));
   }
   if (mode === "cpu" && engine.renderer !== "CPU") {
-    throw new BackendError("Skia 未启用 CPU 后端。");
+    throw new BackendError($t("index.text_2f7faeefc0"));
   }
   return engine;
 }
@@ -67,10 +70,10 @@ async function* readBands(canvas: Canvas, width: number, height: number, mode: "
         tile.getContext("2d").drawCanvas(canvas, before - left, above - top);
         raw = await tile.toBuffer("raw", { colorType: "rgba", premultiplied: false });
         checkEngine(tile, mode);
-        if (raw.length !== tileWidth * tileHeight * 4) throw new Error("图像分带的像素尺寸不匹配。");
+        if (raw.length !== tileWidth * tileHeight * 4) throw new Error($t("index.text_588387e089"));
       } catch (error) {
         if (error instanceof BackendError) throw error;
-        throw new BackendError(`Skia ${mode.toUpperCase()} 分带导出失败。`, { cause: error });
+        throw new BackendError($t("index.text_121da2c6b1", { "value1": mode.toUpperCase() }), { cause: error });
       }
       for (let row = 0; row < rows; row++) {
         const input = ((above + row) * tileWidth + before) * 4;
@@ -91,7 +94,7 @@ function createSurface(width: number, height: number, mode: "gpu" | "cpu") {
     return { canvas, context };
   } catch (error) {
     if (error instanceof BackendError) throw error;
-    throw new BackendError(`无法初始化 Skia ${mode.toUpperCase()} 后端。`, { cause: error });
+    throw new BackendError($t("index.text_722e85b72f", { "value1": mode.toUpperCase() }), { cause: error });
   }
 }
 
@@ -108,7 +111,7 @@ async function render(width: number, height: number, draw: Draw, mode: "gpu" | "
   try {
     png = await canvas.toBuffer("png", { filters: "auto" });
   } catch (error) {
-    throw new BackendError(`Skia ${mode.toUpperCase()} 编码 PNG 失败。`, { cause: error });
+    throw new BackendError($t("index.text_8520a16020", { "value1": mode.toUpperCase() }), { cause: error });
   }
   const engine = checkEngine(canvas, mode);
   return { png: markGeneratedImage(png), engine };
@@ -124,7 +127,7 @@ async function withBackend<T extends object>(
     return await draw("gpu");
   } catch (error) {
     if (!(error instanceof BackendError)) throw error;
-    console.warn(`[渲染] ${error.message} 改用 Skia CPU 后端。`);
+    console.warn($t("index.text_03494cc773", { "message": error.message }));
     return { ...await draw("cpu"), fallbackReason: error.message };
   }
 }
@@ -135,7 +138,7 @@ function renderByBackend(width: number, height: number, draw: Draw, mode: Render
 
 function renderByMode(width: number, height: number, draw: Draw, mode: RenderMode): Promise<PngRender> {
   if (width > maxImageDimension || height > maxImageDimension || width > Math.floor(maxImagePixels / height)) {
-    throw new ImageSizeLimitError("画布单边超过 1,048,576 像素，或总像素超过 2.56 亿。");
+    throw new ImageSizeLimitError($t("index.text_d4b5f4ba17"));
   }
   if (width <= singleSurfaceDimension && height <= singleSurfaceDimension) return renderByBackend(width, height, draw, mode);
   // GPU readbacks for oversized cards use one set of bounded surfaces at a time per process.
@@ -148,7 +151,7 @@ function renderByMode(width: number, height: number, draw: Draw, mode: RenderMod
 export async function renderRgba(width: number, height: number, draw: Draw, mode: RenderMode = "auto") {
   if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1 ||
       width > 8_192 || height > 8_192 || width * height > 24_000_000) {
-    throw new ImageSizeLimitError("RGBA 帧单边须在 8,192 像素内，总像素须在 2,400 万内。");
+    throw new ImageSizeLimitError($t("index.text_d0d3691df5"));
   }
 
   return withBackend(mode, async (backend) => {
@@ -157,9 +160,9 @@ export async function renderRgba(width: number, height: number, draw: Draw, mode
     let rgba: Buffer;
     try {
       rgba = await canvas.toBuffer("raw", { colorType: "rgba", premultiplied: false });
-      if (rgba.byteLength !== width * height * 4) throw new Error("RGBA 帧像素尺寸不匹配。");
+      if (rgba.byteLength !== width * height * 4) throw new Error($t("index.text_fccec90d21"));
     } catch (error) {
-      throw new BackendError(`Skia ${backend.toUpperCase()} 导出 RGBA 帧失败。`, { cause: error });
+      throw new BackendError($t("index.text_f6bae4175a", { "value1": backend.toUpperCase() }), { cause: error });
     }
     return { rgba, engine: checkEngine(canvas, backend) };
   });
@@ -177,7 +180,7 @@ export async function renderRasterThumbnail(bytes: Buffer, maxSide: number, maxP
 
 function requirePositivePixels(width: number, height: number) {
   if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) {
-    throw new RangeError("画布尺寸须为正整数。");
+    throw new RangeError($t("index.text_8ddca93a07"));
   }
 }
 
@@ -192,7 +195,7 @@ export async function renderPng(width: number, height: number, draw: Draw, mode:
   { allowHalfScale = false, renderScale = 4 }: { readonly allowHalfScale?: boolean; readonly renderScale?: number } = {}): Promise<PngRender> {
   requirePositivePixels(width, height);
   if (!Number.isFinite(renderScale) || renderScale < 1 || renderScale > 4) {
-    throw new RangeError("画布缩放比例须在 1 至 4 之间。");
+    throw new RangeError($t("index.text_fd927083c4"));
   }
   const initialScale = Math.min(1, nativeImageRasterScale() / renderScale);
   const renderAt = (scale: number) => renderByMode(Math.ceil(width * scale), Math.ceil(height * scale),

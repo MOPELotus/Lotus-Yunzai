@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { cp, mkdir, symlink } from "node:fs/promises";
+import { cp, mkdir, readdir, symlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export function disableMemberPrewarm(root: string) {
@@ -11,8 +11,20 @@ export function disableMemberPrewarm(root: string) {
   }
 }
 
+/** Keep the checkout directory real while sharing immutable workspace sources with isolated hosts. */
+export async function linkHostPackages(root: string) {
+  const target = join(root, "packages");
+  await mkdir(target, { recursive: true });
+  for (const child of await readdir(join(import.meta.dir, "../packages"), { withFileTypes: true })) {
+    if (!child.isDirectory() || existsSync(join(target, child.name))) continue;
+    await symlink(join(import.meta.dir, "../packages", child.name), join(target, child.name), "dir");
+  }
+}
+
 export async function copyHost(root: string) {
   await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
+  await cp(new URL("../i18n", import.meta.url), join(root, "i18n"), { recursive: true });
+  await linkHostPackages(root);
   // Keep test listeners on loopback unless a case explicitly selects another bind address.
   const hostSource = await Bun.file(new URL("../app.ts", import.meta.url)).text();
   // Protocol/plugin cases configure storage explicitly; the managed service has real isolated lifecycle tests.
@@ -27,6 +39,7 @@ export async function copyHost(root: string) {
   for (const file of ["package.json", ...sources]) {
     if (!file.endsWith(".test.ts")) await cp(join(source, file), join(system, file));
   }
+  await cp(join(source, "i18n"), join(system, "i18n"), { recursive: true });
   const dependencies = join(source, "node_modules");
   if (existsSync(dependencies)) await symlink(dependencies, join(system, "node_modules"), "dir");
 }

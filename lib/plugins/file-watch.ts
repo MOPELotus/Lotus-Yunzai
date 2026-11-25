@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { constants, lstatSync, watch, type FSWatcher } from "node:fs";
 import { open } from "node:fs/promises";
@@ -86,7 +89,7 @@ export function watchLegacyFiles(
       directory.watcher = watcher;
       directory.identity = identity;
     } catch {
-      console.warn("[插件] 无法监听旧版插件目录。");
+      console.warn($t("lib.plugins.file-watch.text_a8ca408743"));
     }
   }
 
@@ -100,7 +103,7 @@ export function watchLegacyFiles(
         try {
           await reconcile(directory.path, stopSignal.signal);
         } catch {
-          if (!stopSignal.signal.aborted) console.warn("[插件] 无法刷新旧版插件目录。");
+          if (!stopSignal.signal.aborted) console.warn($t("lib.plugins.file-watch.text_a9d927f9bf"));
         }
       }
     }).finally(() => {
@@ -152,7 +155,7 @@ export function watchLegacyFiles(
         for (const directory of states.values()) schedule(directory);
       });
     } catch {
-      console.warn("[插件] 无法监听插件根目录。");
+      console.warn($t("lib.plugins.file-watch.text_7d09d5ec34"));
     }
     for (const directory of states.values()) {
       bind(directory);

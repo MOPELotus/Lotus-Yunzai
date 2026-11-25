@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isMap, isScalar, parseDocument } from "yaml";
 import { readOptionalLocalConfig } from "./config.ts";
 import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global-config-write.ts";
@@ -29,6 +32,6 @@ export async function persistInitialRenderPreset(root: URL, preset: ImageRenderP
     });
   } catch (cause) {
     signal.throwIfAborted();
-    throw new Error("无法保存 bot.yaml 中的图片渲染档位，请检查文件后重试。", { cause });
+    throw new Error($t("lib.startup-render-preset.text_1f6e4e92a5"), { cause });
   }
 }

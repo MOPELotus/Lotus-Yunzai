@@ -1,6 +1,9 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { RecallResult } from "../messages.ts";
 
-export const ownGroupCardSession = Symbol("当前机器人自身群名片会话");
+export const ownGroupCardSession = Symbol($t("lib.adapters.own-group-card.text_d27deb086a"));
 
 export interface OwnGroupCardAccount {
   readonly adapter: "onebot" | "milky";

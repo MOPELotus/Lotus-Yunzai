@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isAbsolute } from "node:path";
 
 const executable = process.execPath;
@@ -22,7 +25,7 @@ export function canRestartHost(): boolean {
 }
 
 export function restartHost(pausedAt?: number): never {
-  if (!canRestartHost() || !process.execve) throw new Error("当前运行环境不支持进程内重启，需由部署管理器重启。");
+  if (!canRestartHost() || !process.execve) throw new Error($t("lib.process-restart.text_2ba1829d55"));
 
   // execve inherits cwd and stdio. Cleanup must already have completed in the caller.
   process.chdir(startupDirectory);

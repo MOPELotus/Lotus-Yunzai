@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { builtinResourceDirectory } from "./builtin-resources.ts";
 import { readLiteralObjectExport } from "@lotus-yunzai/gacha/literal-exports";
 import { linkSync, renameSync } from "node:fs";
@@ -13,7 +16,7 @@ export type AliasGame = "gs" | "sr";
 type Game = AliasGame;
 type Preset = { matches: Map<string, Set<string>>; displays: Map<string, string[]> };
 const games = ["gs", "sr"] as const;
-const gameLabels = { gs: "原神", sr: "星铁" };
+const gameLabels = { gs: $t("lib.game-character-aliases.text_d1597c51ed"), sr: $t("lib.game-character-aliases.text_a2927891f0") };
 const rootDirectory = fileURLToPath(new URL("../", import.meta.url)).replace(/\/$/u, "");
 const maxBytes = 64 * 1024;
 const legacyDone = "# 已导入旧角色昵称";
@@ -100,7 +103,7 @@ async function independentStarRailSetting(root: string, filename: string) {
     if (local || defaults) {
       const configured = yamlMapping(local);
       const bundled = yamlMapping(defaults);
-      if (!configured && !bundled) throw new TypeError("旧星铁设置文件应为 YAML 映射。");
+      if (!configured && !bundled) throw new TypeError($t("lib.game-character-aliases.text_371030e3c7"));
       return { ...bundled, ...configured };
     }
   }
@@ -175,7 +178,7 @@ async function snapshot(root: string, game: Game) {
     : await firstAliasFile(root, legacyConfigs(root, "role.name.yaml"))
       .then(source => ({ source, aliases: yamlMapping(source) })).catch(() => undefined);
   const firstGenshinAliases = game === "gs" && legacy && !legacy.source;
-  const generic = legacy?.aliases ?? (firstGenshinAliases ? { 神里绫华: ["小乌龟"] } : undefined);
+  const generic = legacy?.aliases ?? (firstGenshinAliases ? { 神里绫华: [$t("lib.game-character-aliases.text_5cc74bc2af")] } : undefined);
   const independent = game !== "sr" || (managed && lines.includes(independentDone))
     ? undefined : await independentStarRailSetting(root, "alias.yaml").catch(() => undefined);
   if (!generic && !independent) return { base, legacy: legacy?.source, content };
@@ -213,7 +216,7 @@ export function matchGameCharacterAliasCommand(message: string) {
   const m = /^(#(?:原神|星铁|崩铁)?|\*)\s*别名(?:(原神|星铁|崩铁))?(设置|删除|列表|帮助)?(?:\s+(.+))?$/u.exec(message);
   if (!m) return;
   const [, prefix, marker, operation, args] = m;
-  const selected = marker ?? (prefix === "*" ? "星铁" : prefix!.slice(1));
+  const selected = marker ?? (prefix === "*" ? $t("lib.game-character-aliases.text_a2927891f0") : prefix!.slice(1));
   const game: Game | undefined = selected === "原神" ? "gs" : selected ? "sr" : undefined;
   const parts = args?.trim().split(/\s+/u) ?? [];
   if (operation === "设置" && parts.length === 2) return { game, type: "set", role: parts[0]!, alias: parts[1]! } as const;
@@ -350,7 +353,7 @@ export function createGameCharacterAliasManager(lockFile: AcquireRoleArchiveLock
   async function run(command: AliasCommand | LegacyWrite, context: AliasContext, legacyAccess?: LegacyAccess) {
     if (signal.aborted || context.isDelegated) return;
     if (command.type === "help") {
-      return "角色别名支持 #别名原神设置 角色名 别名、*别名设置 角色名 别名、#别名删除 别名和 #别名列表。\nhttps://www.lotusshared.cn/yunzai/";
+      return $t("lib.game-character-aliases.text_3c7f616f45");
     }
     const chosen = command.game ? [command.game] : games;
     const owner = () => !signal.aborted && !context.isDelegated &&
@@ -358,7 +361,7 @@ export function createGameCharacterAliasManager(lockFile: AcquireRoleArchiveLock
     const legacy = command.type === "legacy-set" || command.type === "legacy-delete";
     const permitted = () => legacy ? legacyAccess?.permitted() : owner();
     const stillActive = () => legacy ? legacyAccess?.active() : owner();
-    const denied = legacy ? "暂无权限修改角色别名。" : "仅限本机器人主人修改角色别名。";
+    const denied = legacy ? $t("lib.game-character-aliases.text_0462c6f2f5") : $t("lib.game-character-aliases.text_8847b1453b");
     try {
       if (command.type === "list") {
         const entries = await Promise.all(chosen.map(async game => [game, await snapshot(root, game)] as const));
@@ -367,19 +370,19 @@ export function createGameCharacterAliasManager(lockFile: AcquireRoleArchiveLock
             const row = parseRow(line);
             return row ? [`${row.role}：${row.labels.join("，")}`] : [];
           });
-          return lines.length ? `【${gameLabels[game]}自定义别名】\n${lines.join("\n").slice(0, 3_000)}` : `暂无${gameLabels[game]}自定义别名。`;
+          return lines.length ? $t("lib.game-character-aliases.text_dcfecf941d", { "value1": gameLabels[game], "value2": lines.join("\n").slice(0, 3_000) }) : $t("lib.game-character-aliases.text_ecf6afe234", { "value1": gameLabels[game] });
         }).join("\n");
       }
       if (!await permitted() || signal.aborted) return denied;
       const setting = command.type === "set" || command.type === "legacy-set";
       const requested = command.type === "legacy-set" ? command.aliases : [command.alias];
       if (!requested.length || requested.some(alias => !validCharacterAlias(alias))) {
-        return "别名须为 1 到 24 个文字、数字或常用连接符，且不能是纯数字。";
+        return $t("lib.game-character-aliases.text_8ffdad8d23");
       }
       const directory = dirname(files(root, "gs").target);
       await mkdir(directory, { recursive: true, mode: 0o700 });
-      if (await realpath(directory) !== directory) return "角色别名配置目录不可用。";
-      const lock = await lockFile(join(directory, ".aliases.sqlite"), "角色别名");
+      if (await realpath(directory) !== directory) return $t("lib.game-character-aliases.text_a7f37a4e59");
+      const lock = await lockFile(join(directory, ".aliases.sqlite"), $t("lib.game-character-aliases.text_4a4446f08d"));
       try {
         const { entries, presets, legacyPresets, lookups, names } = await lookup(chosen, setting, legacy);
         const key = characterAliasKey(requested[0]!);
@@ -387,9 +390,9 @@ export function createGameCharacterAliasManager(lockFile: AcquireRoleArchiveLock
           ? [...names(game, command.role)].map(role => ({ game, role }))
           : lookups.get(game)?.has(key) ? [{ game, role: lookups.get(game)!.get(key)! }] : []);
         if (!setting && legacy && chosen.some(game =>
-          presets.get(game)!.matches.has(key) || legacyPresets.get(game)?.matches.has(key))) return "默认别名设置，不能删除。";
+          presets.get(game)!.matches.has(key) || legacyPresets.get(game)?.matches.has(key))) return $t("lib.game-character-aliases.text_e52e28be1e");
         if (candidates.length !== 1) return candidates.length
-          ? "名称有多个匹配，请指定游戏或使用角色标准名。" : setting ? "未找到该角色。" : "未找到可删除的自定义别名。";
+          ? $t("lib.game-character-aliases.text_c4f812f194") : setting ? $t("lib.game-character-aliases.text_c04eb817a5") : $t("lib.game-character-aliases.text_838809f607");
         const { game, role } = candidates[0]!;
         const source = entries.get(game)!;
         const target = files(root, game).target;
@@ -403,13 +406,13 @@ export function createGameCharacterAliasManager(lockFile: AcquireRoleArchiveLock
             occupied.add(normalized);
             added.push(alias);
           }
-          if (!added.length) return legacy ? "设置失败：别名错误或已存在。" : `别名 ${requested[0]} 已存在。`;
+          if (!added.length) return legacy ? $t("lib.game-character-aliases.text_a7b73a0cf2") : $t("lib.game-character-aliases.text_48d34b542a", { "value1": requested[0] });
           lines.push(`${legacy ? legacyPrefix : ""}${role}：${added.join("，")}`);
         } else {
-          if (presets.get(game)!.matches.has(key)) return "默认别名设置，不能删除。";
+          if (presets.get(game)!.matches.has(key)) return $t("lib.game-character-aliases.text_e52e28be1e");
           const rows = lines.map(parseRow);
           if (legacy && !owner() && rows.some(row => row && !row.legacy && row.labels.some(label => characterAliasKey(label) === key))) {
-            return "该别名仅限本机器人主人删除。";
+            return $t("lib.game-character-aliases.text_c172db5eea");
           }
           lines = lines.flatMap((line, index) => {
             const row = rows[index];
@@ -420,7 +423,7 @@ export function createGameCharacterAliasManager(lockFile: AcquireRoleArchiveLock
           });
         }
         const content = lines.length ? lines.join("\n") + "\n" : "";
-        if (Buffer.byteLength(content) > maxBytes) return "角色别名配置已达到大小上限。";
+        if (Buffer.byteLength(content) > maxBytes) return $t("lib.game-character-aliases.text_f212ecbec1");
         const staging = await mkdtemp(join(directory, ".aliases-"));
         try {
           const temporary = join(staging, "next.cfg");
@@ -435,20 +438,20 @@ export function createGameCharacterAliasManager(lockFile: AcquireRoleArchiveLock
           const latest = await snapshot(root, game);
           if (signal.aborted || !stillActive()) return denied;
           if (!sameSource(latest.base, source.base) || !sameSource(latest.legacy, source.legacy) || latest.content !== source.content) {
-            return "别名已变更，请重新操作。";
+            return $t("lib.game-character-aliases.text_7588cbf536");
           }
           if (latest.base?.file === target) renameSync(temporary, target);
           else linkSync(temporary, target);
         } finally {
           await rm(staging, { recursive: true, force: true });
         }
-        if (!setting) return legacy ? `删除${role}别名成功：${requested[0]}` : `别名 ${requested[0]} 已删除。`;
-        return legacy ? `设置别名成功：${added.join("、")}` : `${role} 的别名 ${added[0]} 已添加。`;
+        if (!setting) return legacy ? $t("lib.game-character-aliases.text_3124f2ce30", { "role": role, "value2": requested[0] }) : $t("lib.game-character-aliases.text_5951100f8d", { "value1": requested[0] });
+        return legacy ? $t("lib.game-character-aliases.text_836ad34414", { "value1": added.join("、") }) : $t("lib.game-character-aliases.text_7cd35fc5f6", { "role": role, "value2": added[0] });
       } finally {
         lock.close();
       }
     } catch {
-      return signal.aborted ? undefined : "角色别名暂时无法读取或更新。";
+      return signal.aborted ? undefined : $t("lib.game-character-aliases.text_8d76c285ec");
     }
   }
 

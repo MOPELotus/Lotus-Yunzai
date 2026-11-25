@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("account", messageCatalog.messages);
 export interface DeviceBinding {
   readonly id: string;
   readonly fp: string;
@@ -19,7 +22,7 @@ const aliases: Readonly<Record<DeviceField, readonly string[]>> = {
 const labels = new Set(Object.values(aliases).flat());
 
 function formatError(): never {
-  throw new TypeError("设备信息格式无效，请发送设备 JSON 或带名称的设备 ID 和 FP。");
+  throw new TypeError($t("device-binding.text_90c0b0a166"));
 }
 
 function object(value: unknown): Fields | undefined {
@@ -46,7 +49,7 @@ function readJson(input: string): Fields {
     else if (token.endsWith(":")) {
       const keys = scopes.at(-1);
       const key = JSON.parse(token.slice(0, -1)) as string;
-      if (keys?.has(key)) throw new TypeError("设备 JSON 含重复字段，请保留一份确认的设备信息。");
+      if (keys?.has(key)) throw new TypeError($t("device-binding.text_5d3e5cca57"));
       keys?.add(key);
     }
   }
@@ -62,7 +65,7 @@ function readText(input: string): Fields {
     if (!labels.has(key)) formatError();
     const value = match[2] ?? match[3] ?? match[4];
     if (Object.hasOwn(fields, key) && fields[key] !== value) {
-      throw new TypeError("输入中的设备字段相互冲突，请只发送同一设备的信息。");
+      throw new TypeError($t("device-binding.text_87110b5e0f"));
     }
     fields[key] = value;
     end = match.index + match[0].length;
@@ -88,7 +91,7 @@ function values(input: Fields, field: DeviceField): string[] {
 function single(candidates: readonly string[]): string | undefined {
   const [first] = candidates;
   if (candidates.some((candidate) => candidate !== first)) {
-    throw new TypeError("输入中的设备字段相互冲突，请只发送同一设备的信息。");
+    throw new TypeError($t("device-binding.text_87110b5e0f"));
   }
   return first;
 }
@@ -113,23 +116,23 @@ export function parseDeviceBinding(input: string): DeviceBinding {
   const source = nested ?? root;
   for (const candidate of [root, source]) {
     if (Object.hasOwn(candidate, "ext_fields") || (Object.hasOwn(candidate, "app_name") && Object.hasOwn(candidate, "seed_id"))) {
-      throw new TypeError("设备指纹申请中的 FP 是种子，请提供已有的真机设备 ID 和 FP。");
+      throw new TypeError($t("device-binding.text_9bf70b125f"));
     }
   }
   if ((Object.hasOwn(root, "retcode") || Object.hasOwn(source, "code")) &&
       (!(root.retcode === 0 || root.retcode === "0") || !(source.code === 200 || source.code === "200"))) {
-    throw new TypeError("设备指纹响应未确认成功，请提供已有的真机设备 ID 和 FP。");
+    throw new TypeError($t("device-binding.text_704a85f1a1"));
   }
 
   const id = single(values(source, "id"));
   const fp = single(values(source, "fp"));
-  if (!id || !fp) throw new TypeError("请在同一条设备信息中同时提供设备 ID 和 FP。");
+  if (!id || !fp) throw new TypeError($t("device-binding.text_00c7b2076f"));
   if (nested) {
     single([id, ...values(root, "id")]);
     single([fp, ...values(root, "fp")]);
   }
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/u.test(id) || !/^[\da-f]{13}$/iu.test(fp)) {
-    throw new TypeError("设备 ID 或 FP 的格式无效。");
+    throw new TypeError($t("device-binding.text_a0d5419d13"));
   }
 
   function metadata(field: DeviceField): string | undefined {
@@ -167,11 +170,11 @@ export function parseAndroidDeviceInfo(input: string): AndroidDeviceInfo | undef
   for (const field of required) {
     const value = root[field];
     if (typeof value !== "string" || !value.trim() || value.length > 1024 || /[\u0000-\u001f\u007f]/u.test(value)) {
-      throw new TypeError("安卓设备参数不完整或无效，请重新复制 APK 导出的完整 JSON（含 OAID）。");
+      throw new TypeError($t("device-binding.text_ffbef5173b"));
     }
     result[field] = value.trim();
   }
-  if (result.oaid!.startsWith("error_")) throw new TypeError("APK 未取得有效 OAID，请重新获取设备参数。");
+  if (result.oaid!.startsWith("error_")) throw new TypeError($t("device-binding.text_024297a620"));
   const optional = ["deviceBrand", "manufacturer", "hardware", "romCapacity", "romRemain", "screenSize", "sdCapacity", "sdRemain",
     "buildTime", "buildUser", "ramCapacity", "ramRemain", "sdkVersion", "display", "packageVersion"];
   for (const field of optional) {
@@ -179,14 +182,14 @@ export function parseAndroidDeviceInfo(input: string): AndroidDeviceInfo | undef
     if (value === undefined || value === null || value === "") continue;
     const text = typeof value === "number" && Number.isFinite(value) ? String(value) : value;
     if (typeof text !== "string" || text.length > 1024 || /[\u0000-\u001f\u007f]/u.test(text)) {
-      throw new TypeError("安卓设备参数格式无效，请重新复制 APK 导出的完整 JSON。");
+      throw new TypeError($t("device-binding.text_aac811e11e"));
     }
     result[field] = text.trim();
   }
   const version = single(values(root, "androidVersion")) ?? /:([^/]+)\//u.exec(result.deviceFingerprint!)?.[1];
   if (version) {
     const normalized = version.replace(/^Android\s+/iu, "");
-    if (!/^\d{1,2}(?:L|(?:\.\d{1,2}){0,2})$/iu.test(normalized)) throw new TypeError("安卓系统版本格式无效。");
+    if (!/^\d{1,2}(?:L|(?:\.\d{1,2}){0,2})$/iu.test(normalized)) throw new TypeError($t("device-binding.text_1f5fcc390f"));
     result.osVersion = normalized;
   }
   return result as unknown as AndroidDeviceInfo;

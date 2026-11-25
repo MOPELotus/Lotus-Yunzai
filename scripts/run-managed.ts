@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { formatTerminalLog } from "../lib/terminal-log-format.ts";
 import { realpath } from "node:fs/promises";
 import { lockFile, managedHostLockPath } from "../lib/file-lock.ts";
@@ -12,14 +16,14 @@ export async function runManaged(directory: string, ready?: () => Promise<void>,
   const root = await realpath(directory);
   // Keep the same lock across a supervised checkout replacement.
   const lock = await lockFile(managedHostLockPath(root),
-    "托管宿主", 0, "当前目录已有托管宿主运行。");
+    $t("scripts.run-managed.text_e533bb7ee6"), 0, $t("scripts.run-managed.text_b7751da923"));
   const supervisor = createManagedSupervisor(root, { onWorkerReady, powerState });
   let stopping = false;
   let requestedSignal: "SIGINT" | "SIGTERM" | undefined;
   let reportedInterrupt = false;
   const normalizeStop = (status: number) => {
     if (!requestedSignal || (status !== (requestedSignal === "SIGINT" ? 130 : 143) && status !== 0)) return status;
-    if (!reportedInterrupt && !ready) console.info(formatTerminalLog("mark", "结束运行"));
+    if (!reportedInterrupt && !ready) console.info(formatTerminalLog("mark", $t("scripts.run-managed.text_e5a73c676a")));
     reportedInterrupt = true;
     return 0;
   };
@@ -42,7 +46,7 @@ export async function runManaged(directory: string, ready?: () => Promise<void>,
         await ready();
       } catch {
         await supervisor.stop();
-        throw new Error("无法通知 PM2 宿主已就绪。");
+        throw new Error($t("scripts.run-managed.text_2ce3fdb802"));
       }
     }
     const status = await supervisor.done;
@@ -50,7 +54,7 @@ export async function runManaged(directory: string, ready?: () => Promise<void>,
   } catch (error) {
     const status = started ? await supervisor.done : 1;
     if (requestedSignal && (status === (requestedSignal === "SIGINT" ? 130 : 143) || status === 0)) return normalizeStop(status);
-    console.error(error instanceof Error ? error.message : "托管宿主无法启动。");
+    console.error(error instanceof Error ? error.message : $t("scripts.run-managed.text_07741e2b75"));
     return status || 1;
   } finally {
     closeControl?.();

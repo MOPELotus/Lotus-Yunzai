@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, readdir } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -67,7 +70,7 @@ export function createManagedSupervisor(directory: string, options: {
     try {
       options.onWorkerReady?.(ready);
     } catch {
-      console.warn("[托管] 无法记录工作进程的就绪状态。");
+      console.warn($t("lib.managed-supervisor.text_1c6402dff0"));
     }
   }
 
@@ -116,14 +119,14 @@ export function createManagedSupervisor(directory: string, options: {
   ) {
     let ready: ReadyUpdate | ReadyBatchUpdate | ReadyInstall | undefined;
     let stage: Awaited<ReturnType<typeof stageUpdate>> | undefined;
-    const log = request.install ? "[插件安装]" : "[更新]";
+    const log = request.install ? $t("lib.managed-supervisor.text_13c5481870") : $t("lib.managed-supervisor.text_59e89cebf5");
     const active = () => !stopped && !signal.aborted && current === worker;
     const storageMatches = async () => {
       if (worker.storage === undefined) return active();
       const diskRevision = await readStorageRevision(root, options.env ?? process.env, signal);
       if (!active()) return false;
       if (diskRevision === storageRevision(worker.storage)) return true;
-      console.warn(`${log} 当前磁盘上的 Valkey 配置与运行进程不同，原工作进程保持不变。`);
+      console.warn($t("lib.managed-supervisor.text_7fdd692944", { "log": log }));
       report("storage-changed");
       return false;
     };
@@ -143,7 +146,7 @@ export function createManagedSupervisor(directory: string, options: {
         : await prepareUpdate(rootUrl, directories, request.requested, signal, request.force);
       if (result.status !== "ready") {
         if ("target" in result && typeof result.target === "string" && result.status !== "current" && !signal.aborted) {
-          console.warn(`[更新] ${sanitizeRuntimeLog(result.target, 120)} 未通过全量更新检查（${result.status}）。`);
+          console.warn($t("lib.managed-supervisor.text_7c6f0646d4", { "value1": sanitizeRuntimeLog(result.target, 120), "status": result.status }));
         }
         if (!signal.aborted) report(result.status === "exists" ? "current" : result.status);
         return;
@@ -166,7 +169,7 @@ export function createManagedSupervisor(directory: string, options: {
         const path = join(root, "plugins", script);
         const bytes = (await lstat(dirname(path))).isDirectory() ? await readFlatScript(path) : undefined;
         if (!bytes || legacyScriptHash(bytes) !== hash) {
-          throw new Error(`V3 脚本 ${JSON.stringify(script)} 与当前生效版本不同。请恢复磁盘文件，或确认修复后已热重载，再重试。`);
+          throw new Error($t("lib.managed-supervisor.text_9de9cc7cdb", { "value1": JSON.stringify(script) }));
         }
       }
       if (!active() || !await storageMatches()) return;
@@ -202,16 +205,16 @@ export function createManagedSupervisor(directory: string, options: {
             : { ...destination, result: "rolled-back" });
         }));
         if (saved.some((item) => item.status === "rejected")) {
-          console.warn(`${log} 部分会话的操作回执未能保存。`);
+          console.warn($t("lib.managed-supervisor.text_422ac281ce", { "log": log }));
         }
       }, [...expectedPlugins], request.scripts).finally(() => { transition = undefined; });
       const outcome = await transition;
       if (request.force && outcome === "updated" && archived) {
-        console.log(`[更新] 强制更新前的工作区保存在 ${JSON.stringify(archived)}。`);
+        console.log($t("lib.managed-supervisor.text_98047210be", { "value1": JSON.stringify(archived) }));
       }
       if (target.type === "scheduled") {
-        if (outcome === "updated") console.log("[更新] 定时更新成功。");
-        if (outcome === "rolled-back") console.warn("[更新] 定时更新失败，已恢复旧版本。");
+        if (outcome === "updated") console.log($t("lib.managed-supervisor.text_4d8722f319"));
+        if (outcome === "rolled-back") console.warn($t("lib.managed-supervisor.text_69ed48fd1a"));
       }
     } catch (error) {
       if (!stopped && !signal.aborted) {
@@ -219,12 +222,12 @@ export function createManagedSupervisor(directory: string, options: {
           if (error instanceof Error) console.warn(`${log} ${sanitizeRuntimeLog(error.message, 240)}`);
           report("failed");
         } else {
-          console.error(`${log} 无法完成托管宿主切换，请核对恢复记录。`);
+          console.error($t("lib.managed-supervisor.text_9cf529b177", { "log": log }));
         }
       }
     } finally {
-      await stage?.release().catch(() => console.warn(`${log} 无法清理候选目录。`));
-      await ready?.release().catch(() => console.warn(`${log} 无法清理临时候选来源。`));
+      await stage?.release().catch(() => console.warn($t("lib.managed-supervisor.text_af743bde5e", { "log": log })));
+      await ready?.release().catch(() => console.warn($t("lib.managed-supervisor.text_4717004913", { "log": log })));
     }
   }
 
@@ -243,7 +246,7 @@ export function createManagedSupervisor(directory: string, options: {
       await startWorker(pausedAt, storage);
     } catch {
       completion.resolve(1);
-      throw new Error("旧宿主未能重新启动。");
+      throw new Error($t("lib.managed-supervisor.text_b629c247bb"));
     }
     return stopped ? "stopped" as const : "rolled-back" as const;
   }
@@ -253,14 +256,14 @@ export function createManagedSupervisor(directory: string, options: {
     notify?: NotifyResult, expectedPlugins?: readonly string[], activeScripts: readonly string[] = [],
   ) {
     const previousWorker = current;
-    if (!previousWorker || stopped) throw new Error("没有可交接的活动宿主。");
+    if (!previousWorker || stopped) throw new Error($t("lib.managed-supervisor.text_48108ed228"));
     current = undefined;
     reportWorkerReady(false);
     const oldExit = await previousWorker.stop("SIGTERM", true);
     const pausedAt = previousWorker.pausedAt;
     if (stopped) return "stopped" as const;
     if (oldExit !== 143 && oldExit !== 0) {
-      console.warn(`[更新] 原宿主以 ${oldExit} 退出，正在重新启动原版本。`);
+      console.warn($t("lib.managed-supervisor.text_2f3aa6f661", { "oldExit": oldExit }));
       return restartPrevious(notify, pausedAt, previousWorker.storage);
     }
 
@@ -273,10 +276,10 @@ export function createManagedSupervisor(directory: string, options: {
       const statePaths = await readStatePaths?.();
       if (stopped) return "stopped" as const;
       activated = await stage.activate(async (active) => {
-        if (stopped) throw new Error("更新交接已停止。");
+        if (stopped) throw new Error($t("lib.managed-supervisor.text_13e0a82a8b"));
         // Flat scripts may only be copied into the active checkout during activation.
         const expectedScripts = await retainedLegacyScripts(active, activeScripts);
-        if (stopped) throw new Error("更新交接已停止。");
+        if (stopped) throw new Error($t("lib.managed-supervisor.text_13e0a82a8b"));
         const worker = launch(active, {
           expectedRevision: stage.revision, pausedAt, expectedPlugins, expectedScripts, expectedEndpoints: previousWorker.endpoints,
           expectedStorage: previousWorker.storage,
@@ -284,13 +287,13 @@ export function createManagedSupervisor(directory: string, options: {
         candidate = worker;
         try {
           await worker.ready;
-          if (stopped) throw new Error("更新交接已停止。");
+          if (stopped) throw new Error($t("lib.managed-supervisor.text_13e0a82a8b"));
         } catch (error) {
           await worker.stop(stopped);
           throw error;
         }
       }, statePaths);
-      if (!candidate) throw new Error("候选宿主未启动。");
+      if (!candidate) throw new Error($t("lib.managed-supervisor.text_cea596475d"));
       if (stopped) {
         await candidate.stop(stopped);
         return "stopped" as const;
@@ -305,14 +308,14 @@ export function createManagedSupervisor(directory: string, options: {
         await candidate.stop(stopped);
         return "stopped" as const;
       }
-      if (!candidate.serving) throw new ManagedEndpointUnavailableError("候选宿主在确认激活后已停止。");
+      if (!candidate.serving) throw new ManagedEndpointUnavailableError($t("lib.managed-supervisor.text_52339f7132"));
       current = candidate;
       reportWorkerReady(true);
       return "updated" as const;
     } catch (error) {
       if (!stopped) {
-        if (error instanceof WebMountUpdateError || error instanceof ManagedEndpointUnavailableError) console.warn(`[更新] ${error.message}`);
-        console.warn(candidate ? "[更新] 候选宿主未能完成交接，正在恢复原版本。" : "[更新] 文件切换失败，正在恢复原版本。");
+        if (error instanceof WebMountUpdateError || error instanceof ManagedEndpointUnavailableError) console.warn($t("lib.managed-supervisor.text_36e39a7845", { "message": error.message }));
+        console.warn(candidate ? $t("lib.managed-supervisor.text_6197723435") : $t("lib.managed-supervisor.text_182b8e292f"));
       }
       await candidate?.stop(stopped);
       try {
@@ -324,7 +327,7 @@ export function createManagedSupervisor(directory: string, options: {
         }
       } catch {
         completion.resolve(1);
-        throw new Error("宿主版本恢复失败。");
+        throw new Error($t("lib.managed-supervisor.text_74ea41fbff"));
       }
       return restartPrevious(notify, pausedAt, previousWorker.storage);
     }
@@ -333,7 +336,7 @@ export function createManagedSupervisor(directory: string, options: {
   return {
     done: completion.promise,
     start(): Promise<void> {
-      if (started || stopped) return Promise.reject(new Error("托管宿主已启动或停止。"));
+      if (started || stopped) return Promise.reject(new Error($t("lib.managed-supervisor.text_379275d7e9")));
       started = true;
       initial = (async () => {
         await recoverUpdateActivation(root);
@@ -346,7 +349,7 @@ export function createManagedSupervisor(directory: string, options: {
       return initial;
     },
     replace(stage: PreparedUpdate, statePaths?: readonly string[]) {
-      if (!current || stopped || transition) return Promise.reject(new Error("托管宿主暂不可切换。"));
+      if (!current || stopped || transition) return Promise.reject(new Error($t("lib.managed-supervisor.text_8cab0ab013")));
       transition = switchWorker(stage, statePaths && (() => statePaths)).finally(() => { transition = undefined; });
       return transition;
     },

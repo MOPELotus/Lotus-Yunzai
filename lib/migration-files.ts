@@ -1,10 +1,13 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants, type Stats } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, relative, sep } from "node:path";
 
 export class MigrationSourceFileError extends Error {
   constructor(readonly reason: "unsafe" | "changed") {
-    super("迁移源文件无法安全读取。");
+    super($t("lib.migration-files.text_815aa6c2c1"));
   }
 }
 

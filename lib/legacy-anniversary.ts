@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
 import { mkdir, lstat, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -79,7 +82,7 @@ const anniversaryWrites = new Map<string, Promise<void>>();
 
 export function createAnniversaryStore(root: string) {
   const path = (game: Game, qq: string) => {
-    if (!/^[1-9]\d{0,15}$/u.test(qq)) throw new Error("注册时间账号无效。");
+    if (!/^[1-9]\d{0,15}$/u.test(qq)) throw new Error($t("lib.legacy-anniversary.text_c70459fe27"));
     return join(root, "data", "anniversary", game, qq + ".json");
   };
   return {
@@ -90,11 +93,11 @@ export function createAnniversaryStore(root: string) {
     save(game: Game, qq: string, role: GameRole, value: unknown, signal: AbortSignal): Promise<void> {
       const key = path(game, qq);
       const work = (anniversaryWrites.get(key) ?? Promise.resolve()).catch(() => {}).then(async () => {
-      if (!readEntry(value, role, game)) throw new Error("注册时间数据与当前角色不匹配。");
+      if (!readEntry(value, role, game)) throw new Error($t("lib.legacy-anniversary.text_a6bf8e5883"));
       const file = path(game, qq), directory = dirname(file);
       for (const part of [join(root, "data"), join(root, "data/anniversary"), directory]) {
         await mkdir(part, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => { if (error.code !== "EEXIST") throw error; });
-        if (!(await lstat(part)).isDirectory() || (await lstat(part)).isSymbolicLink()) throw new Error("注册时间存储目录无效。");
+        if (!(await lstat(part)).isDirectory() || (await lstat(part)).isSymbolicLink()) throw new Error($t("lib.legacy-anniversary.text_c18bcb95b3"));
       }
       const current = await this.read(game, qq, signal) ?? {};
       const entry = object(value)!;
@@ -102,7 +105,7 @@ export function createAnniversaryStore(root: string) {
       current[role.uid] = { info_data: { game_uid: role.uid, region: role.region, game_biz: role.gameBiz },
         game_data: entry.game_data, query_time: entry.query_time };
       const text = JSON.stringify(current);
-      if (Buffer.byteLength(text) > maxArchiveBytes) throw new Error("注册时间存档过大。");
+      if (Buffer.byteLength(text) > maxArchiveBytes) throw new Error($t("lib.legacy-anniversary.text_592fe13da1"));
       const temporary = file + "." + crypto.randomUUID() + ".tmp";
       try {
         signal.throwIfAborted();
@@ -143,18 +146,18 @@ export function legacyAnniversaryCommands(root: URL, directory: string | undefin
   return {
     name: "@lotus-yunzai/legacy-anniversary",
     commands: {},
-    fallbackFeatures: context => commandPattern.test(context.normalizedMessage) ? ["游戏注册时间"] : [],
+    fallbackFeatures: context => commandPattern.test(context.normalizedMessage) ? [$t("lib.legacy-anniversary.text_8ae4ecd14a")] : [],
     async fallback(_message, context) {
       const match = commandPattern.exec(context.normalizedMessage);
       if (!match || signal.aborted || context.isDelegated) return;
       const [, prefix, refresh, suffix] = match;
       if (prefix && suffix && prefix !== suffix) return;
-      if (context.message_type === "group") return "请在本人好友私聊查询游戏注册时间。";
+      if (context.message_type === "group") return $t("lib.legacy-anniversary.text_ab514d32b1");
       const { privateCredentialSignal, user_id: user } = context;
       if (context.message_type !== "private" || !privateCredentialSignal || privateCredentialSignal.aborted ||
           user === undefined || !Number.isSafeInteger(user) || user < 1) return;
       const active = AbortSignal.any([signal, privateCredentialSignal]);
-      const name = (prefix ?? suffix ?? "原神") as keyof typeof games;
+      const name = (prefix ?? suffix ?? $t("lib.legacy-anniversary.text_d1597c51ed")) as keyof typeof games;
       const game = games[name];
       const qq = String(user);
       try {
@@ -165,7 +168,7 @@ export function legacyAnniversaryCommands(root: URL, directory: string | undefin
           contexts.push(...await profiles.requestContexts(qq, id, [game]).catch(() => []));
         }
         active.throwIfAborted();
-        if (!contexts.length) return "请先登录并同步本人的游戏档案。";
+        if (!contexts.length) return $t("lib.legacy-anniversary.text_c901a7641b");
         const hint = "";
         const archive = await readArchive(installation, game, qq, active);
         const entries = [];
@@ -181,7 +184,7 @@ export function legacyAnniversaryCommands(root: URL, directory: string | undefin
             entries.push({ ...source, ...(typeof updated === "string" && { revision: updated }), value, ...cached });
           }
         }
-        if (!entries.length) return `未找到与当前档案匹配的${name}注册时间记录。${hint}`;
+        if (!entries.length) return $t("lib.legacy-anniversary.text_657dc1fe8c", { "name": name, "hint": hint });
         for (const { profileId, role, revision, value } of entries) {
           active.throwIfAborted();
           const current = await profiles.requestContext(qq, profileId, game, role.uid).catch(() => undefined);
@@ -190,11 +193,11 @@ export function legacyAnniversaryCommands(root: URL, directory: string | undefin
         }
         active.throwIfAborted();
         return [
-          `${name}注册时间（UTC+8）`,
-          ...entries.map(({ profileId, registeredAt, queriedAt }) => `档案 ${profileId} · 注册时间 ${registeredAt} · 缓存查询时间 ${queriedAt}`),
+          $t("lib.legacy-anniversary.text_ee08621dc1", { "name": name }),
+          ...entries.map(({ profileId, registeredAt, queriedAt }) => $t("lib.legacy-anniversary.text_c52ea0d3db", { "profileId": profileId, "registeredAt": registeredAt, "queriedAt": queriedAt })),
         ].join("\n") + hint;
       } catch {
-        return active.aborted ? undefined : "注册时间查询失败，请检查登录状态或稍后重试；已有记录已保留。";
+        return active.aborted ? undefined : $t("lib.legacy-anniversary.text_5a3bee191c");
       }
     },
   };

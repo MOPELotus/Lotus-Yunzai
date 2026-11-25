@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { CommandContext } from "./commands.ts";
 import { formatShanghaiDate } from "./shanghai-date.ts";
 
@@ -13,10 +16,10 @@ interface Target {
   readonly label: string;
 }
 
-const objectFields = [["机器人", "bot"], ["用户", "user"], ["群", "group"]] as const;
+const objectFields = [[$t("lib.message-statistics.text_a4d1441486"), "bot"], [$t("lib.message-statistics.text_0d0e1a86b3"), "user"], [$t("lib.message-statistics.text_0df737cb62"), "group"]] as const;
 const allowedFields = new Set<string>([...objectFields.map(([label]) => label), "消息", "日期"]);
-const usage = "用法：#统计 [机器人 QQ] [用户 QQ] [群 群号] [消息 类型] [日期 YYYY-MM-DD]。";
-const unavailable = "消息统计暂不可用，请稍后重试。";
+const usage = $t("lib.message-statistics.text_8d67d359b4");
+const unavailable = $t("lib.message-statistics.text_1bc18dab68");
 
 function options(argument: string) {
   const text = argument.trim();
@@ -47,9 +50,9 @@ function target(label: string, scope: "bot" | "user" | "group", id: number): Tar
 
 function currentTargets(context: CommandContext, master: boolean): Target[] {
   const targets: Target[] = [];
-  if (master && isId(context.self_id)) targets.push(target("机器人", "bot", context.self_id));
-  if (isId(context.user_id)) targets.push(target("用户", "user", context.user_id));
-  if (context.message_type === "group" && isId(context.group_id)) targets.push(target("群", "group", context.group_id));
+  if (master && isId(context.self_id)) targets.push(target($t("lib.message-statistics.text_a4d1441486"), "bot", context.self_id));
+  if (isId(context.user_id)) targets.push(target($t("lib.message-statistics.text_0d0e1a86b3"), "user", context.user_id));
+  if (context.message_type === "group" && isId(context.group_id)) targets.push(target($t("lib.message-statistics.text_0df737cb62"), "group", context.group_id));
   return targets;
 }
 
@@ -113,24 +116,24 @@ export function createMessageStatistics(counts: Counts, now: () => Date = () => 
     for (const [label, scope] of objectFields) {
       const value = input.get(label);
       if (value === undefined) continue;
-      if (!master) return "仅当前机器人的主人可以指定统计对象。";
+      if (!master) return $t("lib.message-statistics.text_9084de6d92");
       const id = readId(value);
-      if (!id) return `${label}须为有效的 QQ 或群号。`;
+      if (!id) return $t("lib.message-statistics.text_e6609be577", { "label": label });
       selected.push(target(label, scope, id));
     }
 
     const kind = input.get("消息") ?? "msg";
-    if (!/^[A-Za-z0-9_-]{1,32}$/u.test(kind)) return "消息类型无效，例如 msg、text、image。";
+    if (!/^[A-Za-z0-9_-]{1,32}$/u.test(kind)) return $t("lib.message-statistics.text_480c357504");
 
     const targets = selected.length > 0 ? selected : [
       ...(master ? [
-        { scope: "total", label: "总消息量" },
-        { scope: "user:*", label: "用户量" },
-        { scope: "group:*", label: "群量" },
+        { scope: "total", label: $t("lib.message-statistics.text_ce5d801f57") },
+        { scope: "user:*", label: $t("lib.message-statistics.text_de2d918d39") },
+        { scope: "group:*", label: $t("lib.message-statistics.text_98126c1dbe") },
       ] as const : []),
       ...currentTargets(context, master),
     ];
-    if (!targets.length) return "当前会话没有可查询的用户或群。";
+    if (!targets.length) return $t("lib.message-statistics.text_8ba93dcc01");
 
     try {
       const instant = now();
@@ -139,17 +142,17 @@ export function createMessageStatistics(counts: Counts, now: () => Date = () => 
       const anchor = new Date(`${formatShanghaiDate(instant)}T00:00:00Z`);
       const day = input.get("日期");
       const selectedDay = day === undefined ? undefined : requestedDay(day, anchor);
-      if (day !== undefined && selectedDay === undefined) return "日期无效，请使用 YYYY-MM-DD、MMDD 或 DD。";
+      if (day !== undefined && selectedDay === undefined) return $t("lib.message-statistics.text_d6c68b3caa");
       const buckets = selectedDay ? [selectedDay] : defaultBuckets(anchor);
       if (!counts.available()) return unavailable;
 
-      const sections = [kind === "msg" ? "消息统计" : `${kind} 消息统计`];
+      const sections = [kind === "msg" ? $t("lib.message-statistics.text_9b83b34d89") : $t("lib.message-statistics.text_8316a49002", { "kind": kind })];
       for (const { scope, label } of targets) {
         const rows = [label];
         for (const bucket of buckets) {
           const { receive, send } = await counts.read(kind, scope, bucket);
-          const date = bucket === "total" ? "总计" : bucket.replaceAll(":", "-");
-          rows.push(`${date} 收 ${countText(receive)} 发 ${countText(send)}`);
+          const date = bucket === "total" ? $t("lib.message-statistics.text_e8dc871a7f") : bucket.replaceAll(":", "-");
+          rows.push($t("lib.message-statistics.text_5393023bef", { "date": date, "value2": countText(receive), "value3": countText(send) }));
         }
         sections.push(rows.join("\n"));
       }

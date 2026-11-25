@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, isNode, isScalar, parseDocument, Scalar, type Node } from "yaml";
@@ -23,11 +26,11 @@ type SettingsErrorReason = "invalid-input" | "permission" | "config" | "conflict
 export class CheckinScheduleSettingsError extends Error {
   constructor(readonly reason: SettingsErrorReason) {
     super({
-      "invalid-input": "请输入有效的签到模式或 H:MM 时间。",
-      permission: "当前会话无权修改全局签到调度。",
-      config: "全局签到调度配置无法安全读取或保存。",
-      conflict: "全局签到调度配置正在更新，请稍后重试。",
-      cancelled: "全局签到调度配置更新已取消。",
+      "invalid-input": $t("lib.checkin-schedule-settings.text_a8435872fc"),
+      permission: $t("lib.checkin-schedule-settings.text_bc7057bbf6"),
+      config: $t("lib.checkin-schedule-settings.text_7700bf77e9"),
+      conflict: $t("lib.checkin-schedule-settings.text_bea0909fc6"),
+      cancelled: $t("lib.checkin-schedule-settings.text_f8b11ef99a"),
     }[reason]);
     this.name = "CheckinScheduleSettingsError";
   }

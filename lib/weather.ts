@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { withReadRetries } from "@lotus-yunzai/http";
 const matchingEndpoint = "https://wis.qq.com/city/matching";
 const weatherEndpoint = "https://i.news.qq.com/weather/common";
@@ -128,7 +131,7 @@ function decodeWeather(area: Area, forecast: WeatherFields, cityAir?: WeatherFie
     const dayWeather = clean(day?.day_weather);
     const nightWeather = clean(day?.night_weather);
     if (!/^\d{4}-\d{2}-\d{2}$/u.test(date) || date < updated.slice(0, 10) || !minimum || !maximum || !dayWeather) return [];
-    return [[date, joinFields(date.slice(5), dayWeather === nightWeather || !nightWeather ? dayWeather : `${dayWeather}转${nightWeather}`,
+    return [[date, joinFields(date.slice(5), dayWeather === nightWeather || !nightWeather ? dayWeather : $t("lib.weather.text_7019e175df", { "dayWeather": dayWeather, "nightWeather": nightWeather }),
       `${minimum} / ${maximum}`, clean(day?.day_wind_direction), clean(day?.day_wind_power))] as const];
   }).sort(([a], [b]) => a.localeCompare(b)).slice(0, 7).map(([, summary]) => summary);
   if (!hourly.length || !daily.length) return;
@@ -140,13 +143,13 @@ function decodeWeather(area: Area, forecast: WeatherFields, cityAir?: WeatherFie
   const precipitation = number(observation?.precipitation);
   const quality = number(air?.aqi);
   const conditions = [
-    joinFields(clean(observation?.wind_direction_name), clean(observation?.wind_power) && `${clean(observation?.wind_power)} 级`),
-    humidity !== undefined ? `湿度 ${humidity}%` : "",
-    pressure !== undefined ? `气压 ${pressure} hPa` : "",
-    precipitation !== undefined ? `降水 ${precipitation} mm` : "",
-    quality !== undefined ? joinFields(`空气质量 ${quality}`, clean(air?.aqi_name)) : "",
-    joinFields(clean(rise?.sunrise) && `日出 ${clean(rise?.sunrise)}`, clean(rise?.sunset) && `日落 ${clean(rise?.sunset)}`),
-    clean(object(forecast.limit)?.tail_number) && `限行 ${clean(object(forecast.limit)?.tail_number)}`,
+    joinFields(clean(observation?.wind_direction_name), clean(observation?.wind_power) && $t("lib.weather.text_d246e84a4b", { "value1": clean(observation?.wind_power) })),
+    humidity !== undefined ? $t("lib.weather.text_e4fb2ecde8", { "humidity": humidity }) : "",
+    pressure !== undefined ? $t("lib.weather.text_ff6b793180", { "pressure": pressure }) : "",
+    precipitation !== undefined ? $t("lib.weather.text_eadde60d89", { "precipitation": precipitation }) : "",
+    quality !== undefined ? joinFields($t("lib.weather.text_27f6e45e1a", { "quality": quality }), clean(air?.aqi_name)) : "",
+    joinFields(clean(rise?.sunrise) && $t("lib.weather.text_fb96b0c4f5", { "value1": clean(rise?.sunrise) }), clean(rise?.sunset) && $t("lib.weather.text_95cdac9718", { "value1": clean(rise?.sunset) })),
+    clean(object(forecast.limit)?.tail_number) && $t("lib.weather.text_a494688c08", { "value1": clean(object(forecast.limit)?.tail_number) }),
   ].filter(Boolean);
   const lifestyle = Object.values(object(forecast.index) ?? {}).flatMap(item => {
     const index = object(item);
@@ -159,7 +162,7 @@ function decodeWeather(area: Area, forecast: WeatherFields, cityAir?: WeatherFie
     const title = clean(alarm?.type_name);
     const level = clean(alarm?.level_name);
     const detail = clean(alarm?.detail, 320);
-    return title && level ? [joinFields(`${title}${level}预警`, detail)] : [];
+    return title && level ? [joinFields($t("lib.weather.text_9a3b0f8f60", { "title": title, "level": level }), detail)] : [];
   }).slice(0, 6);
   const tips = Object.values(object(object(forecast.tips)?.observe) ?? {}).map(item => clean(item, 120)).filter(Boolean).slice(0, 2);
   return { area: formatWeatherArea(area), current, updated: updated.slice(5), conditions: [...conditions, ...tips], hourly, daily, lifestyle, warnings };
@@ -174,7 +177,7 @@ async function request(endpoint: string, query: Record<string, string>, signal: 
   });
   if (!response.ok || response.redirected || !response.body || Number(response.headers.get("content-length")) > maxPayloadBytes) {
     void response.body?.cancel().catch(() => undefined);
-    throw new Error("天气请求失败。");
+    throw new Error($t("lib.weather.text_9bb41f937f"));
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -186,11 +189,11 @@ async function request(endpoint: string, query: Record<string, string>, signal: 
       signal.throwIfAborted();
       if (done) break;
       bytes += value.byteLength;
-      if (bytes > maxPayloadBytes) throw new Error("天气响应超限。");
+      if (bytes > maxPayloadBytes) throw new Error($t("lib.weather.text_eff9cbf895"));
       text += decoder.decode(value, { stream: true });
     }
     const envelope = object(JSON.parse(text + decoder.decode()));
-    if (envelope?.status !== 200 && envelope?.status !== "200") throw new Error("天气服务暂时不可用。");
+    if (envelope?.status !== 200 && envelope?.status !== "200") throw new Error($t("lib.weather.text_fb215c00c4"));
     return object(envelope.data) ?? {};
   } finally {
     void reader.cancel().catch(() => undefined);
@@ -206,20 +209,20 @@ export async function fetchWeather(query: string, lifecycle: AbortSignal, transp
     let area: Area | undefined;
     for (const city of areaCandidates(query)) {
       const matches = matchingAreas(await request(matchingEndpoint, { source: "xw", city }, signal, transport), query);
-      if (matches.length > 1) return { message: `找到多个同名地区，请补上省市。\n${matches.slice(0, 8).map(formatWeatherArea).join("\n")}` };
+      if (matches.length > 1) return { message: $t("lib.weather.text_ee66ad2969", { "value1": matches.slice(0, 8).map(formatWeatherArea).join("\n") }) };
       if (matches[0]) {
         area = matches[0];
         break;
       }
     }
-    if (!area) return { message: "没有查询到该地区的天气！" };
+    if (!area) return { message: $t("lib.weather.text_bfd887fe16") };
     const { province, city, district } = area;
     const [forecast, air] = await Promise.all([
       request(weatherEndpoint, { source: "pc", weather_type: forecastTypes, province, city, county: district }, signal, transport),
       request(weatherEndpoint, { source: "pc", weather_type: "air|rise", province, city }, signal, transport).catch(() => undefined),
     ]);
-    return decodeWeather(area, forecast, air) ?? { message: "天气服务返回的数据不完整，请稍后再试。" };
+    return decodeWeather(area, forecast, air) ?? { message: $t("lib.weather.text_705610ad73") };
   } catch {
-    return { message: "天气服务暂时无法连接，请稍后再试。" };
+    return { message: $t("lib.weather.text_81b10c5b7d") };
   }
 }

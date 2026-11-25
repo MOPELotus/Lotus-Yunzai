@@ -1,12 +1,16 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { verifyBuiltinResources } from "../lib/builtin-resource-validation.ts";
 import { runInitializationStage } from "../lib/initialization-progress.ts";
 import { installTerminalLogging } from "../lib/terminal-log-format.ts";
 installTerminalLogging();
 try {
-  const result = await runInitializationStage("核对内置程序资源", progress =>
+  const result = await runInitializationStage($t("scripts.verify-builtin-resources.text_e052933f97"), progress =>
     verifyBuiltinResources(new URL("../", import.meta.url), undefined, progress));
-  console.info(`[资源] 已核对 ${result.checked} 个内置文件（${(result.bytes / 1024 ** 2).toFixed(1)} MiB）。`);
+  console.info($t("scripts.verify-builtin-resources.text_edd149b0a3", { "checked": result.checked, "value2": (result.bytes / 1024 ** 2).toFixed(1) }));
 } catch (error) {
-  console.error(error instanceof Error ? error.message : "内置资源核对失败。");
+  console.error(error instanceof Error ? error.message : $t("scripts.verify-builtin-resources.text_c6262b4e8e"));
   process.exitCode = 1;
 }

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { STATUS_CODES } from "node:http";
 import { readWebhookJson } from "../http-json.ts";
 import { authorized, publicPostPath } from "../server.ts";
@@ -29,26 +32,26 @@ export class LegacyHttpRoutes {
     post: (path: string, handler: LegacyHttpHandler): void => {
       const owner = HandlerScope.current();
       const pending = owner && this.#pending.get(owner);
-      if (!owner || !pending?.accepting) throw new Error("Bot.express.post 须在旧插件初始化期间调用。");
+      if (!owner || !pending?.accepting) throw new Error($t("lib.plugins.legacy-http.text_a5fd2d8fd5"));
       const key = typeof path === "string" ? publicPostPath(path) : undefined;
       if (!key || this.#reserved.has(key) || [...this.#reservedMounts].some(mount => key === mount || key.startsWith(`${mount}/`)) ||
           typeof handler !== "function") {
-        throw new Error("Bot.express.post 需要可用的固定路径和处理函数。");
+        throw new Error($t("lib.plugins.legacy-http.text_5cb18e5d9d"));
       }
-      if (pending.routes.has(key)) throw new Error("Bot.express.post 重复注册路径。");
+      if (pending.routes.has(key)) throw new Error($t("lib.plugins.legacy-http.text_ea2a08f592"));
       pending.routes.set(key, { owner, handler });
     },
   });
 
   reserve(path: string): void {
     const key = publicPostPath(path);
-    if (!key) throw new Error("原生 POST 路径无效。");
+    if (!key) throw new Error($t("lib.plugins.legacy-http.text_6661f7d7ff"));
     this.#reserved.add(key);
   }
 
   reserveMount(path: string): void {
     const key = publicPostPath(path);
-    if (!key) throw new Error("原生挂载路径无效。");
+    if (!key) throw new Error($t("lib.plugins.legacy-http.text_b256c7bc28"));
     this.#reservedMounts.add(key);
   }
 
@@ -75,7 +78,7 @@ export class LegacyHttpRoutes {
     for (const pending of staged.values()) {
       if (!pending) continue;
       for (const [path, route] of pending.routes) {
-        if (next.has(path)) throw new Error("Bot.express.post 重复注册路径。");
+        if (next.has(path)) throw new Error($t("lib.plugins.legacy-http.text_ea2a08f592"));
         next.set(path, route);
       }
     }
@@ -109,7 +112,7 @@ export class LegacyHttpRoutes {
       let response: Response | undefined;
       const sendStatus = (status: number) => {
         if (response) return;
-        if (!Number.isInteger(status) || status < 200 || status > 599) throw new Error("响应状态无效。");
+        if (!Number.isInteger(status) || status < 200 || status > 599) throw new Error($t("lib.plugins.legacy-http.text_6a274d4304"));
         const body = status === 204 || status === 205 || status === 304 ? null : STATUS_CODES[status] ?? String(status);
         response = reply(status, body);
       };

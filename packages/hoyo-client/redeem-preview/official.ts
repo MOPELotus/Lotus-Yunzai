@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 // Public official APIs only. No account cookie or redemption API is needed.
 import { officialJsonByteLimit, officialReadTarget, requestOfficialJson, type OfficialJsonOptions } from "./http.ts"
 import { setTimeout as delay } from "node:timers/promises"
@@ -172,7 +175,7 @@ function normalizePost(item: unknown): OfficialPost | null {
 function checkedLists<T extends object>(data: T | null, ...fields: (keyof T)[]): T {
   if (!data || typeof data !== "object" || Array.isArray(data) ||
       fields.some(field => data[field] != null && !Array.isArray(data[field]))) {
-    throw new Error("官方活动列表格式异常")
+    throw new Error($t("redeem-preview.official.text_8be5f4f843"))
   }
   return data
 }
@@ -208,7 +211,7 @@ export class MiyoliveProvider {
           headers, signal: requestSignal })
         if (response.redirected || (response.url && response.url !== target.href)) {
           await response.body?.cancel().catch(() => undefined)
-          throw Object.assign(new Error("官方接口回包地址不一致"), { retryable: false })
+          throw Object.assign(new Error($t("redeem-preview.official.text_b8c6a61c9f")), { retryable: false })
         }
         if (response.status !== 403 || waitMs === 1800 || deadline - Date.now() < 3000) break
         await response.body?.cancel().catch(() => {})
@@ -216,7 +219,7 @@ export class MiyoliveProvider {
       if (!response.ok) {
         liveIndexGone = response.status === 410 && target.hostname === "api-takumi.mihoyo.com" &&
           target.pathname === "/event/miyolive/index"
-        const error = Object.assign(new Error(`官方接口 HTTP ${response.status}`), {
+        const error = Object.assign(new Error($t("redeem-preview.official.text_1cf0e42297", { "status": response.status })), {
           retryable: response.status >= 500 || response.status === 429 || liveIndexGone,
           httpStatus: response.status,
         })
@@ -225,7 +228,7 @@ export class MiyoliveProvider {
       }
       body = await readGameRecordPayload(response, officialJsonByteLimit, requestSignal)
       requestSignal.throwIfAborted()
-      if (!body) throw new Error("官方接口响应格式异常或超限")
+      if (!body) throw new Error($t("redeem-preview.official.text_e322210fc6"))
     } catch (error) {
       this.signal?.throwIfAborted()
       const endpoint = `${target.hostname}${target.pathname}`
@@ -246,12 +249,12 @@ export class MiyoliveProvider {
           lastError = retryError as RequestFailure
         }
       }
-      if (!body) throw new Error(`${endpoint}：请求及直连重试均失败（${detail}；${lastError?.code || lastError?.message || "超时"}）`, { cause: lastError || error })
+      if (!body) throw new Error($t("redeem-preview.official.text_03eaaa1efb", { "endpoint": endpoint, "detail": detail, "value3": lastError?.code || lastError?.message || $t("redeem-preview.official.text_e512cf016f") }), { cause: lastError || error })
     }
     const envelope = body as { readonly retcode?: number; readonly data?: T } | null | undefined
     const code = envelope?.retcode
     if ((code === -500007 || code === -500012) && target.pathname === "/event/miyolive/index") return null
-    if (code !== 0 || !envelope?.data) throw new Error(`官方接口：${code ?? "返回格式异常"}`)
+    if (code !== 0 || !envelope?.data) throw new Error($t("redeem-preview.official.text_1c9cc227ad", { "value1": code ?? $t("redeem-preview.official.text_6f83a34202") }))
     return envelope.data
   }
 
@@ -296,7 +299,7 @@ export class MiyoliveProvider {
     // after the homepage entry disappears, without trusting community reposts.
     if (!ids.size && (posts.length || game.searchKeyword)) {
       const version = posts.map(p => versionOf(p.subject)).filter(Boolean).sort(compareVersions).at(-1)
-      const keyword = game.searchKeyword || (version && `${version} 前瞻 特别节目`)
+      const keyword = game.searchKeyword || (version && $t("redeem-preview.official.text_08d0d3b14d", { "version": version }))
       if (keyword) {
         try {
           const search = checkedLists(await this.request<PostPage>(`${BBS}/post/wapi/searchPosts?gids=${game.gids}&keyword=${encodeURIComponent(keyword)}&size=20&page=1&sort_type=1`), "posts", "list")
@@ -324,7 +327,7 @@ export class MiyoliveProvider {
     // On discovery failures, do not present an old remembered activity as current.
     if (homeResult.status === "rejected" || postsResult.status === "rejected") {
       if ((announcement?.startAt ?? NaN) > this.now()) return { activity: null, posts, newestVersion, activities: [], announcement }
-      throw new Error(`活动发现不完整：${errors.join("；")}`)
+      throw new Error($t("redeem-preview.official.text_b1978d89b1", { "value1": errors.join("；") }))
     }
     const candidates = [...new Set([...ids, ...remembered])].slice(0, 12)
     const indexes = await Promise.allSettled(candidates.map(async actId => {
@@ -334,13 +337,13 @@ export class MiyoliveProvider {
     }))
     if (candidates.some((id, i) => navigationIds.has(id) && indexes[i]!.status === "rejected")) {
       if ((announcement?.startAt ?? NaN) > this.now()) return { activity: null, posts, newestVersion, activities: [], announcement }
-      throw new Error("官方活动详情暂不可用，请稍后重试")
+      throw new Error($t("redeem-preview.official.text_6916a57e6e"))
     }
     const activities = indexes.flatMap(result => result.status === "fulfilled" && result.value ? [result.value] : [])
       .sort((a, b) => parseOfficialDate(b.live.start) - parseOfficialDate(a.live.start))
     const activity = activities[0]
     if (!activity) {
-      if (candidates.length && indexes.some(r => r.status === "rejected") && !((announcement?.startAt ?? NaN) > this.now())) throw new Error("官方活动详情暂不可用，请稍后重试")
+      if (candidates.length && indexes.some(r => r.status === "rejected") && !((announcement?.startAt ?? NaN) > this.now())) throw new Error($t("redeem-preview.official.text_6916a57e6e"))
       return { activity: null, posts, newestVersion, activities: [], announcement }
     }
     return { activity, posts, newestVersion, activities: activities.map(a => a.actId), announcement }
@@ -349,7 +352,7 @@ export class MiyoliveProvider {
   async codes(activity: LiveActivity): Promise<OfficialCode[]> {
     if (!activity.live.code_ver) return []
     const data = (await this.request<{ readonly code_list?: OfficialCode[] }>(`${LIVE_STATIC}/refreshCode?version=${encodeURIComponent(activity.live.code_ver)}&time=${Math.floor(this.now() / 1000)}`, activity.actId))!
-    if (!Array.isArray(data.code_list)) throw new Error("官方兑换码列表格式异常")
+    if (!Array.isArray(data.code_list)) throw new Error($t("redeem-preview.official.text_665d0143ee"))
     return data.code_list
   }
 }

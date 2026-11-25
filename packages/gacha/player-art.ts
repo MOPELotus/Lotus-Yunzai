@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("gacha", messageCatalog.messages);
 import { realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { rasterImageSize } from "../account/index.ts";
@@ -7,7 +10,7 @@ import { loadOfficialArtwork } from "../account/official-artwork.ts";
 type Game = "gs" | "sr";
 type Character = { readonly id: string | number; readonly name: string; readonly abbr?: string };
 
-const defaults = { gs: ["芭芭拉", "迪希雅"], sr: ["卡芙卡"] } as const;
+const defaults = { gs: [$t("player-art.text_ef09301bf5"), $t("player-art.text_8dac86c16f")], sr: [$t("player-art.text_6cc5e43b1b")] } as const;
 
 export function gachaPortraitCharacter(characters: Iterable<Character>, hint: unknown) {
   if (typeof hint !== "number" && typeof hint !== "string") return;

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { projectGroupCleanupConfig } from "./group-cleanup-config.ts";
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -28,7 +31,7 @@ async function readGlobal(root: string, prefix: string): Promise<Config | undefi
     const path = join(root, prefix, local);
     const file = await readMigrationSourceFile(root, path, 256 * 1024).catch(error => {
       if (!(error instanceof MigrationSourceFileError)) throw error;
-      throw new Error(error.reason === "changed" ? "旧全局配置在迁移期间发生变化。" : "旧全局配置须为副本中的普通 YAML 文件。");
+      throw new Error(error.reason === "changed" ? $t("lib.migration-global-config.text_711422fd69") : $t("lib.migration-global-config.text_ba7ef77159"));
     });
     if (!file) continue;
     try {
@@ -36,7 +39,7 @@ async function readGlobal(root: string, prefix: string): Promise<Config | undefi
       if (config === null || config === undefined) return {};
       if (typeof config === "object" && !Array.isArray(config)) return config as Config;
     } catch {}
-    throw new Error("旧全局配置须为有效的 YAML 映射。");
+    throw new Error($t("lib.migration-global-config.text_3de67f465a"));
   }
 }
 
@@ -77,7 +80,7 @@ export async function stageLegacyGlobalConfig(source: string, stage: string, sig
     const directory = join(stage, "config");
     await mkdir(directory, { mode: 0o700, recursive: true });
     if (await realpath(directory) !== directory || !(await lstat(directory)).isDirectory()) {
-      throw new Error("全局配置暂存路径须为实体目录。");
+      throw new Error($t("lib.migration-global-config.text_0c1982f754"));
     }
     await writeFile(join(directory, "global.yaml"), Bun.YAML.stringify(projected), { flag: "wx", mode: 0o600 });
   }

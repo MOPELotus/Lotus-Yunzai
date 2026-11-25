@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { randomUUID } from "node:crypto";
 import { constants, createWriteStream, type Stats } from "node:fs";
 import { link, lstat, open, readdir, realpath, unlink } from "node:fs/promises";
@@ -69,7 +72,7 @@ export async function archiveRuntimeLogs(directory: string, currentFilename: str
   const currentDate = dailyLog.exec(currentFilename)?.[1];
   if (!currentDate || !currentFilename.endsWith(".log")) return;
   signal?.throwIfAborted();
-  if (await realpath(directory) !== directory) throw new Error("日志目录已变更。");
+  if (await realpath(directory) !== directory) throw new Error($t("lib.runtime-log-archive.text_47964e017d"));
   const previous: string[] = [];
   const archived: string[] = [];
   for (const file of await readdir(directory, { withFileTypes: true })) {

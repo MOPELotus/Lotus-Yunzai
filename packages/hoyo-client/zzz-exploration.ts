@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -37,7 +40,7 @@ export interface ZzzExplorationSnapshot extends Identity {
 }
 
 function invalid(field: string): never {
-  throw new HoyoRequestError("response", `官方绝区零区域收集响应的${field}无效。`);
+  throw new HoyoRequestError("response", $t("zzz-exploration.text_d056810820", { "field": field }));
 }
 
 function object(value: unknown, field: string): Json {
@@ -54,14 +57,14 @@ function list(value: unknown, field: string): readonly unknown[] {
 function count(value: unknown) {
   if (value == null) return;
   const number = typeof value === "string" && /^\d{1,10}$/u.test(value) ? Number(value) : value;
-  if (typeof number !== "number" || !Number.isSafeInteger(number) || number < 0 || number > 999_999_999) invalid("收集数");
+  if (typeof number !== "number" || !Number.isSafeInteger(number) || number < 0 || number > 999_999_999) invalid($t("zzz-exploration.text_c057402e30"));
   return number;
 }
 
 function progress(value: unknown) {
   if (value == null) return;
   const string = typeof value === "number" && Number.isFinite(value) ? String(value) : value;
-  if (typeof string !== "string" || !/^\d{1,3}(?:\.\d{1,8})?$/u.test(string) || Number(string) > 100) invalid("完成度");
+  if (typeof string !== "string" || !/^\d{1,3}(?:\.\d{1,8})?$/u.test(string) || Number(string) > 100) invalid($t("zzz-exploration.text_5c543338a1"));
   return string;
 }
 
@@ -72,37 +75,37 @@ function text(value: unknown, limit = 1024) {
 }
 
 function map(value: unknown): ZzzExplorationMap {
-  const item = object(value, "子区域");
+  const item = object(value, $t("zzz-exploration.text_5a984ef42f"));
   return { name: text(item.name, 144), icon: text(item.icon), progress: progress(item.collection_progress),
-    collections: list(item.collections, "收集项").slice(0, 4).map(value => {
-      const row = object(value, "收集项");
+    collections: list(item.collections, $t("zzz-exploration.text_958a74170a")).slice(0, 4).map(value => {
+      const row = object(value, $t("zzz-exploration.text_958a74170a"));
       return { name: text(row.name, 144), icon: text(row.icon), current: count(row.num), maximum: count(row.total) };
     }) };
 }
 
 export function normalizeZzzExploration(input: unknown, identity: Identity, page = 1, whole = false): ZzzExplorationSnapshot {
   if (!Number.isSafeInteger(page) || page < 1 || page > 999_999) {
-    throw new HoyoRequestError("invalid-input", "区域收集页码无效。");
+    throw new HoyoRequestError("invalid-input", $t("zzz-exploration.text_733e20df78"));
   }
-  const data = object(input, "格式");
+  const data = object(input, $t("zzz-exploration.text_0e8b1c78c5"));
   for (const key of ["uid", "role_id", "game_uid"]) {
     const value = data[key];
     if (value !== undefined && ((typeof value !== "string" && typeof value !== "number") || String(value) !== identity.uid)) {
-      invalid("档案 UID");
+      invalid($t("zzz-exploration.text_5e66ce9fd0"));
     }
   }
   for (const key of ["region", "server"]) {
-    if (data[key] !== undefined && data[key] !== identity.region) invalid("档案区服");
+    if (data[key] !== undefined && data[key] !== identity.region) invalid($t("zzz-exploration.text_e6dcb75782"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid("游戏标识");
-  const raw = list(data.area_collections, "区域");
+  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-exploration.text_a81ce382a1"));
+  const raw = list(data.area_collections, $t("zzz-exploration.text_3382870bc4"));
   const first = whole ? 0 : (page - 1) * rowsPerPage;
   const end = whole ? Infinity : first + rowsPerPage;
   const areas: ZzzExplorationArea[] = [];
   let rows = 0;
   for (const entry of raw) {
-    const area = object(entry, "区域");
-    const maps = list(area.map_collections, "子区域");
+    const area = object(entry, $t("zzz-exploration.text_3382870bc4"));
+    const maps = list(area.map_collections, $t("zzz-exploration.text_5a984ef42f"));
     const previous = rows;
     rows += Math.max(1, Math.ceil(maps.length / zzzExplorationColumns));
     if (first >= rows || end <= previous) continue;

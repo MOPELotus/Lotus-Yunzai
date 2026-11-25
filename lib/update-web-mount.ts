@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -5,8 +8,8 @@ import { readServerWebMount, type WebMountSettings } from "./server.ts";
 import { resolveLinkedPath } from "./update-linked-path.ts";
 
 const persistent = new Set(["config", "data", "logs", "internal"]);
-const sourceError = "端口挂载的原版目录须位于 Lotus-Yunzai 安装目录外，才能安全切换版本。";
-const socketError = "端口挂载 RPC socket 须使用安装目录外或可完整交接的独占运行目录，才能安全切换版本。";
+const sourceError = $t("lib.update-web-mount.text_0cb019781e");
+const socketError = $t("lib.update-web-mount.text_4045896afb");
 
 export class WebMountUpdateError extends Error {}
 

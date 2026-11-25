@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -25,7 +28,7 @@ export interface GenshinMonthlySnapshot {
 }
 
 function invalid(): never {
-  throw new HoyoRequestError("response", "官方原石札记数据无效。");
+  throw new HoyoRequestError("response", $t("genshin-monthly.text_6f52cc4fa9"));
 }
 
 function whole(value: unknown) {

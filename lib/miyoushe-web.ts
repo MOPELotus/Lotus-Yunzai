@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isInternalAddress } from "./network-access.ts";
 import { renderSiteIcpFooter } from "./web-icp.ts";
 import { Database } from "bun:sqlite";
@@ -13,6 +16,7 @@ import { MiyousheShopError, type createMiyousheShopCatalog } from "./miyoushe-sh
 import { MiyousheShopPlanError, parseMiyousheShopReceiptRoute, type createMiyousheShopPlans } from "./miyoushe-shop-plans.ts";
 import { readPanelJson } from "./panel.ts";
 import { isReservedServerPath } from "./server-redirect.ts";
+import { injectMiyousheLanguage, translateTemplate } from "./i18n-templates.ts";
 
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/u;
 const command = /^#(米游社功能|米游币兑换|米游币商城)([1-9]\d{0,2})?$/u;
@@ -283,13 +287,13 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
     async fallback(message, context) {
       const match = command.exec(message);
       if (!match || signal.aborted) return;
-      if (context.message_type !== "private") return "请私聊机器人发送 #米游社功能，获取专属登录链接。";
+      if (context.message_type !== "private") return $t("lib.miyoushe-web.text_eb2feee0c1");
       const connection = context.privateCredentialSignal;
-      if (!connection || connection.aborted || !context.user_id || context.isDelegated) return "请从当前连接的机器人好友私聊获取登录链接。";
+      if (!connection || connection.aborted || !context.user_id || context.isDelegated) return $t("lib.miyoushe-web.text_d78364a941");
       const profileId = Number(match[2] ?? 1);
-      if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
+      if (profileId > MAX_PROFILE_ID) return $t("lib.miyoushe-web.text_3dd62228d2");
       const link = publicPage();
-      if (!link) return "米游社功能页尚未配置可用的访问地址。";
+      if (!link) return $t("lib.miyoushe-web.text_8fdd13a4c6");
       const qq = String(context.user_id);
       try {
         const { ticketMinutes, sessionHours } = await lifetimes();
@@ -305,11 +309,11 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
           insert(token, "ticket", { qq, profileId, account, expiresAt: time + ticketMinutes * 60_000, receiptRoute });
         }).immediate();
         link.hash = `ticket=${token}${catalog && match[1] !== "米游社功能" ? "&tab=shop" : ""}`;
-        return `米游社功能 · 档案 ${profileId}\n${link.href}\n链接 ${ticketMinutes} 分钟内有效，只能使用一次。浏览器登录后可使用 ${sessionHours} 小时，请勿转发。`;
+        return $t("lib.miyoushe-web.text_c3ee4aed07", { "profileId": profileId, "href": link.href, "ticketMinutes": ticketMinutes, "sessionHours": sessionHours });
       } catch (failure) {
         if (signal.aborted || connection.aborted) return;
-        if (failure instanceof ProfileError) return `请先扫码登录档案 ${profileId}。`;
-        return "暂时无法创建登录链接。";
+        if (failure instanceof ProfileError) return $t("lib.miyoushe-web.text_d136766aba", { "profileId": profileId });
+        return $t("lib.miyoushe-web.text_fdd3ea6199");
       }
     },
   };
@@ -341,7 +345,11 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
         const source = Bun.file(join(assetDirectory, part === "app.js" ? "app.ts" : "intent-id.ts"));
         if (await source.exists()) {
           if (method === "HEAD") return new Response(null, { headers: assetHeaders });
-          const compiled = browserScripts.get(part) ?? source.text().then(text => new Bun.Transpiler({ loader: "ts", target: "browser" }).transform(text));
+          const compiled = browserScripts.get(part) ?? Bun.build({ entrypoints: [source.name!], target: "browser", minify: true })
+            .then(async result => {
+              if (!result.success || !result.outputs[0]) throw new Error("miyoushe-script-build-failed");
+              return result.outputs[0].text();
+            });
           browserScripts.set(part, compiled);
           try {
             return new Response(await compiled, { headers: assetHeaders });
@@ -356,7 +364,7 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
       if (method === "HEAD") return new Response(null, { headers: assetHeaders });
       if (part === "") {
         const config = await readLoginConfig?.().catch(() => undefined);
-        return new Response(renderSiteIcpFooter(await asset.text(), config), { headers: assetHeaders });
+        return new Response(injectMiyousheLanguage(renderSiteIcpFooter(translateTemplate(await asset.text(), asset.name!), config)), { headers: assetHeaders });
       }
       return new Response(asset, { headers: assetHeaders });
     }
@@ -412,13 +420,13 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
       const row = lookup(currentToken, "web");
       if (!row) return error(401);
       async function verifySession(active: AbortSignal) {
-        if (active.aborted) throw new ProfileError("changed", "网页会话已失效。");
+        if (active.aborted) throw new ProfileError("changed", $t("lib.miyoushe-web.text_cfaa65434d"));
         const identity = await loginIdentity(row!.qq, row!.profileId).catch(() => undefined);
-        if (active.aborted || !lookup(currentToken!, "web")) throw new ProfileError("changed", "网页会话已失效。");
+        if (active.aborted || !lookup(currentToken!, "web")) throw new ProfileError("changed", $t("lib.miyoushe-web.text_cfaa65434d"));
         if (identity !== row!.account) {
           remove(currentToken!, "web");
           abortSessionJobs(currentToken!);
-          throw new ProfileError("changed", "网页会话对应的档案已换绑。");
+          throw new ProfileError("changed", $t("lib.miyoushe-web.text_93eed13e20"));
         }
       }
       const verifyLogin = () => verifySession(deadline);
@@ -441,7 +449,7 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
         const revision = await manualCheckin.revision(target, deadline, verifyLogin);
         await verifyLogin();
         if (jobs.get(key)?.status === "running") {
-          return Response.json({ message: "当前档案的签到正在执行。" }, { status: 409, headers });
+          return Response.json({ message: $t("lib.miyoushe-web.text_745e53e98d") }, { status: 409, headers });
         }
         if (!jobs.has(key) && jobs.size >= maxCheckinJobs) {
           const completed = Array.from(jobs).find(([, job]) => job.status !== "running");
@@ -456,7 +464,7 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
         void Promise.resolve().then(async () => {
           await verifyJob();
           if (await manualCheckin.revision(target, task, verifyJob) !== revision) {
-            throw new ProfileError("changed", "档案设置已变化。");
+            throw new ProfileError("changed", $t("lib.miyoushe-web.text_f25dad049a"));
           }
           const result = await manualCheckin.run(target, task, verifyJob);
           await verifyJob();
@@ -465,7 +473,7 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
           job.message = result.message?.slice(0, 4000);
         }).catch(() => {
           job.status = "failed";
-          job.message = "本次签到未完成，请核对米游社状态。";
+          job.message = $t("lib.miyoushe-web.text_1b68db9b13");
         }).finally(() => { job.updatedAt = now(); });
         return Response.json(publicJob(job, false), { headers, status: 202 });
       }
@@ -474,7 +482,7 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
         let settings: Settings;
         if (method === "POST") {
           const patch = decode(await readPanelJson(request).catch(() => undefined));
-          if (!patch) return Response.json({ message: "请提交有效的档案设置。" }, { status: 400, headers });
+          if (!patch) return Response.json({ message: $t("lib.miyoushe-web.text_a5fd7cb04e") }, { status: 400, headers });
           await verifyLogin();
           settings = await source.save(target, patch, deadline, verifyLogin);
         } else settings = await source.read(target, deadline, verifyLogin);

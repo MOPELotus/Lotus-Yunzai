@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +24,7 @@ const digestPattern = /^[0-9a-f]{64}$/u;
 const command = /^(?:(#)(原神|星铁)|(#|\*))(绑定UID|验证UID|取消验证UID)(?:\s*(\d{1,12}))?$/iu;
 const oldOrder = /^#(绑定|验证|取消验证)(原神|星铁)UID(?:\s*(\d{1,12}))?$/iu;
 const signedExport = /^(?:(#)(原神|星铁)|(#|\*))导出面板\s+(?:UID\s*)?((?:18|[1-9])\d{8})$/iu;
-const names = { gs: "原神", sr: "星铁" } as const;
+const names = { gs: $t("lib.panel-signature.text_d1597c51ed"), sr: $t("lib.panel-signature.text_a2927891f0") } as const;
 const hosts = { gs: "Enka（enka.network）", sr: "Mihomo（api.mihomo.me）" } as const;
 const actions = { 绑定uid: "begin", 验证uid: "verify", 取消验证uid: "revoke" } as const;
 const positive = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
@@ -42,8 +45,8 @@ export function matchPanelSignatureCommand(message: string): { readonly game: Ga
 }
 
 export const panelSignatureFeatures = {
-  gs: ["[genshin] 角色面板", "genshin", "@lotus-yunzai/genshin"],
-  sr: ["[starrail] 角色面板", "starrail", "@lotus-yunzai/starrail"],
+  gs: [$t("lib.panel-signature.text_81f59af71e"), "genshin", "@lotus-yunzai/genshin"],
+  sr: [$t("lib.panel-signature.text_75c12439eb"), "starrail", "@lotus-yunzai/starrail"],
 } as const;
 
 export function containsPanelSignatureChallenge(text: string) {
@@ -81,7 +84,7 @@ export function createPanelSignatureService(lock: AcquireRoleArchiveLock, {
   const inflight = new Set<string>();
   function archive(scope: Scope) {
     return createRoleJsonArchive(join(directory, scope.adapter, scope.game), lock,
-      { subject: "游戏签名核验", lockSuffix: "panel-signature", maxBytes: 4096, rejectNull: true });
+      { subject: $t("lib.panel-signature.text_b6e74a9ba2"), lockSuffix: "panel-signature", maxBytes: 4096, rejectNull: true });
   }
   function read(scope: Scope) {
     return archive(scope).read(String(scope.user), String(scope.bot)).then(raw => storedProof(raw, scope));
@@ -89,7 +92,7 @@ export function createPanelSignatureService(lock: AcquireRoleArchiveLock, {
   function update<Result>(scope: Scope, active: () => boolean,
     change: (proof: Proof | undefined) => { result: Result; document?: Proof | { state: "revoked" } }) {
     return archive(scope).update<Result>({ qq: String(scope.user), uid: String(scope.bot) }, async () => {
-      if (!active()) throw new Error("好友会话已断开。");
+      if (!active()) throw new Error($t("lib.panel-signature.text_a5295bbb99"));
     }, raw => {
       const { document, result } = change(storedProof(raw, scope));
       return { result, ...(document && { document: { version: 1, ...scope, ...document } }) };
@@ -120,16 +123,16 @@ export function createPanelSignatureService(lock: AcquireRoleArchiveLock, {
       const scope = checkScope(game, session), active = activeSession(session);
       if (!scope || !active()) return;
       const gameName = names[game];
-      if (uid && !uidPattern.test(uid)) return `请填写有效的${gameName} UID。`;
+      if (uid && !uidPattern.test(uid)) return $t("lib.panel-signature.text_442f82413a", { "gameName": gameName });
       try {
         if (action === "begin") {
-          if (!uid) return `请在好友私聊发送 #绑定${gameName}UID 游戏UID。`;
+          if (!uid) return $t("lib.panel-signature.text_4011c959d7", { "gameName": gameName });
           const code = challenge();
           const issued = now();
           const pending: Pending = { state: "pending", uid, digest: digest(code), nextCheck: issued, expires: issued + day, delivered: false };
           await update(scope, active, () => ({ result: undefined, document: pending }));
           if (!active()) return;
-          return { type: "delivery", message: `请把 UID ${uid} 的${gameName}个人签名暂时设为 ${code}。等待游戏审核和公开资料刷新后，发送 #验证${gameName}UID ${uid}。验证只向 ${hosts[game]} 查询该 UID，口令 24 小时有效。`,
+          return { type: "delivery", message: $t("lib.panel-signature.text_a16bd1671c", { "uid": uid, "gameName": gameName, "code": code, "value4": gameName, "value5": uid, "value6": hosts[game] }),
             async onDelivered() {
               if (!active() || pending.expires <= now()) return;
               await update(scope, active, old => ({ result: undefined,
@@ -141,21 +144,21 @@ export function createPanelSignatureService(lock: AcquireRoleArchiveLock, {
         if (action === "revoke") {
           const cleared = await update(scope, active, old =>
             old && (!uid || uid === old.uid) ? { result: true, document: { state: "revoked" } } : { result: false });
-          return active() ? cleared ? "本次游戏签名验证已撤回。" : "此会话没有对应的游戏签名验证。" : undefined;
+          return active() ? cleared ? $t("lib.panel-signature.text_57675031bd") : $t("lib.panel-signature.text_e5648a53b0") : undefined;
         }
         const previous = await read(scope);
         if (previous?.state !== "pending" || !previous.delivered || previous.expires <= now() || (uid && uid !== previous.uid)) {
-          return active() ? `没有对应的待验证口令，请先发 #绑定${gameName}UID 游戏UID。` : undefined;
+          return active() ? $t("lib.panel-signature.text_6a9e75196c", { "gameName": gameName }) : undefined;
         }
         const key = `${game}:${previous.uid}`;
-        if (inflight.has(key)) return "此游戏 UID 的签名正在查询。";
+        if (inflight.has(key)) return $t("lib.panel-signature.text_816bef5a6f");
         const waited = previous.nextCheck - now();
-        if (waited > 0) return `公开资料可能仍在缓存，请在 ${Math.ceil(waited / 1000)} 秒后重试。`;
+        if (waited > 0) return $t("lib.panel-signature.text_b853dfffce", { "value1": Math.ceil(waited / 1000) });
         inflight.add(key);
         try {
           if (!active()) return;
           const result = await readSignature(game, previous.uid, session.signal, undefined, async () => {
-            if (!active()) throw new Error("好友会话已断开。");
+            if (!active()) throw new Error($t("lib.panel-signature.text_a5295bbb99"));
           });
           if (!active()) return;
           const matched = result.state === "ready" &&
@@ -170,13 +173,13 @@ export function createPanelSignatureService(lock: AcquireRoleArchiveLock, {
             return { result: "retry", document: { ...old, nextCheck: Math.min(old.expires, checked + ttl * 1000) } };
           });
           if (!active()) return;
-          if (outcome === "ok") return `已验证 UID ${previous.uid} 的${gameName}签名。可以改回签名，并在 30 分钟内从此好友私聊发送 #${gameName}导出面板 ${previous.uid}。`;
-          if (outcome === "changed") return "签名口令已更新或撤回，请按最近一条确认消息操作。";
-          return result.state === "unavailable" ? "公开签名服务暂不可用，请稍后重试。"
-            : `尚未读到匹配签名。请核对游戏中保存的签名和公开资料，${ttl} 秒后重试。`;
+          if (outcome === "ok") return $t("lib.panel-signature.text_48517e574f", { "uid": previous.uid, "gameName": gameName, "value3": gameName, "value4": previous.uid });
+          if (outcome === "changed") return $t("lib.panel-signature.text_6c3179fea8");
+          return result.state === "unavailable" ? $t("lib.panel-signature.text_c50b4bcfb4")
+            : $t("lib.panel-signature.text_c551a81a1a", { "ttl": ttl });
         } finally { inflight.delete(key); }
       } catch {
-        if (active()) return "游戏签名验证暂不可用，请稍后重试。";
+        if (active()) return $t("lib.panel-signature.text_b30b7969b9");
       }
     },
   };

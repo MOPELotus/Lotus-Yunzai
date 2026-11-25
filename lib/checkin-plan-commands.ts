@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createProfileStore } from "@lotus-yunzai/account";
 import { renderStatusCard } from "@lotus-yunzai/skia/status-card";
 import { legacyUnconfirmedStage, type CheckinScheduleEntry, type CheckinSchedulePlan } from "./checkin-schedule-plan.ts";
@@ -38,28 +41,28 @@ export function checkinScheduleSettingCommands(root: URL,
     writing = next.then(() => {}, () => {});
     try {
       const saved = await next;
-      const detail = change.type === "plan-cron" ? "已更新明日签到计划生成时间。"
-        : change.mode === "random" ? "全局签到已切换到随机模式。" : "全局签到已切换到固定模式。";
-      return statusMessage("调度配置", `Lotus-Yunzai 调度 · 已保存\n${detail}`, [
-        `模式：${saved.mode ?? "random"}`, `固定时间：${saved.fixed_time ?? "04:30"}`,
-        `计划生成：${saved.plan_generate_cron ?? "0 0 0 * * ? *"}`, `到期扫描：${saved.run_due_cron ?? "0 * * * * *"}`,
+      const detail = change.type === "plan-cron" ? $t("lib.checkin-plan-commands.text_b9b27cc3c7")
+        : change.mode === "random" ? $t("lib.checkin-plan-commands.text_180649a6c5") : $t("lib.checkin-plan-commands.text_11432f0666");
+      return statusMessage($t("lib.checkin-plan-commands.text_206dcbaaf0"), $t("lib.checkin-plan-commands.text_74d664b76d", { "detail": detail }), [
+        $t("lib.checkin-plan-commands.text_b9bac5ac4e", { "value1": saved.mode ?? "random" }), $t("lib.checkin-plan-commands.text_a13cfc6e94", { "value1": saved.fixed_time ?? "04:30" }),
+        $t("lib.checkin-plan-commands.text_4fa3db84b0", { "value1": saved.plan_generate_cron ?? "0 0 0 * * ? *" }), $t("lib.checkin-plan-commands.text_92dd7446df", { "value1": saved.run_due_cron ?? "0 * * * * *" }),
       ], signal);
     } catch (error) {
       if (signal.aborted) return "";
-      return error instanceof CheckinScheduleSettingsError ? error.message : "暂时无法保存全局签到调度。";
+      return error instanceof CheckinScheduleSettingsError ? error.message : $t("lib.checkin-plan-commands.text_4e291fb36a");
     }
   }
   return {
     name: "@lotus-yunzai/checkin-schedule-settings",
     commands: {
       "#签到随机模式"(argument, context) {
-        return argument ? "请直接发送 #签到随机模式。" : save(context, { type: "mode", mode: "random" });
+        return argument ? $t("lib.checkin-plan-commands.text_8dd280b33c") : save(context, { type: "mode", mode: "random" });
       },
       "#签到固定模式"(argument, context) {
         return save(context, { type: "mode", mode: "fixed", ...(argument && { time: argument }) });
       },
       "#签到计划生成"(argument, context) {
-        return argument ? save(context, { type: "plan-cron", time: argument }) : "请发送 #签到计划生成 H:MM。";
+        return argument ? save(context, { type: "plan-cron", time: argument }) : $t("lib.checkin-plan-commands.text_84152f12f4");
       },
     },
   };
@@ -67,20 +70,20 @@ export function checkinScheduleSettingCommands(root: URL,
 
 function checkinPlanCard(plan: CheckinSchedulePlan, title: string, subtitle: string, signal: AbortSignal, extra: readonly string[] = []) {
   const lines = plan.entries.slice(0, 12).map(entry =>
-    `档案 ${entry.profileId}：${entry.time} · ${entry.stage === legacyUnconfirmedStage ? "旧版签到结果待核对" : entry.mode}`);
-  if (plan.entries.length > 12) lines.push(`另有 ${plan.entries.length - 12} 个档案`);
+    $t("lib.checkin-plan-commands.text_375a4fcb27", { "profileId": entry.profileId, "time": entry.time, "value3": entry.stage === legacyUnconfirmedStage ? $t("lib.checkin-plan-commands.text_5a1a607119") : entry.mode }));
+  if (plan.entries.length > 12) lines.push($t("lib.checkin-plan-commands.text_f5130a3a8a", { "value1": plan.entries.length - 12 }));
   lines.push(...extra);
   const message = plan.mode === "random"
-    ? "随机模式已按时间窗口均匀分布，重启会复用已生成计划。"
-    : "固定签到计划已生成，单独设置随机模式的档案按随机时间执行。";
+    ? $t("lib.checkin-plan-commands.text_9887346e5c")
+    : $t("lib.checkin-plan-commands.text_93593e0a29");
   return statusMessage(title, `${subtitle}\n${message}`, lines, signal);
 }
 
 export function checkinPlanNotice(entry: CheckinScheduleEntry, date: string, title: string, late: boolean, signal: AbortSignal) {
-  const message = late ? `新注册档案已补入签到计划，预计 ${entry.time} 左右执行。` :
-    `明日自动签到将在 ${entry.time} 左右执行。`;
-  return statusMessage(title, `${date} · 档案 ${entry.profileId}\n${message}`, [
-    `签到时间：${entry.time}`, `模式：${late ? "新注册补位" : entry.mode}`, `日期：${date}`,
+  const message = late ? $t("lib.checkin-plan-commands.text_245c3e0430", { "time": entry.time }) :
+    $t("lib.checkin-plan-commands.text_61fab5f807", { "time": entry.time });
+  return statusMessage(title, $t("lib.checkin-plan-commands.text_ad055e9d82", { "date": date, "profileId": entry.profileId, "message": message }), [
+    $t("lib.checkin-plan-commands.text_0e8398152b", { "time": entry.time }), $t("lib.checkin-plan-commands.text_b9bac5ac4e", { "value1": late ? $t("lib.checkin-plan-commands.text_56c9660971") : entry.mode }), $t("lib.checkin-plan-commands.text_80811a4645", { "date": date }),
   ], signal);
 }
 
@@ -94,44 +97,44 @@ export function checkinPlanCommands(profiles: Pick<ReturnType<typeof createProfi
     name: "@lotus-yunzai/checkin-plan",
     commands: {
       async "#生成签到计划"(argument, context) {
-        if (argument) return "请直接发送 #生成签到计划。";
+        if (argument) return $t("lib.checkin-plan-commands.text_db8f60aa57");
         if (signal.aborted) return "";
-        if (!permission.canGenerate(context)) return "当前会话无权生成全局签到计划。";
+        if (!permission.canGenerate(context)) return $t("lib.checkin-plan-commands.text_446c916ec9");
         try {
           const next = await schedule.generateTomorrow();
           if (signal.aborted) return "";
-          if (!next) return "签到日期已切换，请重新生成计划。";
+          if (!next) return $t("lib.checkin-plan-commands.text_80c26ead54");
           const counts = next.notices;
-          return checkinPlanCard(next.plan, "签到计划", `${next.plan.date} · 全局计划`, signal,
-            counts ? [`已通知：${counts.confirmed}/${next.plan.entries.length}`] : []);
+          return checkinPlanCard(next.plan, $t("lib.checkin-plan-commands.text_8d5f5be591"), $t("lib.checkin-plan-commands.text_07f0de5d5c", { "date": next.plan.date }), signal,
+            counts ? [$t("lib.checkin-plan-commands.text_3900c70e87", { "confirmed": counts.confirmed, "length": next.plan.entries.length })] : []);
         } catch {
-          return signal.aborted ? "" : "明日签到计划暂时无法生成。";
+          return signal.aborted ? "" : $t("lib.checkin-plan-commands.text_b2672c7c39");
         }
       },
       async "#执行到期签到"(argument, context) {
-        if (argument) return "请直接发送 #执行到期签到。";
+        if (argument) return $t("lib.checkin-plan-commands.text_9831ddeae2");
         if (signal.aborted) return "";
-        if (!permission.canRunDue(context)) return "当前会话无权执行到期签到。";
-        if (!schedule.enabled) return "全局自动签到已关闭。";
-        try { await context.reply?.("正在检查并执行到期签到任务。"); } catch { /* Keep the authorized scan running. */ }
+        if (!permission.canRunDue(context)) return $t("lib.checkin-plan-commands.text_0deec12361");
+        if (!schedule.enabled) return $t("lib.checkin-plan-commands.text_9b30689e7c");
+        try { await context.reply?.($t("lib.checkin-plan-commands.text_c04ddeae0d")); } catch { /* Keep the authorized scan running. */ }
         if (signal.aborted) return "";
-        if (!permission.canRunDue(context)) return "当前会话无权执行到期签到。";
+        if (!permission.canRunDue(context)) return $t("lib.checkin-plan-commands.text_0deec12361");
         const result = await schedule.runDue();
         if (signal.aborted) return "";
-        if (result?.status === "failed") return "本轮到期签到暂时无法执行。";
-        if (result?.status === "locked") return "到期签到正在执行，请稍后。";
-        if (!result) return "当前没有到期且未完成的签到任务。";
-        const message = result.status === "interrupted" ? "本轮中止，已确认的任务保留结果。" : result.entries.length
-          ? "本轮到期签到已处理，结果按档案设置通知。" : "当前没有到期且未完成的签到任务。";
+        if (result?.status === "failed") return $t("lib.checkin-plan-commands.text_925bbe2f72");
+        if (result?.status === "locked") return $t("lib.checkin-plan-commands.text_bc2dc21766");
+        if (!result) return $t("lib.checkin-plan-commands.text_01c0d3274d");
+        const message = result.status === "interrupted" ? $t("lib.checkin-plan-commands.text_cf5ce1c229") : result.entries.length
+          ? $t("lib.checkin-plan-commands.text_22ff848bda") : $t("lib.checkin-plan-commands.text_01c0d3274d");
         const lines = result.entries.slice(0, 8).map(entry =>
-          `QQ ${entry.qq} · P${entry.profileId}：${entry.communityRetry ? "已安排签到补跑" : entry.ok ? "成功" : "失败"} · ${entry.stage}`);
-        if (result.deferred) lines.push(`稍后处理：${result.deferred} 个档案`);
-        return statusMessage("到期签到", `${result.date}\n${message}`, lines, signal);
+          `QQ ${entry.qq} · P${entry.profileId}：${entry.communityRetry ? $t("lib.checkin-plan-commands.text_436805db16") : entry.ok ? $t("lib.checkin-plan-commands.text_053461ce86") : $t("lib.checkin-plan-commands.text_28384d7afd")} · ${entry.stage}`);
+        if (result.deferred) lines.push($t("lib.checkin-plan-commands.text_149a8b1518", { "deferred": result.deferred }));
+        return statusMessage($t("lib.checkin-plan-commands.text_f988617878"), `${result.date}\n${message}`, lines, signal);
       },
       async "#我的签到时间"(argument, context) {
-        if (argument) return "请直接发送 #我的签到时间。";
+        if (argument) return $t("lib.checkin-plan-commands.text_4f55fe9f28");
         if (signal.aborted) return "";
-        if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return "请从 QQ 会话查看签到时间。";
+        if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return $t("lib.checkin-plan-commands.text_57ba35cda5");
         const qq = String(context.user_id);
         try {
           const targets = [];
@@ -142,11 +145,11 @@ export function checkinPlanCommands(profiles: Pick<ReturnType<typeof createProfi
           }
           const plan = await schedule.personalTomorrow(qq, targets);
           if (signal.aborted) return "";
-          if (!plan) return "明日签到计划尚未生成，请等待计划生成任务。";
-          if (!plan.entries.length) return "明日计划里没有找到本人的档案。";
-          return checkinPlanCard(plan, "我的签到时间", `${plan.date} · QQ ${qq}`, signal);
+          if (!plan) return $t("lib.checkin-plan-commands.text_0cb3994d71");
+          if (!plan.entries.length) return $t("lib.checkin-plan-commands.text_aa4d086a82");
+          return checkinPlanCard(plan, $t("lib.checkin-plan-commands.text_013360cfe8"), `${plan.date} · QQ ${qq}`, signal);
         } catch {
-          return signal.aborted ? "" : "明日签到计划暂时无法读取。";
+          return signal.aborted ? "" : $t("lib.checkin-plan-commands.text_d2d2351a0a");
         }
       },
     },

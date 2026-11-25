@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { addAbortListener } from "node:events";
 import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -172,7 +175,7 @@ function normaliseApi(method: unknown, route: unknown, handlers: readonly unknow
 }
 
 function extensionLogger(plugin: string) {
-  const tag = `[锅巴扩展] ${plugin}`;
+  const tag = $t("lib.panel-guoba-pages.text_95070d5be9", { "plugin": plugin });
   return Object.freeze({
     trace: (...values: unknown[]) => console.debug(tag, ...values),
     debug: (...values: unknown[]) => console.debug(tag, ...values),

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { addAbortListener } from "node:events";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -123,7 +126,7 @@ async function gitRepositories(directory: string): Promise<string[]> {
   }
   const git = Bun.which("git");
   if (!git) {
-    throw new Error("发现 Git 插件，请安装 Git 以检查仓库来源。");
+    throw new Error($t("lib.plugins.loader.text_b2c278c4a6"));
   }
   const process = Bun.spawn([git, "config", "--local", "--no-includes", "--get-regexp", "^remote\\..*\\.url$"], {
     cwd: directory, stdout: "pipe", stderr: "ignore",
@@ -131,20 +134,20 @@ async function gitRepositories(directory: string): Promise<string[]> {
   const output = await new Response(process.stdout).text();
   const exit = await process.exited;
   if (exit === 1) return [];
-  if (exit !== 0) throw new Error("无法读取插件的 Git 仓库来源。");
+  if (exit !== 0) throw new Error($t("lib.plugins.loader.text_21f3a45cfe"));
   return output.trim().split("\n").map((line) => line.slice(line.indexOf(" ") + 1));
 }
 
 async function findEntry(directory: string, value: string): Promise<string> {
   if (isAbsolute(value)) {
-    throw new Error("插件入口须使用包内相对路径。");
+    throw new Error($t("lib.plugins.loader.text_8adba9fa4b"));
   }
   const root = await realpath(directory);
   const path = await realpath(resolve(root, value));
   const local = relative(root, path);
   if (!local || local === ".." || local.startsWith(`..${sep}`) || isAbsolute(local) ||
       !pluginScriptExtensions.has(extname(path)) || !(await stat(path)).isFile()) {
-    throw new Error("插件入口须是包内的 JS 或 TS 文件。");
+    throw new Error($t("lib.plugins.loader.text_bfa4056ec1"));
   }
   return path;
 }
@@ -208,7 +211,7 @@ async function disposeModule(name: string, cleanup: () => unknown): Promise<void
   try {
     await cleanup();
   } catch {
-    console.warn(`[插件] 清理 ${name} 失败。`);
+    console.warn($t("lib.plugins.loader.text_1e476e0971", { "name": name }));
   }
 }
 
@@ -300,7 +303,7 @@ export async function loadPlugins(
     };
   } = {},
 ): Promise<PluginLoadReport> {
-  console.info("[Plugin] 加载插件中...");
+  console.info($t("lib.plugins.loader.text_98b04f5ad2"));
   const records: PluginLoadRecord[] = [];
   const timings: PluginLoadTiming[] = [];
   const directories = new Map<string, { path: string; packageName: string }>();
@@ -322,7 +325,7 @@ export async function loadPlugins(
   const seen = new Map<string, string>();
   const ready: { label: string; entry: string; declaredScript?: string; moduleName?: string; directory?: string; packageName?: string }[] = [];
   const reject = (name: string, reason: string, label = name) => {
-    console.warn(`[插件] 拒绝加载 ${label}：${reason}`);
+    console.warn($t("lib.plugins.loader.text_3d08c64cfa", { "label": label, "reason": reason }));
     records.push({ name, status: "rejected", reason });
   };
   const rejectRetiredScript = (name: string, bytes: Uint8Array) => {
@@ -354,12 +357,12 @@ export async function loadPlugins(
         continue;
       }
       if (commands.hasModule(name)) {
-        reject(label, `模块 ${name} 已注册。`);
+        reject(label, $t("lib.plugins.loader.text_a9937d3c44", { "name": name }));
         continue;
       }
       const duplicate = identities.map((identity) => seen.get(identity)).find((path) => path !== undefined);
       if (duplicate) {
-        reject(label, `与 ${duplicate} 重复。`);
+        reject(label, $t("lib.plugins.loader.text_15efc78809", { "duplicate": duplicate }));
         continue;
       }
       if (declaredEntry !== undefined) {
@@ -400,7 +403,7 @@ export async function loadPlugins(
       }
       for (const identity of identities) seen.set(identity, label);
     } catch {
-      reject(label, "无法读取插件元数据，或入口路径无效。");
+      reject(label, $t("lib.plugins.loader.text_8c4ec51c20"));
     }
   }
 
@@ -461,7 +464,7 @@ export async function loadPlugins(
       if (moduleName) {
         const create = published.createModule;
         if (create !== undefined && typeof create !== "function") {
-          throw new Error("createModule 须为模块工厂函数。");
+          throw new Error($t("lib.plugins.loader.text_99ebe386a1"));
         }
         const builtIn = directory && relative(root, directory) === builtInDirectories.get(moduleName);
         const group = builtIn && moduleName === "@lotus-yunzai/group" ? options.groupServices : undefined;
@@ -490,18 +493,18 @@ export async function loadPlugins(
         const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, panelRebuild, atlasSchedule,
           nativeEvents } = record(module);
         if (dispose !== undefined) {
-          if (typeof dispose !== "function") throw new Error("dispose 须为模块清理函数。");
+          if (typeof dispose !== "function") throw new Error($t("lib.plugins.loader.text_566d22dde8"));
           cleanup = () => dispose.call(module);
         }
         signal.throwIfAborted();
         if (handlers === null || typeof handlers !== "object" || Array.isArray(handlers)) {
-          throw new Error("入口必须通过默认导出提供 commands。");
+          throw new Error($t("lib.plugins.loader.text_a318d25904"));
         }
         if (aliases !== undefined && (aliases === null || typeof aliases !== "object" || Array.isArray(aliases))) {
-          throw new Error("aliases 须为指令别名与本模块指令名的映射。");
+          throw new Error($t("lib.plugins.loader.text_45ec125a72"));
         }
         if (fallbackFeatures !== undefined && typeof fallbackFeatures !== "function") {
-          throw new Error("fallbackFeatures 须为按指令返回功能名称的函数。");
+          throw new Error($t("lib.plugins.loader.text_00cebd230e"));
         }
         unregister = commands.registerModule({
           name: moduleName, commands: handlers as CommandModule["commands"], aliases: aliases as CommandModule["aliases"],
@@ -512,7 +515,7 @@ export async function loadPlugins(
         if (builtIn && moduleName === "@lotus-yunzai/meme" && options.profileLikeImages &&
             typeof published.createProfileLikeImageRenderer === "function") {
           const renderer = published.createProfileLikeImageRenderer(options.profileLikeImages.directory, options.profileLikeImages.rasterScale);
-          if (typeof renderer !== "function") throw new Error("资料卡回执图片入口必须返回渲染函数。");
+          if (typeof renderer !== "function") throw new Error($t("lib.plugins.loader.text_eeda73fcfc"));
           const removeRenderer = options.profileLikeImages.register(renderer);
           const dispose = cleanup;
           cleanup = async () => {
@@ -523,7 +526,7 @@ export async function loadPlugins(
         const game = gachaGames.get(moduleName);
         if (game && directory && relative(root, directory) === builtInDirectories.get(moduleName) &&
             gachaUpdate !== undefined && options.registerGacha) {
-          if (typeof gachaUpdate !== "function") throw new Error("gachaUpdate 须为抽卡记录更新函数。");
+          if (typeof gachaUpdate !== "function") throw new Error($t("lib.plugins.loader.text_37b77a56e7"));
           const unregisterGacha = options.registerGacha(game, gachaUpdate as GachaUpdater);
           const disposeFactory = cleanup;
           cleanup = () => {
@@ -532,7 +535,7 @@ export async function loadPlugins(
           };
         }
         if (builtIn && (game === "gs" || game === "sr") && panelRebuild !== undefined && options.registerPanelRebuild) {
-          if (typeof panelRebuild !== "function") throw new Error("面板重建入口须为函数。");
+          if (typeof panelRebuild !== "function") throw new Error($t("lib.plugins.loader.text_5fe959f178"));
           const unregisterRebuild = options.registerPanelRebuild(game, panelRebuild as PanelRebuilder);
           const disposeFactory = cleanup;
           cleanup = () => {
@@ -549,7 +552,7 @@ export async function loadPlugins(
           };
         }
         if (builtIn && (moduleName === "@lotus-yunzai/group" || moduleName === "@lotus-yunzai/atlas") && nativeEvents !== undefined) {
-          if (!Array.isArray(nativeEvents)) throw new Error("原生事件须以列表提供。");
+          if (!Array.isArray(nativeEvents)) throw new Error($t("lib.plugins.loader.text_9c79ba10f1"));
           const remove = legacy.registerNative(nativeEvents as NativePluginEvent[], label, packageName ?? moduleName);
           const disposeFactory = cleanup;
           cleanup = async () => {
@@ -559,7 +562,7 @@ export async function loadPlugins(
         }
         if (published.apps !== undefined) {
           if (published.apps === null || typeof published.apps !== "object") {
-            throw new Error("apps 须导出 V3 插件类。");
+            throw new Error($t("lib.plugins.loader.text_46c4b18ee4"));
           }
           await legacy.register(published, label, packageName, signal, directory);
         }
@@ -575,12 +578,12 @@ export async function loadPlugins(
       const result = await Promise.race([loading, interrupted.promise]);
       signal.throwIfAborted();
       if (result !== "loaded") {
-        const reason = result === "skipped" ? "插件初始化请求跳过。" : "未导出可用的 V3 插件类。";
-        console.warn(`[Plugin] 跳过插件 [${label}] ${reason}`);
+        const reason = result === "skipped" ? $t("lib.plugins.loader.text_708d087600") : $t("lib.plugins.loader.text_c197bfdd0d");
+        console.warn($t("lib.plugins.loader.text_e7b7567f3a", { "label": label, "reason": reason }));
         records.push({ name: label, status: "skipped", reason });
         continue;
       }
-      console.debug(`[Plugin] 加载插件 [${label}]`);
+      console.debug($t("lib.plugins.loader.text_124bf35165", { "label": label }));
       recordLoaded(label, started, directory, packageName, moduleName === undefined);
       if (isManagedLegacyScript(declaredScript)) declaredScripts.add(declaredScript);
       const watch = directory && watched.get(directory);
@@ -592,13 +595,13 @@ export async function loadPlugins(
     } catch (error) {
       if (services.signal.aborted) break;
       if (deadline.signal.aborted) {
-        console.warn(`[Plugin] 加载插件超时 [${label}]`);
-        records.push({ name: label, status: "failed", reason: "插件加载超时。" });
+        console.warn($t("lib.plugins.loader.text_5443aee69b", { "label": label }));
+        records.push({ name: label, status: "failed", reason: $t("lib.plugins.loader.text_b6ed139468") });
         continue;
       }
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[Plugin] 加载插件错误 [${label}] ${message}`);
-      records.push({ name: label, status: "failed", reason: "入口加载或初始化失败，请查看宿主日志。" });
+      console.warn($t("lib.plugins.loader.text_62da917fe2", { "label": label, "message": message }));
+      records.push({ name: label, status: "failed", reason: $t("lib.plugins.loader.text_f60862fe7b") });
     } finally {
       clearTimeout(timer);
       cancellation[Symbol.dispose]();
@@ -621,7 +624,7 @@ export async function loadPlugins(
       const label = relative(root, join(directory, file));
       await legacy.remove(label);
       watch.attempted.delete(file);
-      if (watch.active.delete(file)) console.log(`[插件] 已卸载 ${label}。`);
+      if (watch.active.delete(file)) console.log($t("lib.plugins.loader.text_f5f7e2e640", { "label": label }));
       clearEntry(label);
     }
     if (!physical || entries.some(({ name }) => name === "index.js")) return;
@@ -649,11 +652,11 @@ export async function loadPlugins(
       const label = relative(root, entry);
       const retired = retiredPluginScript(bytes);
       if (retired) {
-        console.warn(`[插件] 拒绝热更新 ${label}（${retired.name}）：${retired.reason}`);
+        console.warn($t("lib.plugins.loader.text_60d3dded67", { "label": label, "name": retired.name, "reason": retired.reason }));
         continue;
       }
       if (entry.includes("?")) {
-        console.warn(`[插件] 热更新 ${label} 失败：Bun 无法区分入口路径中的问号和导入参数。`);
+        console.warn($t("lib.plugins.loader.text_3c4eeecae3", { "label": label }));
         continue;
       }
       const deadline = new AbortController();
@@ -677,17 +680,17 @@ export async function loadPlugins(
           clearEntry(label);
           recordLoaded(label, start, directory, watch.packageName, true);
           watch.active.set(file, hash);
-          console.log(`[插件] 已热更新 ${label}。`);
+          console.log($t("lib.plugins.loader.text_ea0ee6ce1c", { "label": label }));
         } else if (!loading.aborted) {
-          console.warn(`[插件] 热更新 ${label} 失败：入口没有可启用的 V3 插件。`);
+          console.warn($t("lib.plugins.loader.text_e34d3516a2", { "label": label }));
         }
       })();
       try {
         await Promise.race([replacement, aborted.promise]);
       } catch (error) {
         if (!signal.aborted) {
-          const message = deadline.signal.aborted ? "加载超时。" : (error instanceof Error ? error.message : String(error));
-          console.warn(`[插件] 热更新 ${label} 失败：${message}`);
+          const message = deadline.signal.aborted ? $t("lib.plugins.loader.text_b8f67177e8") : (error instanceof Error ? error.message : String(error));
+          console.warn($t("lib.plugins.loader.text_578997b20e", { "label": label, "message": message }));
         }
       } finally {
         cancel[Symbol.dispose]();
@@ -714,7 +717,7 @@ export async function loadPlugins(
   for (const [script, replacement] of retiredScripts) {
     if (replacementReady(replacement)) readyScripts.add(script);
   }
-  console.info(`[Plugin] 加载插件[${records.filter(record => record.status === "loaded").length}个]`);
+  console.info($t("lib.plugins.loader.text_21ad9062c9", { "length": records.filter(record => record.status === "loaded").length }));
   return {
     records, directories, timings, readyDirectories: [...readyDirectories], readyScripts: [...readyScripts],
     loadedScripts: () => [...loadedScripts],

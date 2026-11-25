@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { devNull } from "node:os";
@@ -14,20 +17,20 @@ function readHost(value: unknown): string {
     if (isIP(bare) === 6) return bare;
     if (bare === host && host.length <= 253 && hostname.test(host)) return host;
   }
-  throw new Error("redis.yaml 的 host 须为有效的主机名或 IP 地址。");
+  throw new Error($t("lib.valkey-config.text_8eb2e06c1a"));
 }
 
 function readInteger(value: unknown, key: "port" | "db", fallback: number, min: number, max: number): number {
   if (value === undefined) return fallback;
   const number = typeof value === "string" && /^\d+$/u.test(value.trim()) ? Number(value) : value;
   if (typeof number === "number" && Number.isSafeInteger(number) && number >= min && number <= max) return number;
-  throw new Error(`redis.yaml 的 ${key} 不是有效的整数。`);
+  throw new Error($t("lib.valkey-config.text_889ba748d6", { "key": key }));
 }
 
 function readCredential(value: unknown, key: "username" | "password"): string | undefined {
   if (value === undefined || value === null || value === "") return;
   if (typeof value === "string") return value;
-  throw new Error(`redis.yaml 的 ${key} 须为文本。`);
+  throw new Error($t("lib.valkey-config.text_01b067eb79", { "key": key }));
 }
 
 export async function readStorageConnection(
@@ -41,7 +44,7 @@ export async function readStorageConnection(
 }
 
 export function parseStorageSettings(config: Readonly<Record<string, unknown>>): StorageConnectionOptions {
-  if (config.socket !== undefined && (typeof config.socket !== "string" || !config.socket.startsWith("/") || /[\0\r\n]/u.test(config.socket))) throw new Error("redis.yaml 的 socket 须为绝对路径。");
+  if (config.socket !== undefined && (typeof config.socket !== "string" || !config.socket.startsWith("/") || /[\0\r\n]/u.test(config.socket))) throw new Error($t("lib.valkey-config.text_9a77abc459"));
   return {
     host: readHost(config.host),
     port: readInteger(config.port, "port", 6379, typeof config.socket === "string" ? 0 : 1, 65535),

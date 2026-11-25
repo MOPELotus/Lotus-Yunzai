@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../../i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("captcha", messageCatalog.messages);
 // TypeScript port of the established paired-symbol recognizers.
 import sharp from 'sharp'
 import * as ort from 'onnxruntime-node'
@@ -46,7 +49,7 @@ export class EmbeddedRecognition {
       .slice(0, 3)
       .map((p) => p.slice(0, 2).sort((a, b) => b.box[3]! - a.box[3]!))
       .sort((a, b) => a[0]!.box[0]! - b[0]!.box[0]!)
-    if (!pairs.length) throw new Error('图标模型未识别到匹配项')
+    if (!pairs.length) throw new Error($t("src.solvers.embedded.text_19fce01e2b"))
     return pairs.map((pair) => {
       const b = pair[1]!.box
       return [
@@ -115,7 +118,7 @@ export class EmbeddedRecognition {
       features[row.cls === 0 ? 'top' : 'bottom']!.push({ ...row, box, feature })
     }
     if (!features.bottom.length || features.top.length < features.bottom.length)
-      throw new Error('图标检测不完整')
+      throw new Error($t("src.solvers.embedded.text_699b30879c"))
     const used = new Set(),
       points = []
     for (const target of features.bottom.sort((a, b) => a.box[0]! - b.box[0]!)) {

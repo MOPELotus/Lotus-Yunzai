@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback } from "./builtin-fonts.ts";
 // The layout follows Miao's gacha/gacha-info template and its common element styles.
@@ -73,7 +76,7 @@ async function readTheme(root: string, game: Game) {
     readImage(root, "common/item/bg4.png"), readImage(root, "common/item/bg5.png"),
     assetPath(root, "common/font/HYWH-65W.ttf"), assetPath(root, "common/font/tttgbnumber.ttf"),
   ]);
-  if (!background || !texture || !four || !five || !han || !number) throw new Error("旧卡池图卡主题不完整。");
+  if (!background || !texture || !four || !five || !han || !number) throw new Error($t("gacha-pool-card.text_b6031ff5ab"));
   const fontFamily = `${registerGachaThemeFont("Number", number)}, ${registerGachaThemeFont("Han", han)}, sans-serif`;
   return { background, texture, stars: { 4: four, 5: five }, fontFamily };
 }
@@ -207,7 +210,7 @@ function drawPool(ctx: Context, pool: Pool, y: number, theme: Theme, arts: Reado
     text(ctx, "mix", mixX + 15, y + 22.5, theme.fontFamily, 12, "#6f4b00", { center: true });
     dateX += 36;
   }
-  if (pool.from || pool.to) text(ctx, `${pool.from || "未知"} - ${pool.to || "未知"}`, dateX, y + 24, theme.fontFamily, 12, "#aaa");
+  if (pool.from || pool.to) text(ctx, `${pool.from || $t("gacha-pool-card.text_4d8c1c5b42")} - ${pool.to || $t("gacha-pool-card.text_4d8c1c5b42")}`, dateX, y + 24, theme.fontFamily, 12, "#aaa");
 
   let top = y + caption + 6;
   for (const [index, group] of pool.groups.entries()) {
@@ -230,9 +233,9 @@ export async function renderGachaPoolCard(model: GachaPoolCardModel, { themeDire
   readonly mode?: "auto" | "gpu" | "cpu";
 }) {
   const root = await realpath(themeDirectory).catch(() => undefined);
-  if (!root) throw new Error("旧卡池主题目录不可用。");
+  if (!root) throw new Error($t("gacha-pool-card.text_a2318030b9"));
   if (!model.pools.length || model.pools.some(pool => pool.groups.some(group => group.rows.some(row => row.length > 8)))) {
-    throw new Error("卡池图卡数据无效。");
+    throw new Error($t("gacha-pool-card.text_d590ded8bf"));
   }
   const theme = await readCardsTheme(root, model.game);
   const paths = new Set(model.pools.flatMap(pool => pool.groups.flatMap(group => group.rows.flatMap(row => row.map(item => item.img))))
@@ -265,6 +268,6 @@ export async function renderGachaPoolCard(model: GachaPoolCardModel, { themeDire
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
     ctx.shadowBlur = 1;
-    text(ctx, "Created By Lotus-Yunzai", 375, footerY + 8.5, theme.fontFamily, 14, "white", { center: true });
+    text(ctx, $t("gacha-pool-card.text_d41c915582"), 375, footerY + 8.5, theme.fontFamily, 14, "white", { center: true });
   }, mode, { allowHalfScale: scale === 4 });
 }

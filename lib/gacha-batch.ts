@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { ProfileError, profileGames, type Game } from "@lotus-yunzai/account";
 import { GameRecordRequestError, HoyoRequestError, ZzzManualGachaLinkRequired, ZzzTuningRateLimitError } from "@lotus-yunzai/hoyo-client";
 import { nativeImageRasterScale } from "@lotus-yunzai/skia";
@@ -14,9 +17,9 @@ type Entry = { readonly updater: GachaUpdater };
 type Outcome = { readonly status: "done" | "skipped" | "failed"; readonly text: string };
 
 const batchCommand = /^#更新(?:全部|所有)抽卡记录$/u;
-const title = "全部抽卡记录";
+const title = $t("lib.gacha-batch.text_fb904077ad");
 const maxCardRows = 18;
-const names = { gs: "原神", sr: "星铁", zzz: "绝区零" } as const satisfies Record<GachaGame, string>;
+const names = { gs: $t("lib.gacha-batch.text_d1597c51ed"), sr: $t("lib.gacha-batch.text_a2927891f0"), zzz: $t("lib.gacha-batch.text_b1110352c9") } as const satisfies Record<GachaGame, string>;
 const expiredCodes = new Set([-101, -100, 10001, 10101, 10102, 10103]);
 
 function skipped(text: string): Outcome {
@@ -24,40 +27,40 @@ function skipped(text: string): Outcome {
 }
 
 function failed(message: string): Outcome {
-  return { status: "failed", text: `失败：${message}` };
+  return { status: "failed", text: $t("lib.gacha-batch.text_e09c1fe6be", { "message": message }) };
 }
 
 function rejected(error: unknown, profileId: number): Outcome {
   if (error instanceof ZzzManualGachaLinkRequired) {
-    const command = `%抽卡链接${profileId === 1 ? "" : profileId}`;
-    return skipped(`国际服请私聊发送 ${command}，跳过`);
+    const command = $t("lib.gacha-batch.text_c4df79e596", { "value1": profileId === 1 ? "" : profileId });
+    return skipped($t("lib.gacha-batch.text_e0128939ff", { "command": command }));
   }
   if (error instanceof ProfileError) {
-    if (error.code === "role-missing") return skipped("未绑定 UID，跳过");
-    if (error.code === "missing" || error.code === "login-required") return failed("请先登录该档案");
-    if (error.code === "changed") return failed("档案已变更，请重新发起");
+    if (error.code === "role-missing") return skipped($t("lib.gacha-batch.text_b6a71bbb4b"));
+    if (error.code === "missing" || error.code === "login-required") return failed($t("lib.gacha-batch.text_8038b6c6d7"));
+    if (error.code === "changed") return failed($t("lib.gacha-batch.text_34e60e4dc4"));
   }
   if (error instanceof HoyoRequestError) {
-    if (error.code === "profile-changed") return failed("档案已变更，请重新发起");
+    if (error.code === "profile-changed") return failed($t("lib.gacha-batch.text_34e60e4dc4"));
     if (error instanceof ZzzTuningRateLimitError || error.status === 429 ||
         (error instanceof GameRecordRequestError && error.reason === "rate-limited")) {
-      return failed("访问过于频繁，请稍后再试");
+      return failed($t("lib.gacha-batch.text_405232f2e3"));
     }
     if (error.code === "refresh" || error.status === 401 ||
         (error.code === "api" && error.retcode !== undefined && expiredCodes.has(error.retcode))) {
-      return failed("登录凭据已失效，请刷新登录或重新扫码");
+      return failed($t("lib.gacha-batch.text_f5b53eb755"));
     }
   }
-  return failed("更新未完成，请稍后再试");
+  return failed($t("lib.gacha-batch.text_341e9224f3"));
 }
 
 async function update(entry: Entry | undefined, qq: string, profileId: number, signal: AbortSignal, isDelegated?: boolean): Promise<Outcome> {
-  if (!entry) return skipped("游戏插件未加载，跳过");
+  if (!entry) return skipped($t("lib.gacha-batch.text_fe3234d18f"));
   try {
     const result = await entry.updater(qq, profileId, undefined, isDelegated, signal);
-    if (!result) return skipped("已在更新，跳过");
-    if (!/^[1-9]\d*$/u.test(result.uid)) return failed("更新结果缺少有效 UID");
-    return { status: "done", text: `UID ${result.uid} · 完成` };
+    if (!result) return skipped($t("lib.gacha-batch.text_d08d7a49d5"));
+    if (!/^[1-9]\d*$/u.test(result.uid)) return failed($t("lib.gacha-batch.text_d2b15f882b"));
+    return { status: "done", text: $t("lib.gacha-batch.text_e8807a6a3a", { "uid": result.uid }) };
   } catch (error) {
     return rejected(error, profileId);
   }
@@ -92,18 +95,18 @@ export function createGachaBatch({ listIds, signal, render = renderBatch }: {
     if (workflow.aborted) return;
     const { user_id } = context;
     if (typeof user_id !== "number" || !Number.isSafeInteger(user_id) || user_id < 1) {
-      return "请从登录档案对应的 QQ 会话更新全部抽卡记录。";
+      return $t("lib.gacha-batch.text_fd2f252757");
     }
     const qq = String(user_id);
-    if (active.has(qq)) return "正在批量更新抽卡记录。";
+    if (active.has(qq)) return $t("lib.gacha-batch.text_a71c3148a4");
     active.add(qq);
     try {
       const ids = await listIds(qq).catch(() => undefined);
       if (workflow.aborted) return;
-      if (!ids) return "读取档案列表失败，请稍后再试。";
-      if (!ids.length) return "没有找到本人的档案。";
+      if (!ids) return $t("lib.gacha-batch.text_3ff63772e5");
+      if (!ids.length) return $t("lib.gacha-batch.text_d5318776ab");
 
-      await context.reply("正在批量更新所有档案的原神、星铁、绝区零抽卡记录。");
+      await context.reply($t("lib.gacha-batch.text_7f85d8b951"));
       const counts = { done: 0, skipped: 0, failed: 0 };
       const rows: string[] = [];
       for (const profileId of ids) {
@@ -115,8 +118,8 @@ export function createGachaBatch({ listIds, signal, render = renderBatch }: {
         }
       }
       if (workflow.aborted) return;
-      const badge = counts.failed ? "部分失败" : "完成";
-      const lead = `QQ ${qq}\n${badge} · 完成 ${counts.done} 项，跳过 ${counts.skipped} 项，失败 ${counts.failed} 项。`;
+      const badge = counts.failed ? $t("lib.gacha-batch.text_7e214ed64a") : $t("lib.gacha-batch.text_c0b3fbff51");
+      const lead = $t("lib.gacha-batch.text_69e7c0fb1d", { "qq": qq, "badge": badge, "done": counts.done, "skipped": counts.skipped, "failed": counts.failed });
       if (rows.length > maxCardRows) {
         const nodes = [`${title}\n${lead}`];
         for (let start = 0; start < rows.length; start += maxCardRows) {

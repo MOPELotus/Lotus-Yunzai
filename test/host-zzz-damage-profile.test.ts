@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -51,7 +52,7 @@ async function prepare(root: string) {
   const target = join(root, "plugins/zzz");
   await cp(modulePath, target, { recursive: true, filter: item => ![".git", "node_modules", "test"].includes(basename(item)) });
   await symlink(join(modulePath, "node_modules"), join(target, "node_modules"), "dir");
-  await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+  await linkHostPackages(root);
   for (const [qq, id, uid] of [[42, 1, first], [42, 2, second], [43, 1, second]] as const) {
     await write(root, `profiles/${qq}${id === 1 ? "" : "-" + id}.yaml`, Bun.YAML.stringify({ user: { qq: String(qq) },
       profile: { id }, account: { game_roles: { zzz: [{ uid, region, game_biz: "nap_cn" }] }, current_uid: { zzz: uid } },

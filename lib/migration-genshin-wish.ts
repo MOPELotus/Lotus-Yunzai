@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { parseDocument } from "yaml";
@@ -10,10 +13,10 @@ import { rejectionReason } from "./plugins/policy.ts";
 
 function decode(bytes: Uint8Array): Record<string, unknown> {
   const document = parseDocument(new TextDecoder("utf-8", { fatal: true }).decode(bytes), { strict: true, uniqueKeys: true });
-  if (document.errors.length || document.warnings.length) throw new TypeError("旧祈愿设置 YAML 无效。");
+  if (document.errors.length || document.warnings.length) throw new TypeError($t("lib.migration-genshin-wish.text_0697509106"));
   const result: unknown = document.toJS({ maxAliasCount: 0 });
   if (result && typeof result === "object" && !Array.isArray(result)) return result as Record<string, unknown>;
-  throw new TypeError("旧祈愿设置需为 YAML 映射。");
+  throw new TypeError($t("lib.migration-genshin-wish.text_8b31b6b28c"));
 }
 
 function decodeOptionalPool(bytes: Uint8Array | undefined) {
@@ -89,7 +92,7 @@ export async function stageLegacyGenshinWishConfig(source: string, archive: stri
   if (config.active && !copy) {
     const destination = join(stage, "config");
     await mkdir(destination, { mode: 0o700, recursive: true });
-    if (!(await lstat(destination)).isDirectory() || await realpath(destination) !== destination) throw new Error("模拟祈愿配置暂存路径须为实体目录。");
+    if (!(await lstat(destination)).isDirectory() || await realpath(destination) !== destination) throw new Error($t("lib.migration-genshin-wish.text_93dc4d4137"));
     signal?.throwIfAborted();
     await writeFile(join(stage, wishConfigPath), config.yaml, { flag: "wx", mode: 0o600 });
   }

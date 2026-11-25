@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import fs from "node:fs/promises"
 import { constants } from "node:fs"
 import { randomUUID } from "node:crypto"
@@ -54,7 +57,7 @@ export class RedeemCodeService {
 
   async query(gameId: string): Promise<RedeemPreviewResult> {
     const game = REDEEM_GAMES.find(item => item.id === gameId)
-    if (!game) throw new Error("尚未接入该游戏的官方兑换码来源")
+    if (!game) throw new Error($t("redeem-preview.service.text_a96bfac325"))
     const active = this.inflight.get(game.id)
     if (active) return active
     const task = this.collect(game).finally(() => this.inflight.delete(game.id))
@@ -69,7 +72,7 @@ export class RedeemCodeService {
     try {
       await this.loadHistory()
       const provider = this.providers[game.provider]
-      if (!provider) throw new Error("该游戏的官方来源尚未接入")
+      if (!provider) throw new Error($t("redeem-preview.service.text_bba8200d55"))
       const remembered = [...new Set([...(this.history?.[game.id] || []), ...(this.legacyHistory[game.id] || [])])].slice(0, 12)
       const found = await provider.discover(game, remembered)
       await this.saveHistory(game.id, found.activities || [])
@@ -79,12 +82,12 @@ export class RedeemCodeService {
       if (announcementIsUpcoming && announcement && (!version || compareVersions(newestVersion, version) >= 0)) {
         const start = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(announcement.startAt)
         return { ...base, version: newestVersion, title: announcement.title, status: "unreleased", startAt: announcement.startAt,
-          source: `https://www.miyoushe.com/${game.community}/article/${announcement.postId}`, reason: `官宣 ${start}（北京时间）开播，兑换码尚未发放` }
+          source: `https://www.miyoushe.com/${game.community}/article/${announcement.postId}`, reason: $t("redeem-preview.service.text_d9da937f01", { "start": start }) }
       }
       // Discovering the next preview must invalidate the previous preview immediately,
       // even if its old page and code endpoint are still alive.
       if (activity && newestVersion && (!version || compareVersions(newestVersion, version) > 0)) {
-        return { ...base, version: newestVersion, status: "unreleased", title: `${game.name} ${newestVersion} 版本前瞻`, reason: "尚未获取到新版本的官方兑换码，请等待后续公布。" }
+        return { ...base, version: newestVersion, status: "unreleased", title: $t("redeem-preview.service.text_521a32bc59", { "name": game.name, "newestVersion": newestVersion }), reason: $t("redeem-preview.service.text_61a96a0d13") }
       }
       if (!activity) {
         // Expired pages can disappear from navigation and the livestream API.
@@ -92,11 +95,11 @@ export class RedeemCodeService {
         for (const post of posts.filter(p => newestVersion && versionOf(p.subject) === newestVersion).sort((a, b) => Number(b.created_at) - Number(a.created_at))) {
           const expiry = parseExpiry(post.structured_content || post.content, Number(post.created_at) * 1000 || this.now())
           if (expiry && expiry.ms <= this.now()) {
-            return { ...base, version: newestVersion, title: `${game.name} ${newestVersion} 版本前瞻`, status: "expired", expiry,
+            return { ...base, version: newestVersion, title: $t("redeem-preview.service.text_521a32bc59", { "name": game.name, "newestVersion": newestVersion }), status: "expired", expiry,
               source: `https://www.miyoushe.com/${game.community}/article/${post.post_id}` }
           }
         }
-        return { ...base, version: newestVersion, status: "unavailable", reason: "暂未找到当前版本的官方前瞻兑换码页面" }
+        return { ...base, version: newestVersion, status: "unavailable", reason: $t("redeem-preview.service.text_359268b261") }
       }
       let template: { readonly codeTipText?: unknown } | string = activity.template || {}
       if (typeof template === "string") {
@@ -116,17 +119,17 @@ export class RedeemCodeService {
         }
       }
       const result = { ...base, title: activity.live.title, version, actId: activity.actId, codeVersion: activity.live.code_ver, source: pageUrl, expiry: expiry ?? null, expirySource, startAt: startMs }
-      if (startMs > this.now() || Number(activity.live.remain) > 0) return { ...result, status: "unreleased", reason: "前瞻尚未开始，兑换码尚未发放" }
+      if (startMs > this.now() || Number(activity.live.remain) > 0) return { ...result, status: "unreleased", reason: $t("redeem-preview.service.text_c11f022b8d") }
       if (expiry && expiry.ms <= this.now()) return { ...result, status: "expired" }
       if (!expiry && invalidExpiry) {
-        return { ...result, status: "expiry-unconfirmed", reason: "官方公布的兑换码有效期无法识别，请查看官方活动页。" }
+        return { ...result, status: "expiry-unconfirmed", reason: $t("redeem-preview.service.text_c2e056c9fa") }
       }
       if (!expiry && game.requireExpiry) {
         const endAt = parseOfficialDate(activity.live.end)
-        const reason = "暂未找到官方公布的兑换码有效期，请查看官方活动页。"
+        const reason = $t("redeem-preview.service.text_796fdd946e")
         if (endAt > 0 && endAt <= this.now()) {
           const end = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", dateStyle: "short", timeStyle: "medium" }).format(endAt)
-          return { ...result, status: "expiry-unconfirmed", reason: `特别节目于 ${end}（北京时间）结束。${reason}` }
+          return { ...result, status: "expiry-unconfirmed", reason: $t("redeem-preview.service.text_63da29d5f7", { "end": end, "reason": reason }) }
         }
         return { ...result, status: "expiry-unconfirmed", reason }
       }
@@ -139,9 +142,9 @@ export class RedeemCodeService {
         seen.add(code)
         return true
       }).map(item => ({ code: String(item.code).trim(), reward: plainText(item.title) }))
-      return { ...result, status: result.codes.length ? "available" : "unreleased", reason: result.codes.length ? "" : "官方尚未公布兑换码" }
+      return { ...result, status: result.codes.length ? "available" : "unreleased", reason: result.codes.length ? "" : $t("redeem-preview.service.text_19d5ed5edd") }
     } catch (error) {
-      return { ...base, status: "error", reason: error instanceof Error ? error.message : "官方接口暂不可用" }
+      return { ...base, status: "error", reason: error instanceof Error ? error.message : $t("redeem-preview.service.text_b43efd3db4") }
     }
   }
 
@@ -166,7 +169,7 @@ export class RedeemCodeService {
       let parsed: Partial<Record<RedeemGameId, unknown[]>> | null
       try {
         const stat = await file.stat()
-        if (!stat.isFile() || stat.size > 32 * 1024) throw new Error("兑换码活动记录格式无效")
+        if (!stat.isFile() || stat.size > 32 * 1024) throw new Error($t("redeem-preview.service.text_cfdabe5eca"))
         parsed = JSON.parse(await file.readFile("utf8")) as Partial<Record<RedeemGameId, unknown[]>> | null
       } finally {
         await file.close()
@@ -210,17 +213,17 @@ export class RedeemCodeService {
 }
 
 export function formatRedeemResult(result: RedeemPreviewResult) {
-  const title = result.title || `${result.gameName}前瞻兑换码`
-  if (result.status === "error") return `${title}\n官方来源查询失败，请稍后重试。\n${result.reason}`
-  if (result.status === "unavailable") return `${title}\n${result.reason}，请稍后再查。`
+  const title = result.title || $t("redeem-preview.service.text_a9a43c79eb", { "gameName": result.gameName })
+  if (result.status === "error") return $t("redeem-preview.service.text_68077b9caf", { "title": title, "reason": result.reason })
+  if (result.status === "unavailable") return $t("redeem-preview.service.text_4827648c81", { "title": title, "reason": result.reason })
   const lines = [title]
-  if (result.status === "expired") lines.push("本次前瞻兑换码已过期，请等待下一版本前瞻。")
+  if (result.status === "expired") lines.push($t("redeem-preview.service.text_0aaab819f2"))
   else if (result.status === "expiry-unconfirmed") lines.push(result.reason!)
-  else if (result.status === "unreleased") lines.push(result.reason || "兑换码尚未发放。")
+  else if (result.status === "unreleased") lines.push(result.reason || $t("redeem-preview.service.text_76e449bc9c"))
   else for (const item of result.codes) lines.push("", item.code, ...(item.reward ? [item.reward] : []))
-  if (result.expiry) lines.push("", `有效期至：${result.expiry.text}（北京时间）`)
-  else if (result.status === "available") lines.push("", "官方未明确公布失效时间，请及时兑换。")
-  if (result.source) lines.push(`官方页面：${result.source}`)
-  if (result.expirySource && result.expirySource !== result.source) lines.push(`有效期来源：${result.expirySource}`)
+  if (result.expiry) lines.push("", $t("redeem-preview.service.text_8ffe9af59e", { "text": result.expiry.text }))
+  else if (result.status === "available") lines.push("", $t("redeem-preview.service.text_2a6e10e892"))
+  if (result.source) lines.push($t("redeem-preview.service.text_9f92adbb68", { "source": result.source }))
+  if (result.expirySource && result.expirySource !== result.source) lines.push($t("redeem-preview.service.text_3298b9735c", { "expirySource": result.expirySource }))
   return lines.join("\n")
 }

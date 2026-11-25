@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { withReadRetries } from "@lotus-yunzai/http";
 import type { CommandContext, CommandModule, CommandReply } from "./commands.ts";
 import { segment } from "./messages.ts";
@@ -92,7 +95,7 @@ export function generalToolCommands(lifecycle: AbortSignal, transport: PublicFet
       const key = `${name}:${limit}`;
       let pending = inFlight.get(key);
       if (!pending) {
-        if (inFlight.size >= 4) return "查询较忙，请稍后再试。";
+        if (inFlight.size >= 4) return $t("lib.general-tools.text_448c2b21dd");
         const signal = AbortSignal.any([lifecycle, AbortSignal.timeout(12_000)]);
         pending = run(signal, limit).finally(() => inFlight.delete(key));
         inFlight.set(key, pending);
@@ -109,7 +112,7 @@ export function generalToolCommands(lifecycle: AbortSignal, transport: PublicFet
       const batch = await Promise.all(unique.slice(start, start + imageBatchSize).map(url => image(url, signal, limit)));
       nodes.push(...batch.flatMap(bytes => bytes?.length ? [segment.image(bytes)] : []));
     }
-    if (!nodes.length) return `${title}暂时无法获取，请稍后再试。`;
+    if (!nodes.length) return $t("lib.general-tools.text_44b3cc35d5", { "title": title });
     return { type: "forward", nodes, batchSize: imageBatchSize, senderName: title };
   }
 
@@ -119,10 +122,10 @@ export function generalToolCommands(lifecycle: AbortSignal, transport: PublicFet
       "#cat": groupCommand("cat", async (signal, limit) => {
         const candidates = await Promise.all(catSources.map(async ([endpoint, itemField, hosts]) =>
           urls(await json(endpoint, signal), hosts, itemField)));
-        return imageReply("猫图", candidates.flat(), signal, limit);
+        return imageReply($t("lib.general-tools.text_93891a96d9"), candidates.flat(), signal, limit);
       }),
       "#推荐软件": groupCommand("software", async signal => {
-        const lists = await Promise.all([["电脑", "pc"], ["安卓", "and"]].map(async ([platform, device]) => {
+        const lists = await Promise.all([[$t("lib.general-tools.text_d48f1dcf88"), "pc"], [$t("lib.general-tools.text_2f939477c4"), "and"]].map(async ([platform, device]) => {
           const response = await json(`https://www.ghxi.com/ghapi?type=query&n=${device}`, signal, 8_000);
           const list = field(field(response, "data"), "list");
           if (field(response, "code") !== 200 || !Array.isArray(list)) return [];
@@ -130,11 +133,11 @@ export function generalToolCommands(lifecycle: AbortSignal, transport: PublicFet
             const title = field(item, "title");
             const url = allowedUrl(field(item, "url"), ["www.ghxi.com"]);
             if (typeof title !== "string" || !title.trim() || !url) return [];
-            return `${platform}推荐软件：${title.replace(/<[^>]*>/gu, "").replace(/[\r\n]+/gu, " ").trim().slice(0, 180)}\n地址：${url.href}`;
+            return $t("lib.general-tools.text_a549b4cd63", { "platform": platform, "value2": title.replace(/<[^>]*>/gu, "").replace(/[\r\n]+/gu, " ").trim().slice(0, 180), "href": url.href });
           });
         }));
         const nodes = lists.flat();
-        return nodes.length ? { type: "forward", nodes, batchSize: 20, senderName: "推荐软件" } : "软件推荐暂时无法获取，请稍后再试。";
+        return nodes.length ? { type: "forward", nodes, batchSize: 20, senderName: $t("lib.general-tools.text_8244c51512") } : $t("lib.general-tools.text_56533cb99d");
       }),
     },
   };

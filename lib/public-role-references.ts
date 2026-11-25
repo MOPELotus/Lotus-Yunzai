@@ -1,10 +1,13 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { fileURLToPath } from "node:url";
 import type { Game } from "@lotus-yunzai/account";
 import { createRoleJsonArchive, type AcquireRoleArchiveLock } from "@lotus-yunzai/storage";
 
 const games = ["gs", "sr", "zzz"] as const;
 const codes = { 原神: "gs", 星铁: "sr", 绝区零: "zzz" } as const;
-const labels = { gs: "原神", sr: "星铁", zzz: "绝区零" } as const;
+const labels = { gs: $t("lib.public-role-references.text_d1597c51ed"), sr: $t("lib.public-role-references.text_a2927891f0"), zzz: $t("lib.public-role-references.text_b1110352c9") } as const;
 const providers = { gs: "Enka", sr: "Mihomo", zzz: "Enka" } as const;
 const prompts = { gs: "#", sr: "*", zzz: "%" } as const;
 const command = /^#(原神|星铁|绝区零)?(登记(?:公开)?uid|公开uid列表|切换公开uid|删除公开uid|查询公开uid|(?:删除|解绑)uid)(.*)$/iu;
@@ -12,7 +15,7 @@ const selector = /^[1-9]\d?$/u;
 const uidPattern = /^[1-9]\d{7,9}$/u;
 export const publicRoleReferenceLimit = 99;
 export const publicRoleReferencePath = "data/public-role-references";
-export const publicRoleReferenceFeatures = ["[account] 公开角色引用", "account", "@lotus-yunzai/account"] as const;
+export const publicRoleReferenceFeatures = [$t("lib.public-role-references.text_3616cdccba"), "account", "@lotus-yunzai/account"] as const;
 
 export function matchPublicRoleReferenceCommand(input: string) {
   const match = command.exec(input.trim());
@@ -37,13 +40,13 @@ function record(value: unknown): Record<string, unknown> | undefined {
 function decode(value: unknown): PublicRoleReferenceCatalogue {
   if (value === null) return { gs: empty, sr: empty, zzz: empty };
   const document = record(value);
-  if (!document || document.version !== 1) throw new TypeError("公开 UID 引用格式不正确。");
+  if (!document || document.version !== 1) throw new TypeError($t("lib.public-role-references.text_8eaed42866"));
   const forGame = (game: Game): References => {
     const refs = record(document[game]);
     if (!refs || typeof refs.uid !== "string" || !Array.isArray(refs.data) || refs.data.length > publicRoleReferenceLimit ||
         refs.data.some((value: unknown) => typeof value !== "string" || !uidPattern.test(value)) ||
         new Set(refs.data).size !== refs.data.length || (refs.data.length ? !refs.data.includes(refs.uid) : refs.uid !== "")) {
-      throw new TypeError("公开 UID 引用列表无效。");
+      throw new TypeError($t("lib.public-role-references.text_7e556be76f"));
     }
     return { uid: refs.uid, data: refs.data as string[] };
   };
@@ -80,7 +83,7 @@ export function createPublicRoleReferenceTarget() {
     }
     const provider = await (zzz ??= bindZzz());
     const region = provider.region(uid, "", "");
-    if (!region) throw new TypeError("绝区零 UID 或区服无效。");
+    if (!region) throw new TypeError($t("lib.public-role-references.text_cbee29b381"));
     return async (signal: AbortSignal) => (await provider.read({ uid, region }, signal)).rows.length;
   }
   return target;
@@ -89,27 +92,27 @@ export function createPublicRoleReferenceTarget() {
 export function createPublicRoleReferences(lockFile: AcquireRoleArchiveLock, directory = fileURLToPath(
   new URL("../" + publicRoleReferencePath + "/", import.meta.url)), publicTarget = createPublicRoleReferenceTarget()) {
   const archive = createRoleJsonArchive(directory, lockFile, {
-    subject: "本人公开 UID 引用", lockSuffix: "public-role-reference", maxBytes: 8192, rejectNull: true,
+    subject: $t("lib.public-role-references.text_644d7384cc"), lockSuffix: "public-role-reference", maxBytes: 8192, rejectNull: true,
   });
   const catalogue = (qq: string) => archive.read(qq, "1").then(decode);
   return Object.assign(async ({ game, action, value }: Command, { user, signal, isCurrent }: Scope) => {
     const active = () => !signal.aborted && isCurrent();
     const verify = async () => {
-      if (!active()) throw new DOMException("公开 UID 操作授权已失效。", "AbortError");
+      if (!active()) throw new DOMException($t("lib.public-role-references.text_9cdd5bf3de"), "AbortError");
     };
     if (!active()) return;
     const prefix = prompts[game];
     const label = labels[game];
-    const usage = `用法 ${prefix}登记公开UID <游戏 UID>，${prefix}公开UID列表 查看。`;
+    const usage = $t("lib.public-role-references.text_a1bf286e85", { "prefix": prefix, "value2": prefix });
     if (action === "删除uid" || action === "解绑uid") {
-      return `请用 ${prefix}公开UID列表 核对公开引用号码，再用 ${prefix}删除公开UID2 删除。登录档案角色请在对应档案处理。`;
+      return $t("lib.public-role-references.text_b758fa50aa", { "prefix": prefix, "value2": prefix });
     }
     const register = action === "登记uid" || action === "登记公开uid";
     const list = action === "公开uid列表";
     const query = action === "查询公开uid";
     if (register && !uidPattern.test(value)) return usage;
     if ((list && value) || (!list && !register && !(query && !value) && !selector.test(value))) {
-      return `请发送 ${prefix}公开UID列表 查看，可用 ${prefix}切换公开UID2、${prefix}查询公开UID2 或 ${prefix}删除公开UID2。`;
+      return $t("lib.public-role-references.text_998a1527f9", { "prefix": prefix, "value2": prefix, "value3": prefix, "value4": prefix });
     }
     const qq = String(user);
     const read = () => catalogue(qq);
@@ -118,51 +121,51 @@ export function createPublicRoleReferences(lockFile: AcquireRoleArchiveLock, dir
       if (list) {
         const entries = await read();
         await verify();
-        const lines = ["本人公开 UID 引用"];
+        const lines = [$t("lib.public-role-references.text_644d7384cc")];
         for (const item of games) {
           const { uid, data } = entries[item];
           lines.push(labels[item]);
-          if (!data.length) lines.push("  暂无公开 UID");
-          for (const [position, entry] of data.entries()) lines.push(`  ${position + 1}. ${entry}${entry === uid ? "（当前）" : ""}`);
+          if (!data.length) lines.push($t("lib.public-role-references.text_fef982cd13"));
+          for (const [position, entry] of data.entries()) lines.push(`  ${position + 1}. ${entry}${entry === uid ? $t("lib.public-role-references.text_58d8cd20d2") : ""}`);
         }
-        return [...lines, "公开 UID 用于查询公开展板。登记无需登录，不提供账号授权。"].join("\n");
+        return [...lines, $t("lib.public-role-references.text_4b12c9c2af")].join("\n");
       }
       if (query) {
         const records = (await read())[game];
         const select = (refs: References) => index === undefined ? refs.uid : refs.data[index];
         const uid = select(records);
-        if (!uid) return `没有对应的${label}公开 UID。可发送 ${prefix}公开UID列表 查看。`;
+        if (!uid) return $t("lib.public-role-references.text_229622d3e9", { "label": label, "prefix": prefix });
         const fetchPublic = await publicTarget(game, uid);
         await verify();
-        if (select((await read())[game]) !== uid) return "公开 UID 引用已变化，请重新查询。";
+        if (select((await read())[game]) !== uid) return $t("lib.public-role-references.text_a96821320c");
         await verify();
         const count = await fetchPublic(signal);
-        if (select((await read())[game]) !== uid) return "公开 UID 引用已变化，请重新查询。";
+        if (select((await read())[game]) !== uid) return $t("lib.public-role-references.text_a96821320c");
         await verify();
-        return `${label} UID ${uid} · ${providers[game]} 公开展板可见 ${count} 个角色。`;
+        return $t("lib.public-role-references.text_c253f4dc3d", { "label": label, "uid": uid, "value3": providers[game], "count": count });
       }
       if (register) {
         try { await publicTarget(game, value); }
-        catch { return `${label}公开 UID 的格式或区服无效。`; }
+        catch { return $t("lib.public-role-references.text_48a04a997f", { "label": label }); }
       }
       return await archive.update({ qq, uid: "1" }, verify, current => {
         const entries = decode(current);
         const currentGame = entries[game];
         const uid = register ? value : currentGame.data[index!];
-        if (!uid) return { result: `没有这个${label}公开 UID 序号。请用 ${prefix}公开UID列表 查看。` };
-        if (register && !currentGame.data.includes(uid) && currentGame.data.length >= publicRoleReferenceLimit) return { result: "公开 UID 列表已满，请先删除一个引用。" };
+        if (!uid) return { result: $t("lib.public-role-references.text_693ed1dd49", { "label": label, "prefix": prefix }) };
+        if (register && !currentGame.data.includes(uid) && currentGame.data.length >= publicRoleReferenceLimit) return { result: $t("lib.public-role-references.text_9e31d97f64") };
         const remove = action === "删除公开uid";
         const data = remove ? currentGame.data.filter(entry => entry !== uid)
           : register && !currentGame.data.includes(uid) ? [...currentGame.data, uid] : currentGame.data;
         const next = { uid: remove ? (currentGame.uid === uid ? data[0] ?? "" : currentGame.uid) : uid, data };
-        const result = remove ? `已删除${label}公开 UID 引用 ${uid}。`
-          : `${label}当前公开 UID 为 ${uid}。可用 ${prefix}查询公开UID 查询。`;
+        const result = remove ? $t("lib.public-role-references.text_7402c44582", { "label": label, "uid": uid })
+          : $t("lib.public-role-references.text_e0f8fc8d3f", { "label": label, "uid": uid, "prefix": prefix });
         if (currentGame.uid === next.uid && currentGame.data === next.data) return { result };
         return { document: { version: 1, ...entries, [game]: next }, result };
       });
     } catch {
-      if (active()) return query ? `${label}公开展板暂时无法查询，请确认游戏内公开设置后重试。`
-        : "暂时无法读取或保存本人公开 UID 引用。";
+      if (active()) return query ? $t("lib.public-role-references.text_3db61e2041", { "label": label })
+        : $t("lib.public-role-references.text_a303578e81");
     }
   }, { catalogue });
 }

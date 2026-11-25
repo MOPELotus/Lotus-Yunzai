@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
@@ -76,7 +79,7 @@ function projectConfig(config: Config, name: ConfigName, deferred: DeferredOwner
       continue;
     }
     if (!scalar(value) && !(listFields.has(key) && Array.isArray(value) && value.every(scalar))) {
-      throw new Error(`旧 ${name}.yaml 的 ${key} 格式无法安全迁移。`);
+      throw new Error($t("lib.migration-core-config.text_af3fdc05cc", { "name": name, "key": key }));
     }
     switch (key) {
       case "/→#": selected[key] = Boolean(value); break;
@@ -108,7 +111,7 @@ function same(expected: Stats, actual: Stats) {
 async function physicalDirectory(path: string) {
   try {
     if (!(await lstat(path)).isDirectory() || await realpath(path) !== path) {
-      throw new Error("旧核心配置与暂存须位于实体目录。");
+      throw new Error($t("lib.migration-core-config.text_77152546f5"));
     }
     return true;
   } catch (error) {
@@ -124,26 +127,26 @@ async function readConfig(directory: string, name: ConfigName): Promise<Config |
   });
   if (!original) return;
   if (!original.isFile() || original.nlink !== 1 || await realpath(path) !== path) {
-    throw new Error("旧核心配置须为快照内无硬链接的普通文件。");
+    throw new Error($t("lib.migration-core-config.text_e0acff1fb1"));
   }
-  if (original.size > maximumConfigBytes) throw new Error("旧核心配置超过读取上限。");
+  if (original.size > maximumConfigBytes) throw new Error($t("lib.migration-core-config.text_fdeb0dcd0f"));
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    if (!same(original, await file.stat())) throw new Error("旧核心配置在迁移期间发生变化。");
+    if (!same(original, await file.stat())) throw new Error($t("lib.migration-core-config.text_dd9c804c8e"));
     const bytes = Buffer.alloc(original.size);
     for (let position = 0; position < bytes.length;) {
       const { bytesRead } = await file.read(bytes, position, bytes.length - position, position);
-      if (!bytesRead) throw new Error("旧核心配置在迁移期间发生变化。");
+      if (!bytesRead) throw new Error($t("lib.migration-core-config.text_dd9c804c8e"));
       position += bytesRead;
     }
     if (!same(original, await file.stat()) || !same(original, await lstat(path)) || await realpath(path) !== path) {
-      throw new Error("旧核心配置在迁移期间发生变化。");
+      throw new Error($t("lib.migration-core-config.text_dd9c804c8e"));
     }
     let decoded: unknown;
     try { decoded = Bun.YAML.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
-    catch { throw new Error(`无法读取旧 ${name}.yaml。`); }
+    catch { throw new Error($t("lib.migration-core-config.text_4b79ac1a52", { "name": name })); }
     if (decoded != null && (typeof decoded !== "object" || Array.isArray(decoded))) {
-      throw new Error(`无法读取旧 ${name}.yaml。`);
+      throw new Error($t("lib.migration-core-config.text_4b79ac1a52", { "name": name }));
     }
     return (decoded ?? {}) as Config;
   } finally {
@@ -156,7 +159,7 @@ async function stagingDirectory(target: string, segments: readonly string[]) {
   for (const segment of segments) {
     parent = join(parent, segment);
     if (!await physicalDirectory(parent)) await mkdir(parent, { mode: 0o700 });
-    if (!await physicalDirectory(parent)) throw new Error("核心配置暂存目录在迁移期间发生变化。");
+    if (!await physicalDirectory(parent)) throw new Error($t("lib.migration-core-config.text_e31f7d92b8"));
   }
   return parent;
 }
@@ -168,7 +171,7 @@ export async function stageLegacyCoreConfig(sourcePath: string, stateDirectory: 
   const [source, target] = await Promise.all([realpath(sourcePath), realpath(stateDirectory)]);
   const local = relative(source, target);
   if (!isAbsolute(local) && local !== ".." && !local.startsWith(".." + sep)) {
-    throw new Error("核心配置暂存须位于旧安装副本之外。");
+    throw new Error($t("lib.migration-core-config.text_b8268be72c"));
   }
   const result = { files: 0, deferredOwners: { master: 0, masterQQ: 0 } };
   const sourceConfig = join(source, "config");
@@ -203,7 +206,7 @@ export async function stageLegacyCoreConfig(sourcePath: string, stateDirectory: 
     }
     if (deferred.master.length || deferred.masterQQ.length) {
       const backup = await stagingDirectory(target, ["backup", "core-config"]);
-      if (((await lstat(backup)).mode & 0o077) !== 0) throw new Error("旧适配器主人备份须位于私有目录。");
+      if (((await lstat(backup)).mode & 0o077) !== 0) throw new Error($t("lib.migration-core-config.text_f1240a4000"));
       await store(join(backup, "other-provider-owners.yaml"), deferred);
     }
     signal?.throwIfAborted();

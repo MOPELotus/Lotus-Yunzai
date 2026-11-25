@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, readdir, readlink, realpath, rename, rm, symlink, type FileHandle } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -7,8 +10,8 @@ import { isManagedPluginDirectory } from "../managed-update-protocol.ts";
 import { planMigration, withinInstallation, type LegacyMigrationPlan } from "./migration-plan.ts";
 
 const blockSize = 128 * 1024;
-const sourceChanged = () => new Error("旧插件在归档期间发生变化，请重新预检。");
-const collision = () => new Error("暂存归档已存在且内容不同。");
+const sourceChanged = () => new Error($t("lib.plugins.legacy-backup-stage.text_376ba5efee"));
+const collision = () => new Error($t("lib.plugins.legacy-backup-stage.text_e49757f4fe"));
 
 async function optionalStat(path: string) {
   try {
@@ -64,7 +67,7 @@ async function transferFile(source: string, destination: string, info: Stats, co
           let written = 0;
           while (written < length) {
             const { bytesWritten } = await output.write(current, written, length - written, position + written);
-            if (!bytesWritten) throw new Error("无法写入插件归档。");
+            if (!bytesWritten) throw new Error($t("lib.plugins.legacy-backup-stage.text_d1d56492cd"));
             written += bytesWritten;
           }
         }
@@ -75,7 +78,7 @@ async function transferFile(source: string, destination: string, info: Stats, co
       if (copy) {
         // A set-id file must not acquire privileges under a different backup owner.
         if ((info.mode & 0o6000) && (before.uid !== info.uid || before.gid !== info.gid)) {
-          throw new Error("暂存文件所有者与旧插件的特殊权限不匹配。");
+          throw new Error($t("lib.plugins.legacy-backup-stage.text_762d2ef8b5"));
         }
         await output.chmod(fileMode(info));
         await output.sync();
@@ -117,7 +120,7 @@ async function transferTree(source: string, destination: string, copy: boolean, 
       try {
         const owner = await folder.stat();
         if ((info.mode & 0o6000) && (owner.uid !== info.uid || owner.gid !== info.gid)) {
-          throw new Error("暂存目录所有者与旧插件的特殊权限不匹配。");
+          throw new Error($t("lib.plugins.legacy-backup-stage.text_2afd7ae6be"));
         }
         await folder.chmod(fileMode(info));
         await folder.sync();
@@ -133,7 +136,7 @@ async function transferTree(source: string, destination: string, copy: boolean, 
   } else if (info.isFile()) {
     await transferFile(source, destination, info, copy, signal);
   } else {
-    throw new Error("旧插件归档含有设备、套接字、管道或其他特殊文件。");
+    throw new Error($t("lib.plugins.legacy-backup-stage.text_902f4a0150"));
   }
   await verifySource(source, info);
   if (existing && !unchanged(existing, await lstat(destination))) throw collision();
@@ -142,7 +145,7 @@ async function transferTree(source: string, destination: string, copy: boolean, 
 async function checkedPath(root: string, path: string, createParents = false) {
   const parts = path.split("/");
   if (parts[0] !== "plugins" || parts.length < 2 || parts.some(part => !isManagedPluginDirectory(part))) {
-    throw new Error("插件归档路径无效。");
+    throw new Error($t("lib.plugins.legacy-backup-stage.text_217e7e03c0"));
   }
   let folder = root;
   for (const part of parts.slice(0, -1)) {
@@ -153,7 +156,7 @@ async function checkedPath(root: string, path: string, createParents = false) {
       await syncDirectory(dirname(folder));
       info = await lstat(folder);
     }
-    if (!info?.isDirectory()) throw new Error("插件归档路径经过非实体目录。");
+    if (!info?.isDirectory()) throw new Error($t("lib.plugins.legacy-backup-stage.text_077307d3be"));
   }
   return join(root, ...parts);
 }
@@ -163,18 +166,18 @@ export async function stageLegacyPluginBackup(plan: LegacyMigrationPlan, staging
   signal?.throwIfAborted();
   const staging = await realpath(stagingPath);
   const staged = await lstat(staging);
-  if (!staged.isDirectory()) throw new Error("插件归档暂存根必须是实体目录。");
+  if (!staged.isDirectory()) throw new Error($t("lib.plugins.legacy-backup-stage.text_2fd3733bce"));
   for (const path of [plan.source, plan.target]) {
     const actual = await realpath(path);
     const info = await lstat(actual);
     if (withinInstallation(actual, staging) || withinInstallation(staging, actual) ||
-        (info.dev === staged.dev && info.ino === staged.ino)) throw new Error("插件归档暂存根须与新旧安装独立。");
+        (info.dev === staged.dev && info.ino === staged.ino)) throw new Error($t("lib.plugins.legacy-backup-stage.text_5939e3a3d8"));
   }
   const confirmPlan = async () => {
     if (!isDeepStrictEqual(plan, await planMigration(plan.source, plan.target))) throw sourceChanged();
   };
   const archive = plan.plugins.filter(entry => entry.status === "archive");
-  const lock = await lockFile(join(dirname(staging), `.${basename(staging)}.lotus-plugin-backup.sqlite`), "迁移插件归档");
+  const lock = await lockFile(join(dirname(staging), `.${basename(staging)}.lotus-plugin-backup.sqlite`), $t("lib.plugins.legacy-backup-stage.text_53b93b8e61"));
   let temporary: string | undefined;
   try {
     await confirmPlan();
@@ -184,7 +187,7 @@ export async function stageLegacyPluginBackup(plan: LegacyMigrationPlan, staging
       await mkdir(backup, { mode: 0o700 });
       await syncDirectory(staging);
     }
-    if (!(await lstat(backup)).isDirectory()) throw new Error("暂存 backup 必须为实体目录。");
+    if (!(await lstat(backup)).isDirectory()) throw new Error($t("lib.plugins.legacy-backup-stage.text_62932df4da"));
     const destination = join(backup, "plugins");
     const current = await optionalStat(destination);
     if (current && !current.isDirectory()) throw collision();

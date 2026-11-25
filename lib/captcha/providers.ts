@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { setTimeout as sleep } from "node:timers/promises";
 import type { CaptchaChallenge, CaptchaProof } from "@lotus-yunzai/hoyo-client";
 import { readGameRecordPayload } from "@lotus-yunzai/hoyo-client";
@@ -24,7 +27,7 @@ function endpoint(value: unknown, fallback: string) {
   const raw = typeof value === "string" ? value.trim() : fallback;
   const url = URL.parse(raw);
   if (!url || !["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash) {
-    throw new TypeError("验证码服务地址无效。");
+    throw new TypeError($t("lib.captcha.providers.text_4f6bd91df8"));
   }
   return url.href;
 }
@@ -35,7 +38,7 @@ export function captchaConfig(input: unknown): CaptchaConfig {
   const configured = source.providers ?? source.order;
   const order = Array.isArray(configured) ? [...new Set(configured.map(id => aliases[String(id)]).filter((id): id is ProviderId => !!id))]
     : ["local", "ttocr", "manual"] as const;
-  if (!order.length) throw new TypeError("验证码提供方顺序无效。");
+  if (!order.length) throw new TypeError($t("lib.captcha.providers.text_4358a8b9d9"));
   return {
     enabled: source.enable !== false, order, manual: { enabled: manual.enable !== false },
     local: { enabled: local.enable !== false, timeoutMs: duration(local.timeout_ms, 120_000) },

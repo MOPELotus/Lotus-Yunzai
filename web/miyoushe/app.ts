@@ -1,3 +1,7 @@
+import "./language.ts";
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { MiyousheOverview } from "../../lib/miyoushe-overview.ts";
 import type { createMiyousheShopCatalog } from "../../lib/miyoushe-shop-catalog.ts";
 import type { createMiyousheShopPlans } from "../../lib/miyoushe-shop-plans.ts";
@@ -104,13 +108,13 @@ const shopClock = new Intl.DateTimeFormat("zh-CN", {
   hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
 });
 const number = new Intl.NumberFormat("zh-CN");
-const games = { gs: "原神", sr: "崩坏：星穹铁道", zzz: "绝区零" };
-const loginHelp = "请私聊机器人发送下方指令，获取当前档案的专属登录链接。";
+const games = { gs: $t("web.miyoushe.app.text_d1597c51ed"), sr: $t("web.miyoushe.app.text_8cfc959b53"), zzz: $t("web.miyoushe.app.text_b1110352c9") };
+const loginHelp = $t("web.miyoushe.app.text_ec909a7c6f");
 let busy = false;
 let pendingTicket = false;
 let expiryTimer: Timer | undefined;
 let tab: Tab = "overview";
-const shopStatuses = { available: "正在兑换", scheduled: "等待开放", sold_out: "已兑完", ended: "已结束", unknown: "状态待确认" };
+const shopStatuses = { available: $t("web.miyoushe.app.text_ee341919f3"), scheduled: $t("web.miyoushe.app.text_90624b0fd7"), sold_out: $t("web.miyoushe.app.text_fff0472ba2"), ended: $t("web.miyoushe.app.text_d79b1d0e5c"), unknown: $t("web.miyoushe.app.text_cdea037991") };
 const shop: {
   data: CatalogData | null; game: string; page: number; nowOffset: number;
   catalogRequest: AbortController | null; detailRequest: AbortController | null;
@@ -129,10 +133,10 @@ const manualCheckin: { active: AbortController | null; timer: Timer | undefined;
 const trackers: {
   generation: number; targets: AbortController | null; loading: AbortController | null; data: TrackerData | null;
 } = { generation: 0, targets: null, loading: null, data: null };
-const trackGames = { hk4e: "原神", hkrpg: "崩坏：星穹铁道", nap: "绝区零", bh3: "崩坏3", bh2: "崩坏学园2", nxx: "未定事件簿", bbs: "米游社" };
+const trackGames = { hk4e: $t("web.miyoushe.app.text_d1597c51ed"), hkrpg: $t("web.miyoushe.app.text_8cfc959b53"), nap: $t("web.miyoushe.app.text_b1110352c9"), bh3: $t("web.miyoushe.app.text_6d3d8653d7"), bh2: $t("web.miyoushe.app.text_e5b1fba52e"), nxx: $t("web.miyoushe.app.text_a6e4fbed57"), bbs: $t("web.miyoushe.app.text_6ca05b2485") };
 const planStatus = {
-  scheduled: "等待开放", preparing: "准备兑换", submitting: "正在提交", succeeded: "兑换成功",
-  failed: "未成功", cancelled: "已取消", missed: "已错过", unknown: "结果待确认",
+  scheduled: $t("web.miyoushe.app.text_90624b0fd7"), preparing: $t("web.miyoushe.app.text_65cb54b58d"), submitting: $t("web.miyoushe.app.text_6b70462dbb"), succeeded: $t("web.miyoushe.app.text_ab4d3a5515"),
+  failed: $t("web.miyoushe.app.text_af0c4b935b"), cancelled: $t("web.miyoushe.app.text_a37778f17c"), missed: $t("web.miyoushe.app.text_67330e9d76"), unknown: $t("web.miyoushe.app.text_400d8fa7bd"),
 };
 
 function add<Tag extends keyof HTMLElementTagNameMap>(tag: Tag, className: string, value: string) {
@@ -187,9 +191,9 @@ function showLogin(message: string, help = false, retry = false) {
 
 function showManualCheckin(status: string, message = "") {
   const statusText: Record<ManualStatus, string> = {
-    loading: "正在读取执行状态…", running: "正在执行签到。如需人工验证，请留意机器人私聊。",
-    completed: "本次签到已完成。", failed: "本次签到未完成。", busy: "该账号已有签到在执行，请稍后再试。",
-    idle: "", unknown: "暂时无法确认执行状态，请刷新后重试。",
+    loading: $t("web.miyoushe.app.text_524e53ebee"), running: $t("web.miyoushe.app.text_a831887c1c"),
+    completed: $t("web.miyoushe.app.text_6405679d0e"), failed: $t("web.miyoushe.app.text_02f00596e1"), busy: $t("web.miyoushe.app.text_28fa8fb1a2"),
+    idle: "", unknown: $t("web.miyoushe.app.text_332f8f902e"),
   };
   manualCheckin.status = Object.hasOwn(statusText, status) ? status as ManualStatus : "unknown";
   get("manual-checkin-status").textContent = statusText[manualCheckin.status];
@@ -211,7 +215,7 @@ async function updateManualCheckin(start = false) {
     } : { signal: deadline });
     if (active.signal.aborted) return;
     if (response.status === 401) {
-      showLogin(`登录已失效。${loginHelp}`, true);
+      showLogin($t("web.miyoushe.app.text_519e8af82e", { "loginHelp": loginHelp }), true);
       return;
     }
     if (response.status === 409 && start) {
@@ -256,13 +260,13 @@ function renderPreviewSettings(data: MiyoushePreviewSettings) {
   get("preview-enabled").checked = data.enabled;
   for (const input of get("preview-games").querySelectorAll("input")) input.checked = data.games.includes(input.value as MiyoushePreviewSettings["games"][number]);
   const messages = [];
-  if (data.waitingForHistory) messages.push("旧档案需要补齐兑换记录后才会自动兑换。");
-  if (data.canEnable === false && !data.enabled) messages.push("当前档案没有开启自动兑换的权限。");
+  if (data.waitingForHistory) messages.push($t("web.miyoushe.app.text_c235916f7c"));
+  if (data.canEnable === false && !data.enabled) messages.push($t("web.miyoushe.app.text_a3ca10856c"));
   return messages.join(" ");
 }
 
 const checkinSwitches = ["enabled", "notify", "community"] as const;
-const checkinCloudGames = { genshin: "云原神", zzz: "云绝区零" };
+const checkinCloudGames = { genshin: $t("web.miyoushe.app.text_8d17468984"), zzz: $t("web.miyoushe.app.text_6e50693925") };
 
 function checkedFlags(fieldset: string, selector = "input") {
   return Object.fromEntries(Array.from(get(fieldset).querySelectorAll<HTMLInputElement>(selector), input => [input.value, input.checked]));
@@ -312,11 +316,11 @@ function renderCheckinSettings(data: CheckinSettings) {
   get("checkin-os-enabled").checked = data.osEnabled;
   for (const input of get("checkin-os").querySelectorAll<HTMLInputElement>('input[name="os"]')) input.checked = data.os[input.value as keyof typeof data.os];
   const messages = [];
-  if (data.cnEnabled === false) messages.push("当前档案的国服签到总开关已关闭，各游戏的选择仍会保留。");
-  if (data.canEnable === false && !data.enabled) messages.push("当前档案没有开启自动签到的权限。");
+  if (data.cnEnabled === false) messages.push($t("web.miyoushe.app.text_608e95b98c"));
+  if (data.canEnable === false && !data.enabled) messages.push($t("web.miyoushe.app.text_516bf8f90f"));
   const unbound = Object.entries(checkinCloudGames).filter(([game]) => !data.cloudBound[game as keyof typeof data.cloudBound]).map(([, label]) => label);
-  if (unbound.length) messages.push(`${unbound.join("、")}需先在聊天中绑定账户，才能执行钱包签到。`);
-  if (!data.osBound) messages.push("国际服签到需先在聊天中绑定 HoYoLAB 账号。");
+  if (unbound.length) messages.push($t("web.miyoushe.app.text_7051d74063", { "value1": unbound.join("、") }));
+  if (!data.osBound) messages.push($t("web.miyoushe.app.text_3e985d9cd1"));
   return messages.join(" ");
 }
 
@@ -327,14 +331,14 @@ async function updateProfileSettings<Key extends SettingsKey>(editor: ProfileEdi
   const notice = get(editor.key + "-settings-note");
   editor.buttons();
   notice.classList.remove("error");
-  notice.textContent = patch ? "正在保存设置…" : "正在读取设置…";
+  notice.textContent = patch ? $t("web.miyoushe.app.text_f1d891498e") : $t("web.miyoushe.app.text_9ee6956371");
   try {
     const response = await request("api/" + editor.key + "-settings", patch ? {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch), signal: deadline,
     } : { signal: deadline });
     if (active.signal.aborted) return;
     if (response.status === 401) {
-      showLogin(`登录已失效。${loginHelp}`, true);
+      showLogin($t("web.miyoushe.app.text_519e8af82e", { "loginHelp": loginHelp }), true);
       return;
     }
     if (!response.ok) throw new Error(await planFailure(response));
@@ -351,16 +355,16 @@ async function updateProfileSettings<Key extends SettingsKey>(editor: ProfileEdi
       }
       if (editor === checkin && previous?.enabled !== data.enabled) {
         const schedule = get("today-schedule");
-        schedule.textContent = data.enabled ? "档案自动签到已开启。刷新后查看今日安排。" : "自动签到已关闭。";
+        schedule.textContent = data.enabled ? $t("web.miyoushe.app.text_8b743966c1") : $t("web.miyoushe.app.text_38dd03105c");
         schedule.hidden = false;
       }
     }
-    notice.textContent = patch ? ["设置已保存。", message].filter(Boolean).join(" ") : message;
+    notice.textContent = patch ? [$t("web.miyoushe.app.text_2717052f81"), message].filter(Boolean).join(" ") : message;
   } catch (error) {
     if (active.signal.aborted) return;
     notice.classList.add("error");
     notice.textContent = error instanceof TypeError || deadline.aborted
-      ? (patch ? "保存结果尚未确认，请刷新设置。" : "设置读取失败，请刷新后重试。")
+      ? (patch ? $t("web.miyoushe.app.text_001105b530") : $t("web.miyoushe.app.text_25e05b9b37"))
       : (error as Error).message;
   } finally {
     if (editor.active === active) {
@@ -379,22 +383,22 @@ function showNotice(message: string, error = false) {
 
 function scheduleText(schedule: MiyousheOverview["todaySchedule"]) {
   if (!schedule) return "";
-  if (!schedule.enabled) return "自动签到已关闭。";
-  if (!schedule.time) return "今日签到时间尚未安排。";
-  const status = schedule.running ? "正在执行" :
-    schedule.done ? (schedule.ok ? "已完成" : "执行未成功") : "等待执行";
-  return `今日签到安排为 ${schedule.time} · ${status}`;
+  if (!schedule.enabled) return $t("web.miyoushe.app.text_38dd03105c");
+  if (!schedule.time) return $t("web.miyoushe.app.text_7215d99903");
+  const status = schedule.running ? $t("web.miyoushe.app.text_8f38fd93b5") :
+    schedule.done ? (schedule.ok ? $t("web.miyoushe.app.text_f28461bb49") : $t("web.miyoushe.app.text_94e30b1b38")) : $t("web.miyoushe.app.text_4f021f5912");
+  return $t("web.miyoushe.app.text_cede4a4c76", { "time": schedule.time, "status": status });
 }
 
 function missionRow(item: Mission) {
   const row = add("li", "mission-row", "");
-  const status = item.isGetAward === true ? "已领奖" :
+  const status = item.isGetAward === true ? $t("web.miyoushe.app.text_a6e657667d") :
     item.isGetAward === false ? (
       Number.isSafeInteger(item.happenedTimes) && Number.isSafeInteger(item.threshold) &&
-        item.happenedTimes! < item.threshold! ? "待完成" : "未领奖"
-    ) : "状态未知";
+        item.happenedTimes! < item.threshold! ? $t("web.miyoushe.app.text_7f750504c5") : $t("web.miyoushe.app.text_7dcad57208")
+    ) : $t("web.miyoushe.app.text_93e474c68e");
   const progress = Number.isSafeInteger(item.happenedTimes) ?
-    (Number.isSafeInteger(item.threshold) ? `${item.happenedTimes} / ${item.threshold}` : `已完成 ${item.happenedTimes} 次`) : "";
+    (Number.isSafeInteger(item.threshold) ? `${item.happenedTimes} / ${item.threshold}` : $t("web.miyoushe.app.text_58d218f90f", { "happenedTimes": item.happenedTimes })) : "";
   row.append(add("span", "", item.label), add("span", item.isGetAward === true ? "complete" : "muted",
     [progress, status].filter(Boolean).join(" · ")));
   return row;
@@ -402,22 +406,22 @@ function missionRow(item: Mission) {
 
 function showOverview(data: Overview) {
   const { account, displayName, missions, missionError, todaySchedule, profileId, expiresAt } = data;
-  const profile = `档案 ${profileId}`;
+  const profile = $t("web.miyoushe.app.text_3f6fdc79bb", { "profileId": profileId });
   get("profile").textContent = profile;
   get("profile-name").textContent = displayName || profile;
-  get("session-expiry").textContent = Number.isSafeInteger(expiresAt) ? `登录有效至 ${expiry.format(expiresAt)}（北京时间）` : "";
+  get("session-expiry").textContent = Number.isSafeInteger(expiresAt) ? $t("web.miyoushe.app.text_f70036fba2", { "value1": expiry.format(expiresAt) }) : "";
   clearTimeout(expiryTimer);
   if (Number.isSafeInteger(expiresAt)) {
     const remaining = expiresAt - Date.now();
     if (remaining <= 0) {
-      showLogin(`登录已失效。${loginHelp}`, true);
+      showLogin($t("web.miyoushe.app.text_519e8af82e", { "loginHelp": loginHelp }), true);
       return;
     }
     if (remaining <= 2_147_483_647) {
-      expiryTimer = setTimeout(() => showLogin(`登录已失效。${loginHelp}`, true), remaining);
+      expiryTimer = setTimeout(() => showLogin($t("web.miyoushe.app.text_519e8af82e", { "loginHelp": loginHelp }), true), remaining);
     }
   }
-  get("account-state").textContent = `${account.loggedIn ? "已登录" : "未登录"} · ${account.deviceBound ? "设备已绑定" : "待绑定设备"}`;
+  get("account-state").textContent = `${account.loggedIn ? $t("web.miyoushe.app.text_0a01eee1cd") : $t("web.miyoushe.app.text_c1f6583730")} · ${account.deviceBound ? $t("web.miyoushe.app.text_2d07e3bb61") : $t("web.miyoushe.app.text_2fbfcc023e")}`;
   get("today-schedule").textContent = scheduleText(todaySchedule);
   get("today-schedule").hidden = !todaySchedule;
   get("roles-empty").hidden = account.roles.length > 0;
@@ -434,9 +438,9 @@ function showOverview(data: Overview) {
   const remaining = missions?.remaining;
   const remainingLine = get("missions-remaining");
   remainingLine.hidden = remaining === undefined;
-  remainingLine.textContent = remaining === undefined ? "" : `剩余可领 ${point(remaining)} 米游币`;
+  remainingLine.textContent = remaining === undefined ? "" : $t("web.miyoushe.app.text_c507f0e357", { "value1": point(remaining) });
   get("missions-empty").hidden = Boolean(missions?.items.length);
-  get("missions-empty").textContent = missionError || (missions ? "当前没有可展示的社区任务。" : "暂时无法读取社区任务和余额。");
+  get("missions-empty").textContent = missionError || (missions ? $t("web.miyoushe.app.text_973ae59458") : $t("web.miyoushe.app.text_92c7816b49"));
   get("missions").replaceChildren(...(missions?.items.map(missionRow) ?? []));
   get("login").hidden = true;
   get("dashboard").hidden = false;
@@ -460,7 +464,7 @@ function resetShop() {
   Object.assign(shop, { data: null, game: "", page: 1, nowOffset: 0, catalogRequest: null, detailRequest: null });
   get("shop-goods").replaceChildren();
   get("shop-note").textContent = "";
-  get("shop-game").replaceChildren(new Option("全部商品", ""));
+  get("shop-game").replaceChildren(new Option($t("web.miyoushe.app.text_207bb971b8"), ""));
   get("shop-status").value = "all";
   get("shop-search").value = "";
   get("shop-pagination").hidden = true;
@@ -490,7 +494,7 @@ function resetShop() {
 }
 
 function shopTime(milliseconds: number | null | undefined) {
-  return Number.isSafeInteger(milliseconds) ? shopClock.format(milliseconds!) + "（北京时间）" : "未知";
+  return Number.isSafeInteger(milliseconds) ? shopClock.format(milliseconds!) + $t("web.miyoushe.app.text_5eb76ad884") : $t("web.miyoushe.app.text_4d8c1c5b42");
 }
 
 function tickShop() {
@@ -498,13 +502,13 @@ function tickShop() {
   for (const line of document.querySelectorAll<HTMLElement>("[data-shop-deadline]")) {
     const seconds = Math.ceil((Number(line.dataset.shopDeadline) - now) / 1000);
     if (seconds <= 0) {
-      line.textContent = "已到开放时间，请刷新官方库存";
+      line.textContent = $t("web.miyoushe.app.text_fd7147a900");
       continue;
     }
     const days = Math.floor(seconds / 86400);
     const time = [Math.floor(seconds / 3600) % 24, Math.floor(seconds / 60) % 60, seconds % 60]
       .map(value => String(value).padStart(2, "0")).join(":");
-    line.textContent = "距开放 " + (days ? days + " 天 " : "") + time;
+    line.textContent = $t("web.miyoushe.app.text_d6047e58be") + (days ? days + $t("web.miyoushe.app.text_5ab7e0f9b7") : "") + time;
   }
 }
 
@@ -524,14 +528,14 @@ function shopIcon(good: Good) {
 function shopFacts(good: Good, detail = false, accountQuota?: AccountQuota) {
   const facts = add("dl", "shop-facts", "");
   function item(label: string, value: string) { facts.append(add("dt", "", label), add("dd", "", value)); }
-  item("当前库存", good.unlimited ? "不限量" : good.stock == null ? "未知" : point(good.stock));
+  item($t("web.miyoushe.app.text_6063416555"), good.unlimited ? $t("web.miyoushe.app.text_6cf3bcae82") : good.stock == null ? $t("web.miyoushe.app.text_4d8c1c5b42") : point(good.stock));
   if (good.opensAt) {
-    item("开放时间", shopTime(good.opensAt));
-    item("下一批数量", good.nextStock == null ? "未知" : point(good.nextStock));
+    item($t("web.miyoushe.app.text_73199769b3"), shopTime(good.opensAt));
+    item($t("web.miyoushe.app.text_e102a5f8bf"), good.nextStock == null ? $t("web.miyoushe.app.text_4d8c1c5b42") : point(good.nextStock));
   }
-  if (detail && good.endsAt) item("结束时间", shopTime(good.endsAt));
-  if (good.accountLimit! > 0) item("账号限购", accountQuota ? `${point(accountQuota.used)}/${point(accountQuota.limit)}` : point(good.accountLimit));
-  if (detail && good.roleLimit! > 0) item("角色限购", point(good.roleLimit));
+  if (detail && good.endsAt) item($t("web.miyoushe.app.text_f502764499"), shopTime(good.endsAt));
+  if (good.accountLimit! > 0) item($t("web.miyoushe.app.text_65fde51fff"), accountQuota ? `${point(accountQuota.used)}/${point(accountQuota.limit)}` : point(good.accountLimit));
+  if (detail && good.roleLimit! > 0) item($t("web.miyoushe.app.text_29686e0d06"), point(good.roleLimit));
   return facts;
 }
 
@@ -553,10 +557,10 @@ function renderGoods() {
     if (image) visual.append(image);
     visual.append(statusBadge(good.status));
     const content = add("div", "good-body", "");
-    const action = add("button", "secondary good-action", "查看商品详情");
+    const action = add("button", "secondary good-action", $t("web.miyoushe.app.text_faa93dadc4"));
     action.type = "button";
     action.addEventListener("click", () => void openDetail(good.id));
-    content.append(add("h3", "", good.name), add("p", "shop-price", point(good.price) + " 米游币"), shopFacts(good));
+    content.append(add("h3", "", good.name), add("p", "shop-price", point(good.price) + $t("web.miyoushe.app.text_1125a6cf36")), shopFacts(good));
     if (good.opensAt) {
       const countdown = add("p", "countdown", "");
       countdown.dataset.shopDeadline = String(good.opensAt);
@@ -566,13 +570,13 @@ function renderGoods() {
     card.append(visual, content);
     return card;
   });
-  get("shop-goods").replaceChildren(...(cards.length ? cards : [add("p", "shop-empty", "当前页没有符合条件的商品。")]));
+  get("shop-goods").replaceChildren(...(cards.length ? cards : [add("p", "shop-empty", $t("web.miyoushe.app.text_66f000ba96"))]));
   tickShop();
 }
 
 function catalogControls(data: CatalogData) {
   const game = get("shop-game");
-  game.replaceChildren(new Option("全部商品", ""), ...data.games.map(item => new Option(item.name, item.key)));
+  game.replaceChildren(new Option($t("web.miyoushe.app.text_207bb971b8"), ""), ...data.games.map(item => new Option(item.name, item.key)));
   if (![...game.options].some(option => option.value === shop.game)) game.append(new Option(shop.game, shop.game));
   game.value = shop.game;
   get("shop-page").textContent = data.page + " / " + data.totalPages;
@@ -582,9 +586,9 @@ function catalogControls(data: CatalogData) {
 }
 
 function shopProblem(response: Response, detail = false) {
-  if (response.status === 429) return "商城请求频繁，请稍后再试。";
-  if (detail && response.status === 404) return "商品不存在或已下架。";
-  return detail ? "暂时无法读取商品详情。" : "暂时无法读取商城商品。";
+  if (response.status === 429) return $t("web.miyoushe.app.text_6a6523693b");
+  if (detail && response.status === 404) return $t("web.miyoushe.app.text_d80df97840");
+  return detail ? $t("web.miyoushe.app.text_c909d308f2") : $t("web.miyoushe.app.text_f94620a9c5");
 }
 
 async function shopRequest(path: string, controller: AbortController) {
@@ -596,7 +600,7 @@ async function loadCatalog(page = shop.page, game = shop.game) {
   shop.catalogRequest?.abort();
   const controller = new AbortController();
   shop.catalogRequest = controller;
-  get("shop-note").textContent = "正在读取官方商品…";
+  get("shop-note").textContent = $t("web.miyoushe.app.text_7a47d8c9b7");
   try {
     const query = new URLSearchParams({ page: String(page), game });
     const response = await shopRequest("api/catalog?" + query, controller);
@@ -614,11 +618,11 @@ async function loadCatalog(page = shop.page, game = shop.game) {
     shop.nowOffset = data.now - Date.now();
     catalogControls(data);
     renderGoods();
-    get("shop-note").textContent = point(data.total) + " 件商品 · 第 " + data.page + " 页";
+    get("shop-note").textContent = point(data.total) + $t("web.miyoushe.app.text_1f1c524ab1") + data.page + $t("web.miyoushe.app.text_85ca81cf6a");
   } catch (error) {
     if (controller.signal.aborted) return;
-    const message = error instanceof Error && error.name === "Error" ? error.message : "暂时无法读取商城商品。";
-    get("shop-note").textContent = message + (shop.data ? "当前显示上次读取的商品。" : "");
+    const message = error instanceof Error && error.name === "Error" ? error.message : $t("web.miyoushe.app.text_f94620a9c5");
+    get("shop-note").textContent = message + (shop.data ? $t("web.miyoushe.app.text_c05cdbeca7") : "");
     get("shop-game").value = shop.game;
   } finally {
     if (shop.catalogRequest === controller) shop.catalogRequest = null;
@@ -631,26 +635,26 @@ function communityAccountGood(good: Good) {
 
 function detailContent({ good, roles, roleError, addresses, accountQuota }: Detail) {
   const blocks: HTMLElement[] = [add("h3", "", good.name), statusBadge(good.status),
-    add("p", "shop-price", point(good.price) + " 米游币"), shopFacts(good, true, accountQuota),
-    add("h4", "", "兑换条件"), add("p", "detail-copy", good.requirements || "官方暂未提供额外兑换说明。")];
-  if (good.type === 1) blocks.push(add("p", "muted", "实物商品需要米游社收货地址。"));
+    add("p", "shop-price", point(good.price) + $t("web.miyoushe.app.text_1125a6cf36")), shopFacts(good, true, accountQuota),
+    add("h4", "", $t("web.miyoushe.app.text_13a728b0d5")), add("p", "detail-copy", good.requirements || $t("web.miyoushe.app.text_c2c7286658"))];
+  if (good.type === 1) blocks.push(add("p", "muted", $t("web.miyoushe.app.text_4d0927a238")));
   if (good.type === 2 && !communityAccountGood(good)) {
     if (roleError || !roles.length) {
-      blocks.push(add("h4", "", "当前档案绑定的角色"), add("p", "muted", roleError || "没有找到此商品对应的绑定角色。"));
+      blocks.push(add("h4", "", $t("web.miyoushe.app.text_1fc4257e81")), add("p", "muted", roleError || $t("web.miyoushe.app.text_4db1e17357")));
     } else if (!plans.data?.canSubmit || (!plans.intents.has(good.id) && !["available", "scheduled"].includes(good.status))) {
-      blocks.push(add("h4", "", "当前档案绑定的角色"));
+      blocks.push(add("h4", "", $t("web.miyoushe.app.text_1fc4257e81")));
       const list = add("ul", "rows", "");
       for (const role of roles) {
         const row = add("li", "role-row", "");
         row.append(add("span", "", roleLabel(role)), add("span", "muted", "UID " + role.uid));
         list.append(row);
       }
-      blocks.push(list, add("p", "muted", "实际兑换条件请以米游社商品说明为准。"));
+      blocks.push(list, add("p", "muted", $t("web.miyoushe.app.text_0b09403966")));
     }
   }
   const tracked = trackerProduct(good);
   if (tracked && plans.data?.canSubmit) {
-    const track = add("button", "secondary", "持续追踪此商品 · 包括后续同名商品");
+    const track = add("button", "secondary", $t("web.miyoushe.app.text_bc787548e0"));
     track.type = "button";
     track.addEventListener("click", () => {
       get("shop-detail").close();
@@ -668,7 +672,7 @@ async function openDetail(id: string) {
   shop.detailRequest = controller;
   const dialog = get("shop-detail"), content = get("shop-detail-content");
   plans.activeForm = null;
-  content.replaceChildren(add("p", "muted", "正在读取商品详情…"));
+  content.replaceChildren(add("p", "muted", $t("web.miyoushe.app.text_4775ca3ef1")));
   if (!dialog.open) dialog.showModal();
   try {
     const [response] = await Promise.all([shopRequest("api/goods/" + encodeURIComponent(id), controller), loadPlans()]);
@@ -684,14 +688,14 @@ async function openDetail(id: string) {
     const data = await response.json() as Detail;
     if (!controller.signal.aborted) content.replaceChildren(...detailContent(data));
   } catch {
-    if (!controller.signal.aborted) content.replaceChildren(add("p", "error", "暂时无法读取商品详情。"));
+    if (!controller.signal.aborted) content.replaceChildren(add("p", "error", $t("web.miyoushe.app.text_c909d308f2")));
   } finally {
     if (shop.detailRequest === controller) shop.detailRequest = null;
   }
 }
 
 function roleLabel(role: Role) {
-  return [role.nickname || "角色", role.regionName || "未知区服", role.level ? "Lv." + role.level : ""]
+  return [role.nickname || $t("web.miyoushe.app.text_c47b54e84e"), role.regionName || $t("web.miyoushe.app.text_d27d31175b"), role.level ? "Lv." + role.level : ""]
     .filter(Boolean).join(" · ");
 }
 
@@ -709,17 +713,17 @@ function planRow(plan: Plan) {
   const destination = verification?.expiresAt! > Date.now() && typeof verification!.link === "string" ? URL.parse(verification!.link) : null;
   const canOpenVerification = destination && (destination.protocol === "https:" ||
     (destination.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(destination.hostname)));
-  copy.append(add("span", "shop-badge " + status, canOpenVerification ? "等待人工验证" : planStatus[status]), add("h3", "", plan.goodsName),
-    add("p", "muted", "档案 " + plan.profileId + " · " + point(plan.price) + " 米游币 × 1 · " + shopTime(plan.opensAt)));
-  if (plan.role) copy.append(add("p", "muted", "游戏角色 UID " + plan.role.uid + " · " + (plan.role.regionName || "未知区服")));
-  if (plan.addressLabel) copy.append(add("p", "muted", "收货地址 " + plan.addressLabel));
+  copy.append(add("span", "shop-badge " + status, canOpenVerification ? $t("web.miyoushe.app.text_dcb1e1edd5") : planStatus[status]), add("h3", "", plan.goodsName),
+    add("p", "muted", $t("web.miyoushe.app.text_bc36d75f7e") + plan.profileId + " · " + point(plan.price) + $t("web.miyoushe.app.text_b31eca7947") + shopTime(plan.opensAt)));
+  if (plan.role) copy.append(add("p", "muted", $t("web.miyoushe.app.text_82465ab5df") + plan.role.uid + " · " + (plan.role.regionName || $t("web.miyoushe.app.text_d27d31175b"))));
+  if (plan.addressLabel) copy.append(add("p", "muted", $t("web.miyoushe.app.text_169967135e") + plan.addressLabel));
   if (canOpenVerification) {
     const prompt = add("div", "plan-verification", "");
-    const link = add("a", "secondary", "打开人工验证");
+    const link = add("a", "secondary", $t("web.miyoushe.app.text_850b074f6c"));
     link.href = destination.href;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    prompt.append(link, add("p", "muted", "仅续交本次兑换，验证有效至 " + shopTime(verification!.expiresAt)));
+    prompt.append(link, add("p", "muted", $t("web.miyoushe.app.text_3e5cd6e6dd") + shopTime(verification!.expiresAt)));
     copy.append(prompt);
   } else if (plan.message) copy.append(add("p", "", plan.message));
   row.append(copy);
@@ -735,11 +739,11 @@ function planRow(plan: Plan) {
     actions.append(button);
   }
   if (plan.status === "scheduled" || plan.status === "preparing") {
-    action("取消预约", "cancel", {}, "取消「" + plan.goodsName + "」的预约？");
+    action($t("web.miyoushe.app.text_0afc4fe3d3"), "cancel", {}, $t("web.miyoushe.app.text_4a784574eb") + plan.goodsName + $t("web.miyoushe.app.text_6b8cd4099c"));
   } else if (plan.status === "unknown") {
-    for (const [label, redeemed] of [["已在官方记录确认成功", true], ["已确认未兑换", false]] as const) {
-      action(label, "resolve", { redeemed }, "请先在米游社核对「" + plan.goodsName + "」的兑换记录。" +
-        (redeemed ? "确定标记为已兑换？" : "确定标记为未兑换？"));
+    for (const [label, redeemed] of [[$t("web.miyoushe.app.text_9159f80b11"), true], [$t("web.miyoushe.app.text_97fc2497b5"), false]] as const) {
+      action(label, "resolve", { redeemed }, $t("web.miyoushe.app.text_752d40359f") + plan.goodsName + $t("web.miyoushe.app.text_a3793d9bce") +
+        (redeemed ? $t("web.miyoushe.app.text_5215e2c23e") : $t("web.miyoushe.app.text_0d6cc8fcbb")));
     }
   }
   if (actions.children.length) row.append(actions);
@@ -754,13 +758,13 @@ function renderPlans() {
     .sort((a, b) => b.createdAt - a.createdAt).map(planRow);
   const cursor = plans.olderCursor === undefined ? plans.data.older : plans.olderCursor;
   if (cursor) {
-    const more = add("button", "secondary", plans.loadingOlder ? "正在读取…" : "查看较早的兑换记录");
+    const more = add("button", "secondary", plans.loadingOlder ? $t("web.miyoushe.app.text_86b6d0d630") : $t("web.miyoushe.app.text_a403e7c5f6"));
     more.type = "button";
     more.disabled = plans.loadingOlder;
     more.addEventListener("click", () => void loadOlderPlans(cursor));
     rows.push(more);
   }
-  get("shop-plans").replaceChildren(...(rows.length ? rows : [add("p", "shop-empty", "暂无兑换记录。")]));
+  get("shop-plans").replaceChildren(...(rows.length ? rows : [add("p", "shop-empty", $t("web.miyoushe.app.text_6de1abf37c"))]));
 }
 
 async function loadOlderPlans(cursor: string) {
@@ -775,13 +779,13 @@ async function loadOlderPlans(cursor: string) {
       showLogin(loginHelp, true);
       return;
     }
-    if (!response.ok) throw new Error("读取失败");
+    if (!response.ok) throw new Error($t("web.miyoushe.app.text_6aa27f14bf"));
     const data = await response.json() as PlanData;
     if (scope !== plans.scope) return;
     for (const plan of data.plans) plans.older.set(plan.id, plan);
     plans.olderCursor = data.older ?? null;
   } catch {
-    if (scope === plans.scope) planNote("无法读取较早的兑换记录，请重试。", true);
+    if (scope === plans.scope) planNote($t("web.miyoushe.app.text_8054c3e76f"), true);
   } finally {
     if (scope === plans.scope) {
       plans.loadingOlder = false;
@@ -795,7 +799,7 @@ function loadPlans(background = false) {
   clearTimeout(plans.timer);
   const scope = plans.scope;
   const revision = plans.revision;
-  if (!background) planNote("正在读取兑换记录…");
+  if (!background) planNote($t("web.miyoushe.app.text_665482660c"));
   plans.loading = (async () => {
     try {
       const response = await request("api/plans");
@@ -804,7 +808,7 @@ function loadPlans(background = false) {
         showLogin(loginHelp, true);
         return;
       }
-      if (!response.ok) throw new Error("读取失败");
+      if (!response.ok) throw new Error($t("web.miyoushe.app.text_6aa27f14bf"));
       const data = await response.json() as PlanData;
       if (scope !== plans.scope || revision !== plans.revision) return;
       const rowsChanged = !plans.data || plans.data.older !== data.older || JSON.stringify(plans.data.plans) !== JSON.stringify(data.plans);
@@ -820,13 +824,13 @@ function loadPlans(background = false) {
       if (rowsChanged) renderPlans();
       if (exchanged) void refresh();
       const messages = [];
-      if (!data.canSubmit) messages.push("预约兑换服务暂未启用。");
-      if (plans.intents.size) messages.push("另有提交待确认，可返回商品详情重试原请求。");
+      if (!data.canSubmit) messages.push($t("web.miyoushe.app.text_bba5b8d55c"));
+      if (plans.intents.size) messages.push($t("web.miyoushe.app.text_cac49881b4"));
       planNote(messages.join(" "));
     } catch {
       if (scope !== plans.scope || revision !== plans.revision) return;
       if (plans.data) plans.data = { ...plans.data, canSubmit: false };
-      planNote(plans.data ? "刷新失败，当前显示上次读取的兑换记录。" : "暂时无法读取兑换记录。", true);
+      planNote(plans.data ? $t("web.miyoushe.app.text_51e8e9cd2b") : $t("web.miyoushe.app.text_8409d00a2e"), true);
     } finally {
       if (scope === plans.scope) {
         plans.loading = null;
@@ -851,15 +855,15 @@ async function postPlan(path: string, body: object) {
 async function planFailure(response: Response) {
   const data = await response.json().catch(() => null) as { message?: unknown } | null;
   if (typeof data?.message === "string" && data.message.length <= 200) return data.message;
-  if (response.status === 409) return "当前兑换状态已变化，请刷新记录。";
-  if (response.status === 404) return "兑换记录不存在，请刷新记录。";
-  return "暂时无法完成操作，请稍后重试。";
+  if (response.status === 409) return $t("web.miyoushe.app.text_8d5a34f710");
+  if (response.status === 404) return $t("web.miyoushe.app.text_efa738818a");
+  return $t("web.miyoushe.app.text_514f2b69e4");
 }
 
 async function trackingResponse<Data>(response: Response): Promise<Data> {
   if (response.status === 401) {
-    showLogin(`登录已失效。${loginHelp}`, true);
-    throw new Error("登录已失效。");
+    showLogin($t("web.miyoushe.app.text_519e8af82e", { "loginHelp": loginHelp }), true);
+    throw new Error($t("web.miyoushe.app.text_4150f6e59b"));
   }
   if (!response.ok) throw new Error(await planFailure(response));
   return response.json() as Promise<Data>;
@@ -877,7 +881,7 @@ async function loadTrackers() {
     const data = await trackingResponse<TrackerData>(response);
     if (trackers.generation !== generation) return;
     get("tracker-open").disabled = !data.canTrack;
-    note.textContent = data.canTrack ? "" : "暂时无法启动追踪规则。";
+    note.textContent = data.canTrack ? "" : $t("web.miyoushe.app.text_6983798f9b");
     const previous = trackers.data;
     if (previous?.canTrack === data.canTrack && JSON.stringify(previous.trackers) === JSON.stringify(data.trackers)) return;
     trackers.data = data;
@@ -885,28 +889,28 @@ async function loadTrackers() {
       const row = add("article", "plan-row", "");
       const copy = add("div", "plan-copy", "");
       const actions = add("div", "plan-actions", "");
-      const group = (Object.hasOwn(trackGames, rule.game) && trackGames[rule.game as keyof typeof trackGames]) || rule.game || "未知分区";
-      const item = rule.itemType === 1 ? "实物周边" : rule.itemType === 2 ? "游戏道具" : "类型待核对";
+      const group = (Object.hasOwn(trackGames, rule.game) && trackGames[rule.game as keyof typeof trackGames]) || rule.game || $t("web.miyoushe.app.text_c293bae3f6");
+      const item = rule.itemType === 1 ? $t("web.miyoushe.app.text_f01d5655c1") : rule.itemType === 2 ? $t("web.miyoushe.app.text_f7530fe129") : $t("web.miyoushe.app.text_6a319c32f4");
       if (rule.migrationBlocked) {
         copy.append(add("h3", "", `${group} · ${item}`), add("p", "muted", rule.message),
-          add("p", "muted", `已用 ${point(rule.spent)} · 待结算 ${point(rule.held)}`));
+          add("p", "muted", $t("web.miyoushe.app.text_3844ddd945", { "value1": point(rule.spent), "value2": point(rule.held) })));
         row.append(copy);
         return row;
       }
       const selection = rule.mode === "goods" ? (rule.names.length ? rule.names : rule.goodsIds).join("、")
-        : rule.keywords.join("、") || "全部商品";
-      const limit = rule.spendLimit === null ? "不限" : point(rule.spendLimit);
-      const destination = rule.role ? `UID ${rule.role.uid} · ${rule.role.regionName || "未知区服"}` : rule.addressLabel;
+        : rule.keywords.join("、") || $t("web.miyoushe.app.text_207bb971b8");
+      const limit = rule.spendLimit === null ? $t("web.miyoushe.app.text_f203d577d1") : point(rule.spendLimit);
+      const destination = rule.role ? `UID ${rule.role.uid} · ${rule.role.regionName || $t("web.miyoushe.app.text_d27d31175b")}` : rule.addressLabel;
       copy.append(add("h3", "", `${group} · ${item}`), add("p", "", selection),
-        add("p", "muted", `${destination} · 已用 ${point(rule.spent)} / ${limit} · 待结算 ${point(rule.held)}`),
-        add("p", "muted", `${rule.enabled ? "追踪中" : "已暂停"} · ${rule.message}`));
-      if (rule.enabled && Number.isSafeInteger(rule.nextOpenAt)) copy.append(add("p", "muted", `下次开放 ${shopTime(rule.nextOpenAt)}`));
+        add("p", "muted", $t("web.miyoushe.app.text_7a118b0f7c", { "destination": destination, "value2": point(rule.spent), "limit": limit, "value4": point(rule.held) })),
+        add("p", "muted", `${rule.enabled ? $t("web.miyoushe.app.text_85168c4cbd") : $t("web.miyoushe.app.text_eb0c326b60")} · ${rule.message}`));
+      if (rule.enabled && Number.isSafeInteger(rule.nextOpenAt)) copy.append(add("p", "muted", $t("web.miyoushe.app.text_c82733b9ff", { "value1": shopTime(rule.nextOpenAt) })));
       if (rule.enabled || data.canTrack) {
-        const toggle = add("button", "secondary", rule.enabled ? "暂停" : rule.needsConfirmation ? "确认并恢复" : "恢复");
+        const toggle = add("button", "secondary", rule.enabled ? $t("web.miyoushe.app.text_8d12fc0d4e") : rule.needsConfirmation ? $t("web.miyoushe.app.text_bfb81b90be") : $t("web.miyoushe.app.text_e0534b8a4e"));
         toggle.type = "button";
         toggle.addEventListener("click", async () => {
           const action = rule.enabled ? "pause" : "resume";
-          if (!rule.enabled && !window.confirm(`确认使用当前档案的米游币继续兑换 ${group} · ${selection}？累计预算 ${limit}。`)) return;
+          if (!rule.enabled && !window.confirm($t("web.miyoushe.app.text_93e7d454a6", { "group": group, "selection": selection, "limit": limit }))) return;
           toggle.disabled = true;
           try {
             await trackingResponse(await postPlan(`api/trackers/${rule.id}/${action}`, { confirmed: !rule.enabled }));
@@ -920,7 +924,7 @@ async function loadTrackers() {
       row.append(copy, actions);
       return row;
     });
-    get("shop-trackers").replaceChildren(...(rows.length ? rows : [add("p", "shop-empty", "暂无追踪规则。")]));
+    get("shop-trackers").replaceChildren(...(rows.length ? rows : [add("p", "shop-empty", $t("web.miyoushe.app.text_53930623d3"))]));
   } catch (error) {
     if (trackers.generation === generation) note.textContent = (error as Error).message;
   } finally {
@@ -947,16 +951,16 @@ async function loadTrackerTargets() {
   submit.disabled = true;
   form.confirmed.checked = false;
   form.destination.replaceChildren();
-  note.textContent = "正在核验当前档案的兑换目标…";
+  note.textContent = $t("web.miyoushe.app.text_3272da2758");
   try {
     const data = await trackingResponse<TrackerTargets>(await request("api/tracking-targets?" + query, { signal: controller.signal }));
     if (controller.signal.aborted) return;
     const options = data.items.map(item => data.type === "role"
-      ? new Option(`UID ${(item as TrackerRole).uid} · ${(item as TrackerRole).regionName || "未知区服"}`, (item as TrackerRole).uid)
-      : new Option((item as TrackerAddress).label || "已脱敏地址", (item as TrackerAddress).id));
+      ? new Option(`UID ${(item as TrackerRole).uid} · ${(item as TrackerRole).regionName || $t("web.miyoushe.app.text_d27d31175b")}`, (item as TrackerRole).uid)
+      : new Option((item as TrackerAddress).label || $t("web.miyoushe.app.text_6fa472631c"), (item as TrackerAddress).id));
     form.destination.replaceChildren(...options);
     submit.disabled = !options.length;
-    note.textContent = options.length ? "" : "当前档案没有可用的兑换目标。";
+    note.textContent = options.length ? "" : $t("web.miyoushe.app.text_284ea2cab8");
   } catch (error) {
     if (!controller.signal.aborted) note.textContent = (error as Error).message;
   }
@@ -1052,9 +1056,9 @@ async function changePlan(id: string, action: "cancel" | "resolve", body: object
       plans.data = { ...plans.data, plans: plans.data.plans.map(row => row.id === plan.id ? plan : row) };
       renderPlans();
     }
-    planNote(action === "cancel" ? "已取消预约。" : "已记录核对结果。");
+    planNote(action === "cancel" ? $t("web.miyoushe.app.text_a6e4609f7d") : $t("web.miyoushe.app.text_14f10fbe93"));
   } catch {
-    if (scope === plans.scope) planNote("操作结果尚未确认，请刷新兑换记录。", true);
+    if (scope === plans.scope) planNote($t("web.miyoushe.app.text_430e10a66b"), true);
   } finally {
     if (scope === plans.scope) {
       plans.actions.delete(id);
@@ -1066,12 +1070,12 @@ async function changePlan(id: string, action: "cancel" | "resolve", body: object
 function reservationForm(good: Good, roles: readonly Role[], addresses: readonly Address[] | undefined, accountQuota?: AccountQuota) {
   const panel = add("form", "reservation-form", "");
   if (!plans.data?.canSubmit) {
-    panel.append(add("p", "muted", plans.data ? "预约兑换服务暂未启用。" : "暂时无法确认预约服务状态。"));
+    panel.append(add("p", "muted", plans.data ? $t("web.miyoushe.app.text_bba5b8d55c") : $t("web.miyoushe.app.text_983d92d87c")));
     return panel;
   }
   const saved = plans.intents.get(good.id);
   if (!saved && accountQuota && accountQuota.used >= accountQuota.limit) {
-    const disabled = add("button", "reservation-submit", "已达账号兑换上限");
+    const disabled = add("button", "reservation-submit", $t("web.miyoushe.app.text_0bcaee4721"));
     disabled.type = "button";
     disabled.disabled = true;
     panel.append(disabled);
@@ -1079,7 +1083,7 @@ function reservationForm(good: Good, roles: readonly Role[], addresses: readonly
   }
   const immediate = saved?.body.immediate ?? good.status === "available";
   if (!saved && !immediate && good.status !== "scheduled") {
-    panel.append(add("p", "muted", "当前商品不可兑换。"));
+    panel.append(add("p", "muted", $t("web.miyoushe.app.text_c46617b735")));
     return panel;
   }
   const targets = good.type === 2 ? roles : good.type === 1 && Array.isArray(addresses) ? addresses : [];
@@ -1090,8 +1094,8 @@ function reservationForm(good: Good, roles: readonly Role[], addresses: readonly
   selector.id = "reservation-target";
   selector.required = !community;
   selector.hidden = community;
-  const targetField = add("label", "reservation-target", community ? "兑换至当前米游社账号" : good.type === 2 ? "接收奖励的游戏角色" : "收货地址");
-  selector.append(new Option("请选择兑换目标", ""), ...targets.map((target, index) =>
+  const targetField = add("label", "reservation-target", community ? $t("web.miyoushe.app.text_a16de22f28") : good.type === 2 ? $t("web.miyoushe.app.text_0af5cf87c2") : $t("web.miyoushe.app.text_445edb7272"));
+  selector.append(new Option($t("web.miyoushe.app.text_ee78990244"), ""), ...targets.map((target, index) =>
     new Option(good.type === 2 ? "UID " + (target as Role).uid + " · " + roleLabel(target as Role) : (target as Address).label, String(index))));
   if (targets.length === 1) selector.value = "0";
   targetField.htmlFor = selector.id;
@@ -1102,8 +1106,8 @@ function reservationForm(good: Good, roles: readonly Role[], addresses: readonly
   confirm.required = true;
   confirm.id = "reservation-confirm";
   const confirmation = add("label", "reservation-confirm", "");
-  confirmation.append(confirm, add("span", "", "使用当前档案的 " + point(saved?.body.expectedPrice ?? good.price) +
-    " 米游币兑换 1 件。" + (immediate ? "确认后立即尝试兑换。" : "官方开放后自动尝试兑换。")));
+  confirmation.append(confirm, add("span", "", $t("web.miyoushe.app.text_b765e887c3") + point(saved?.body.expectedPrice ?? good.price) +
+    $t("web.miyoushe.app.text_245d41429f") + (immediate ? $t("web.miyoushe.app.text_ad70cdf33a") : $t("web.miyoushe.app.text_0d619cbbef"))));
   const message = add("p", "muted", "");
   message.id = "reservation-message";
   message.setAttribute("role", "status");
@@ -1118,7 +1122,7 @@ function reservationForm(good: Good, roles: readonly Role[], addresses: readonly
     selector.disabled = Boolean(draft);
     confirm.disabled = Boolean(draft);
     submit.disabled = submitting || (!draft && (!confirm.checked || (!community && !selector.value)));
-    submit.textContent = submitting ? "正在提交…" : draft ? "重试原请求" : immediate ? "确认立即兑换" : "创建兑换预约";
+    submit.textContent = submitting ? $t("web.miyoushe.app.text_26ef00b7d0") : draft ? $t("web.miyoushe.app.text_8d7d39d122") : immediate ? $t("web.miyoushe.app.text_cb5a0ff582") : $t("web.miyoushe.app.text_00a4c1e24d");
     if (draft) message.textContent = draft.note || "";
   }
   plans.activeForm = { id: good.id, update, reject(problem) {
@@ -1143,12 +1147,12 @@ function reservationForm(good: Good, roles: readonly Role[], addresses: readonly
       const target = targets[Number(selector.value)];
       if (!confirm.checked || (!community && (!selector.value || !target))) return;
       if (!immediate && good.opensAt! <= Date.now() + shop.nowOffset) {
-        message.textContent = "商品开放时间已到，请刷新商城后重新确认。";
+        message.textContent = $t("web.miyoushe.app.text_99dc1cd57f");
         return;
       }
       const intentId = createIntentId();
       if (!intentId) {
-        message.textContent = "当前浏览器不支持安全随机数，无法生成兑换确认，请更换浏览器重试。";
+        message.textContent = $t("web.miyoushe.app.text_840cc597dd");
         return;
       }
       const destination = community ? {} : good.type === 2 ? { uid: (target as Role).uid, region: (target as Role).region } : { addressId: (target as Address).id };
@@ -1158,7 +1162,7 @@ function reservationForm(good: Good, roles: readonly Role[], addresses: readonly
     }
     const currentForm = () => plans.activeForm?.id === good.id ? plans.activeForm : null;
     draft.submitting = true;
-    draft.note = "正在确认兑换计划…";
+    draft.note = $t("web.miyoushe.app.text_5c22ba2931");
     update();
     try {
       const response = await postPlan("api/plans", draft.body);
@@ -1176,7 +1180,7 @@ function reservationForm(good: Good, roles: readonly Role[], addresses: readonly
           return;
         }
         draft.uncertain = true;
-        draft.note = problem + "若需重试，请重试原请求。";
+        draft.note = problem + $t("web.miyoushe.app.text_67aca306ff");
         return;
       }
       const plan = await response.json() as Plan;
@@ -1192,11 +1196,11 @@ function reservationForm(good: Good, roles: readonly Role[], addresses: readonly
       }
       renderPlans();
       if (plan.status === "succeeded") void refresh();
-      planNote(plan.immediate ? "已创建兑换计划，处理结果见下方记录。" : "预约已创建，结果见下方记录。");
+      planNote(plan.immediate ? $t("web.miyoushe.app.text_cda4c99b5c") : $t("web.miyoushe.app.text_201c78f63f"));
       if (tab === "plans") void loadPlans();
     } catch {
       draft.uncertain = true;
-      draft.note = "提交结果待确认。可以重试原请求或查看兑换记录。";
+      draft.note = $t("web.miyoushe.app.text_4f459fa014");
     } finally {
       draft.submitting = false;
       if (scope === plans.scope) currentForm()?.update();
@@ -1222,7 +1226,7 @@ function updateBusy(value: boolean) {
 async function refresh(allViews = false) {
   if (busy) return;
   updateBusy(true);
-  showNotice("正在刷新数据…");
+  showNotice($t("web.miyoushe.app.text_03b28caa06"));
   const scope = plans.scope;
   const otherReads = allViews ? Promise.all([loadCatalog(), loadTrackers(), loadPlans()]) : undefined;
   try {
@@ -1233,10 +1237,10 @@ async function refresh(allViews = false) {
       return;
     }
     if (response.status === 404) {
-      showLogin("当前档案已不可用，请在聊天中检查档案。", true);
+      showLogin($t("web.miyoushe.app.text_2e9f297a11"), true);
       return;
     }
-    if (!response.ok) throw new Error("无法读取档案和任务。");
+    if (!response.ok) throw new Error($t("web.miyoushe.app.text_33bfcc54ff"));
     const data = await response.json() as Overview;
     if (scope !== plans.scope) return;
     showOverview(data);
@@ -1252,8 +1256,8 @@ async function refresh(allViews = false) {
     if (!allViews && !get("dashboard").hidden && tab === "shop") await loadCatalog();
   } catch {
     if (scope !== plans.scope) return;
-    if (get("dashboard").hidden) showLogin("暂时无法读取档案和任务。", false, true);
-    else showNotice("刷新失败，当前显示上次读取的结果。", true);
+    if (get("dashboard").hidden) showLogin($t("web.miyoushe.app.text_b1b42e9d91"), false, true);
+    else showNotice($t("web.miyoushe.app.text_83d8486b06"), true);
   } finally {
     await otherReads;
     updateBusy(false);
@@ -1265,10 +1269,10 @@ async function logout() {
   updateBusy(true);
   try {
     const response = await request("api/logout", { method: "POST" });
-    if (response.ok || response.status === 401) showLogin("已退出。", true);
-    else showNotice("暂时无法退出，请重试。", true);
+    if (response.ok || response.status === 401) showLogin($t("web.miyoushe.app.text_6e827a1b34"), true);
+    else showNotice($t("web.miyoushe.app.text_c184b46dd7"), true);
   } catch {
-    showNotice("退出结果尚未确认，请重试。", true);
+    showNotice($t("web.miyoushe.app.text_98cdf0e733"), true);
   } finally {
     updateBusy(false);
   }
@@ -1344,7 +1348,7 @@ setInterval(() => {
 }, 3_000);
 addEventListener("pageshow", event => {
   if ((event as PageTransitionEvent).persisted) {
-    showLogin("正在读取当前档案…");
+    showLogin($t("web.miyoushe.app.text_282b3bd3fe"));
     void refresh();
   }
 });
@@ -1356,7 +1360,7 @@ async function connect() {
     return;
   }
   history.replaceState(history.state, "", location.pathname);
-  showLogin("正在读取当前档案…");
+  showLogin($t("web.miyoushe.app.text_282b3bd3fe"));
   if (ticket[2]) switchTab("shop");
   updateBusy(true);
   try {
@@ -1364,11 +1368,11 @@ async function connect() {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticket: ticket[1] }),
     });
     if (!response.ok) {
-      showLogin("登录链接已失效，请在聊天中重新获取。", true);
+      showLogin($t("web.miyoushe.app.text_c4cbeba016"), true);
       return;
     }
   } catch {
-    showLogin("无法确认登录结果，请刷新或在聊天中重新获取链接。", true, true);
+    showLogin($t("web.miyoushe.app.text_42e0f6baea"), true, true);
     return;
   } finally {
     updateBusy(false);

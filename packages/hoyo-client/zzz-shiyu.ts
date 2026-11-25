@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -50,7 +53,7 @@ const layerKeys = ["fitfh", "fourth", "third", "second", "first"] as const;
 const knownRatings: ReadonlySet<string> = new Set(["S+", "S", "A+", "A", "B", "C", "D"]);
 const chineseHours = 8 * 60 * 60;
 
-function invalid(message = "官方式舆防卫战响应的战绩格式无效。"): never {
+function invalid(message = $t("zzz-shiyu.text_87eb73f73d")): never {
   throw new HoyoRequestError("response", message);
 }
 
@@ -100,15 +103,15 @@ function verifyIdentity(data: Json, { uid, region, scheduleType }: Pick<ZzzShiyu
   for (const key of ["uid", "role_id", "game_uid"]) {
     const value = data[key];
     if (value !== undefined && value !== uid && (typeof value !== "number" || String(value) !== uid)) {
-      invalid("官方式舆防卫战响应的 UID 与当前档案不一致。");
+      invalid($t("zzz-shiyu.text_a39d8a56f4"));
     }
   }
   for (const key of ["server", "region"]) {
-    if (data[key] !== undefined && data[key] !== region) invalid("官方式舆防卫战响应的区服与当前档案不一致。");
+    if (data[key] !== undefined && data[key] !== region) invalid($t("zzz-shiyu.text_2772c022fb"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid("官方式舆防卫战响应的游戏与当前档案不一致。");
+  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-shiyu.text_67314fa4cb"));
   if (data.schedule_type !== undefined && whole(data.schedule_type) !== scheduleType) {
-    invalid("官方式舆防卫战响应的周期选择与查询不一致。");
+    invalid($t("zzz-shiyu.text_51d100b94e"));
   }
 }
 
@@ -183,7 +186,7 @@ export function normalizeZzzShiyu(input: unknown, identity: Pick<ZzzShiyuSnapsho
   verifyIdentity(data, identity);
   const start = date(data.hadal_begin_time) ?? date(data.begin_time);
   const end = date(data.hadal_end_time) ?? date(data.end_time);
-  if (start && end && start >= end) invalid("官方式舆防卫战响应的统计周期无效。");
+  if (start && end && start >= end) invalid($t("zzz-shiyu.text_ed0c8ba545"));
 
   const layers = readLayers(data);
   const brief = object(data.brief);

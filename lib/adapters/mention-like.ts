@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { MessageEvent } from "../messages.ts";
 
 export interface MentionLikeTarget {
@@ -40,7 +43,7 @@ export function bindMentionLike(
     },
     async like(count: number) {
       if (!Number.isInteger(count) || count < 1 || count > 10 || signal.aborted || !await member() || signal.aborted) {
-        throw new Error("当前会话无法核实点赞对象。");
+        throw new Error($t("lib.adapters.mention-like.text_ad1a431682"));
       }
       return send(count);
     },

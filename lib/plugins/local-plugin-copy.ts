@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { cp, lstat, readdir, readlink, symlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { isUpdateDotenvPath } from "../update-activation.ts";
@@ -5,7 +8,7 @@ import { isUpdateDotenvPath } from "../update-activation.ts";
 const localCopyExcluded = (name: string) => name === "node_modules" || name === ".git" || isUpdateDotenvPath(name);
 
 async function restoreLocalPluginLink(root: string, path: string, target: string, signal?: AbortSignal) {
-  const invalid = () => new Error("本地插件符号链接须指向包内复制的普通文件。");
+  const invalid = () => new Error($t("lib.plugins.local-plugin-copy.text_0509610304"));
   if (isAbsolute(target)) throw invalid();
   let location = dirname(path);
   const parts = target.split(sep);
@@ -52,15 +55,15 @@ export async function copyLocalPlugin(source: string, destination: string, signa
         links.push({ path: join(destination, relative(source, path)), target: await readlink(path) });
         return false;
       }
-      if (!info.isDirectory() && !info.isFile()) throw new Error("本地插件包含无法隔离的文件。");
-      if (rejectSpecialPermissions && (info.mode & 0o6000)) throw new Error("迁移插件包含特殊权限文件。");
+      if (!info.isDirectory() && !info.isFile()) throw new Error($t("lib.plugins.local-plugin-copy.text_848b968274"));
+      if (rejectSpecialPermissions && (info.mode & 0o6000)) throw new Error($t("lib.plugins.local-plugin-copy.text_6ee579373c"));
       return true;
     },
   });
   if (!root.isDirectory()) return;
   // Verify against copied files so excluded or external targets are never read from the live plugin.
   if ((await readdir(destination, { recursive: true, withFileTypes: true })).some(info => !info.isDirectory() && !info.isFile())) {
-    throw new Error("本地插件包含无法隔离的文件。");
+    throw new Error($t("lib.plugins.local-plugin-copy.text_848b968274"));
   }
   for (const { path, target } of links) await restoreLocalPluginLink(destination, path, target, signal);
 }

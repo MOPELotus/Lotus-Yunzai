@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback } from "./builtin-fonts.ts";
 import { constants } from "node:fs";
@@ -31,16 +34,16 @@ const themeAssets = {
   empty: "gacha/imgs/no-avatar.webp",
 } as const;
 const statLabels = [
-  ["allNum", "抽卡总数"], ["fiveNum", "金卡数"], ["wai", "歪 T.T"],
-  ["fourNum", "紫卡数"], ["fiveAvg", "平均出金"],
+  ["allNum", $t("gacha-detail-card.text_fe61382ff1")], ["fiveNum", $t("gacha-detail-card.text_b5d6147b30")], ["wai", $t("gacha-detail-card.text_90a3bc4523")],
+  ["fourNum", $t("gacha-detail-card.text_1d83963661")], ["fiveAvg", $t("gacha-detail-card.text_8eb7ac45a0")],
 ] as const;
 
 const games = {
   sr: {
-    name: "星铁", background: "sr", face: "卡芙卡", currency: "星琼", player: "开拓者", prefix: "*",
+    name: $t("gacha-detail-card.text_a2927891f0"), background: "sr", face: $t("gacha-detail-card.text_6cc5e43b1b"), currency: $t("gacha-detail-card.text_ae25247f75"), player: $t("gacha-detail-card.text_865ee04ffd"), prefix: "*",
   },
   gs: {
-    name: "原神", background: "hydro", face: "芭芭拉", currency: "原石", player: "旅行者", prefix: "#",
+    name: $t("gacha-detail-card.text_d1597c51ed"), background: "hydro", face: $t("gacha-detail-card.text_ef09301bf5"), currency: $t("gacha-detail-card.text_761ab59423"), player: $t("gacha-detail-card.text_4bf6868aa0"), prefix: "#",
   },
 } as const;
 type Game = keyof typeof games;
@@ -107,11 +110,11 @@ async function loadTheme(root: string, game: Game, qFace: boolean) {
   const aliases = {} as Record<typeof fonts[number][0], string>;
   for (const [family, filename] of fonts) {
     const asset = await themePath(root, `common/font/${filename}`);
-    if (!asset) throw new Error(`${config.name}抽卡记录的原主题字体不可用。`);
+    if (!asset) throw new Error($t("gacha-detail-card.text_f24e9795ef", { "name": config.name }));
     try {
       aliases[family] = registerGachaThemeFont(family, asset);
     } catch {
-      throw new Error(`${config.name}抽卡记录的原主题字体不可用。`);
+      throw new Error($t("gacha-detail-card.text_f24e9795ef", { "name": config.name }));
     }
   }
 
@@ -124,7 +127,7 @@ async function loadTheme(root: string, game: Game, qFace: boolean) {
     ].map((path) => themeImage(root, path)),
   );
   if (!background || !banner || !sprite || !star || !empty) {
-    throw new Error(`${config.name}抽卡记录的原主题图片不可用。`);
+    throw new Error($t("gacha-detail-card.text_a1f691506f", { "name": config.name }));
   }
   const { Number: number, Title: title, Han: han } = aliases;
   const families = { body: `${number}, ${han}, ${builtinFontFallback}`, title: `${number}, ${title}, ${han}, ${builtinFontFallback}` };
@@ -163,6 +166,7 @@ interface TextStyle {
   readonly size?: number;
   readonly bold?: boolean;
   readonly title?: boolean;
+  readonly footer?: boolean;
 }
 
 function font(ctx: Context, { size = 16, bold = false, title = false }: TextStyle) {
@@ -175,7 +179,7 @@ function paint(ctx: Context, value: string | number, x: number, y: number, style
   ctx.font = font(ctx, style);
   ctx.textBaseline = "middle";
   ctx.textAlign = align;
-  ctx.fillStyle = value === "Lotus-Yunzai" ? brandTextColor(ctx, value, x, y, maxWidth) : style.color ?? white;
+  ctx.fillStyle = style.footer ? brandTextColor(ctx, String(value), x, y, maxWidth) : style.color ?? white;
   if (style.bold) {
     // The original web fonts ship regular faces and Chromium synthesizes their heavy weight.
     ctx.strokeStyle = ctx.fillStyle;
@@ -291,8 +295,8 @@ function paintBanner(ctx: Context, model: GachaDetailModel, theme: Theme, face: 
 
 function luckTips(luck: GachaLuck) {
   return [
-    ...(luck.fewSample ? ["样本较少，仅供参考"] : []),
-    ...(luck.hasNewPool ? ["最新卡池数据暂未收录，新卡池中的UP判定可能不准，待卡池数据更新后即可恢复"] : []),
+    ...(luck.fewSample ? [$t("gacha-detail-card.text_928818bfad")] : []),
+    ...(luck.hasNewPool ? [$t("gacha-detail-card.text_cd446fb586")] : []),
   ];
 }
 
@@ -309,35 +313,35 @@ function paintLuck(ctx: Context, luck: GachaLuck, tips: readonly string[], y: nu
   ctx.fillRect(frame, y, 170, h);
   ctx.fillStyle = color;
   ctx.fillRect(182, y, 3, h);
-  paint(ctx, "欧皇度", 98.5, y + 20, { size: 13, color: "#bbb" }, "center");
+  paint(ctx, $t("gacha-detail-card.text_a59471d368"), 98.5, y + 20, { size: 13, color: "#bbb" }, "center");
   ctx.save();
   ctx.shadowColor = "rgba(0,0,0,.8)";
   ctx.shadowBlur = 6;
   paint(ctx, luck.title, 98.5, y + 51, { size: 34, title: true, color }, "center", 147);
   ctx.restore();
   inline(ctx, [
-    { value: "运气超过 ", size: 12, color: "#ccc" },
+    { value: $t("gacha-detail-card.text_c85754f76f"), size: 12, color: "#ccc" },
     { value: `${luck.percent}%`, size: 12, bold: true, color },
-    { value: ` 的${games[game].player}`, size: 12, color: "#ccc" },
+    { value: $t("gacha-detail-card.text_e21fca08eb", { "player": games[game].player }), size: 12, color: "#ccc" },
   ], 98.5, y + 81, true);
 
   const headline = luck.isUpPool ? [
-    { value: "UP平均 ", size: 15, color: "#ddd" },
+    { value: $t("gacha-detail-card.text_70e5aa24fd"), size: 15, color: "#ddd" },
     { value: String(luck.upAvg), size: 20, bold: true, color },
-    { value: " 抽", size: 15, color: "#ddd" },
-    { value: `期望 ${luck.upExpect} 抽（含歪）`, size: 13, color: muted, margin: 8 },
+    { value: $t("gacha-detail-card.text_b09dd6b6e3"), size: 15, color: "#ddd" },
+    { value: $t("gacha-detail-card.text_b11c206e2f", { "upExpect": luck.upExpect }), size: 13, color: muted, margin: 8 },
   ] : [
-    { value: "平均出金 ", size: 15, color: "#ddd" },
+    { value: $t("gacha-detail-card.text_b14cd0fa54"), size: 15, color: "#ddd" },
     { value: String(luck.fiveAvg), size: 20, bold: true, color },
-    { value: " 抽", size: 15, color: "#ddd" },
-    { value: `期望 ${luck.fiveExpect} 抽`, size: 13, color: muted, margin: 8 },
+    { value: $t("gacha-detail-card.text_b09dd6b6e3"), size: 15, color: "#ddd" },
+    { value: $t("gacha-detail-card.text_d83656d5cb", { "fiveExpect": luck.fiveExpect }), size: 13, color: muted, margin: 8 },
   ];
   inline(ctx, headline, 200, detailTop + 13);
   const cells: readonly (readonly [string | number, string, string?])[] = luck.isUpPool ? [
-    [luck.fiveAvg, `平均出金 · 期望${luck.fiveExpect}`, `超过${luck.fivePercent}%`],
-    ...(luck.smallNum > 0 ? [[`${luck.noWaiRate}%`, `小保底不歪 ${luck.smallWin}/${luck.smallNum} · 期望${luck.upRate}%`, `超过${luck.winPercent}%`] as const] : []),
-    [luck.bigNum, "大保底"], [luck.maxUpStreak, "最多连UP"], [luck.maxWaiStreak, "最多连歪"],
-  ] : [[luck.desc, `${Number(luck.fiveAvg) <= Number(luck.fiveExpect) ? "出金快于" : "出金慢于"}理论期望`]];
+    [luck.fiveAvg, $t("gacha-detail-card.text_969df75329", { "fiveExpect": luck.fiveExpect }), $t("gacha-detail-card.text_90bb620f2c", { "fivePercent": luck.fivePercent })],
+    ...(luck.smallNum > 0 ? [[`${luck.noWaiRate}%`, $t("gacha-detail-card.text_a1bc5d6980", { "smallWin": luck.smallWin, "smallNum": luck.smallNum, "upRate": luck.upRate }), $t("gacha-detail-card.text_088e2a01e8", { "winPercent": luck.winPercent })] as const] : []),
+    [luck.bigNum, $t("gacha-detail-card.text_35de1616a1")], [luck.maxUpStreak, $t("gacha-detail-card.text_f6d4a0bff0")], [luck.maxWaiStreak, $t("gacha-detail-card.text_642b8132be")],
+  ] : [[luck.desc, $t("gacha-detail-card.text_1a19bda7c7", { "value1": Number(luck.fiveAvg) <= Number(luck.fiveExpect) ? $t("gacha-detail-card.text_c854387137") : $t("gacha-detail-card.text_322a3033cc") })]];
   ctx.font = font(ctx, { size: 12 });
   const widths = cells.map(([, label]) => ctx.measureText(String(label)).width + 8);
   const extra = (510 - widths.reduce((sum, value) => sum + value, 0)) / cells.length;
@@ -359,12 +363,12 @@ function paintLuck(ctx: Context, luck: GachaLuck, tips: readonly string[], y: nu
 function paintNotice(ctx: Context, y: number, game: Game, recordArchive?: true) {
   const prefix = games[game].prefix;
   const assets = recordArchive ? [
-    ["本地逐抽档案 · ", "rgba(255,255,255,.90)"], ["*逐抽版本统计", gold], ["查看分期，", "rgba(255,255,255,.90)"],
-    ["*逐抽全部记录", gold], ["查看六池", "rgba(255,255,255,.90)"],
+    [$t("gacha-detail-card.text_2a53e47907"), "rgba(255,255,255,.90)"], [$t("gacha-detail-card.text_7a2d791667"), gold], [$t("gacha-detail-card.text_93101dd3ce"), "rgba(255,255,255,.90)"],
+    [$t("gacha-detail-card.text_8167384877"), gold], [$t("gacha-detail-card.text_008afb0b63"), "rgba(255,255,255,.90)"],
   ] as const : [
-    [`${prefix}抽卡帮助`, gold], ["查看用法，", "rgba(255,255,255,.90)"],
-    [`${prefix}更新抽卡记录`, gold], ["更新抽卡信息，", "rgba(255,255,255,.90)"],
-    [`${prefix}抽卡统计`, gold], [`${prefix}角色统计`, gold], ["可查看按卡池分析结果", "rgba(255,255,255,.90)"],
+    [$t("gacha-detail-card.text_6b0c8e3331", { "prefix": prefix }), gold], [$t("gacha-detail-card.text_a4737129f2"), "rgba(255,255,255,.90)"],
+    [$t("gacha-detail-card.text_98191bc336", { "prefix": prefix }), gold], [$t("gacha-detail-card.text_2b9189b4f7"), "rgba(255,255,255,.90)"],
+    [$t("gacha-detail-card.text_64a1a00d6e", { "prefix": prefix }), gold], [$t("gacha-detail-card.text_eb8d491b40", { "prefix": prefix }), gold], [$t("gacha-detail-card.text_0b144d7fda"), "rgba(255,255,255,.90)"],
   ] as const;
   inline(ctx, assets.map(([value, color]) => ({ value, color, size: 13, margin: color === gold ? 4 : 0 })), width / 2, y, true);
 }
@@ -372,8 +376,8 @@ function paintNotice(ctx: Context, y: number, game: Game, recordArchive?: true) 
 function paintPageHead(ctx: Context, model: GachaDetailModel, page: NonNullable<GachaDetailModel["pageInfo"]>, game: Game) {
   panel(ctx, frame, 25, inner, 44, 30, "rgba(0,0,0,.50)");
   const nameStyle = { size: 20, bold: true };
-  const subtitle = `#${model.uid} · ${model.poolName}池抽卡记录`;
-  const pageLabel = `第 ${page.page}/${page.total} 张`;
+  const subtitle = $t("gacha-detail-card.text_e4f468b9b3", { "uid": model.uid, "poolName": model.poolName });
+  const pageLabel = $t("gacha-detail-card.text_dc8941f893", { "page": page.page, "total": page.total });
   ctx.font = font(ctx, nameStyle);
   const nameWidth = Math.min(ctx.measureText(model.face.name).width, 235);
   ctx.font = font(ctx, {});
@@ -424,7 +428,7 @@ function paintRows(ctx: Context, model: GachaDetailModel, theme: Theme, portrait
     const item = model.gacha.items[row.id];
     const pity = String(row.id) === "888";
     const portrait = pity ? theme.empty : item?.img ? portraits.get(item.img) : undefined;
-    const name = pity ? "已抽" : item?.abbr || item?.name || "未知";
+    const name = pity ? $t("gacha-detail-card.text_95b727161e") : item?.abbr || item?.name || $t("gacha-detail-card.text_4d8c1c5b42");
     const nameWidth = iconX - frame - dateWidth - 5;
     const nameStyle = { color: row.isUp ? "#ffd484" : muted };
     if (game === "gs" || model.recordArchive) paintFitted(ctx, name, iconX - 5, y + 19, { ...nameStyle, size: 16 }, 12, nameWidth, "right");
@@ -472,10 +476,10 @@ function paintRows(ctx: Context, model: GachaDetailModel, theme: Theme, portrait
 }
 
 function pagingNote(model: GachaDetailModel, game: Game) {
-  const { pageInfo, gacha, poolName = "角色" } = model;
-  if (pageInfo) return `第 ${pageInfo.page}/${pageInfo.total} 张 · 第 ${pageInfo.from}~${pageInfo.to} 条，共 ${pageInfo.count} 条五星记录`;
+  const { pageInfo, gacha, poolName = $t("gacha-detail-card.text_c47b54e84e") } = model;
+  if (pageInfo) return $t("gacha-detail-card.text_2b0a4e937a", { "page": pageInfo.page, "total": pageInfo.total, "from": pageInfo.from, "to": pageInfo.to, "count": pageInfo.count });
   return gacha.hiddenNum
-    ? `仅显示最近 ${gacha.shownNum} 条记录，更早的 ${gacha.hiddenNum} 条未显示（顶部统计包含全部记录），发送 ${games[game].prefix}${model.recordArchive ? "逐抽" : ""}${poolName}全部记录 查看全部`
+    ? $t("gacha-detail-card.text_74729256f3", { "shownNum": gacha.shownNum, "hiddenNum": gacha.hiddenNum, "prefix": games[game].prefix, "value4": model.recordArchive ? $t("gacha-detail-card.text_4dbd45ce46") : "", "poolName": poolName })
     : "";
 }
 
@@ -487,9 +491,9 @@ export async function renderGachaDetail(
   game: Game, model: GachaDetailModel,
   { mode = "auto", scale = 4, themeDirectory, avatar, qFace = true }: GachaDetailOptions,
 ) {
-  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("抽卡记录缩放比例须在 1 至 4 之间。");
+  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError($t("gacha-detail-card.text_7511bffc0d"));
   const root = await realpath(themeDirectory).catch(() => undefined);
-  if (!root) throw new Error(`${games[game].name}抽卡记录的原主题目录不可用。`);
+  if (!root) throw new Error($t("gacha-detail-card.text_12723f0f0f", { "name": games[game].name }));
   const theme = await originalTheme(root, game, qFace);
   const paths = new Set([
     model.face.face, model.face.banner,
@@ -509,14 +513,14 @@ export async function renderGachaDetail(
   const tips = luck ? luckTips(luck) : [];
   const luckHeight = Math.max(101, (luck?.isUpPool ? 109 : 93) + tips.length * 21);
   const top = laterPage ? 80 : luck ? 156 + luckHeight : 146;
-  const more = [pagingNote(model, game), model.gacha.unclassified ? `${model.gacha.unclassified} 抽星级未辨认` : ""]
+  const more = [pagingNote(model, game), model.gacha.unclassified ? $t("gacha-detail-card.text_664bea2328", { "unclassified": model.gacha.unclassified }) : ""]
     .filter(Boolean).join(" · ");
   const rows = model.gacha.fiveLog;
   const rowsHeight = Math.max(16, rows.reduce((sum, row, index) => sum + 38 + (hasDate(rows[index - 1], row) ? 5 : 0), 0));
   const panelHeight = rowsHeight + (more ? 28 : 0);
   const bottom = top + panelHeight;
   const height = bottom + 47;
-  if (height > 24_000) throw new RangeError(`${games[game].name}抽卡记录超出可渲染高度。`);
+  if (height > 24_000) throw new RangeError($t("gacha-detail-card.text_dbef80175a", { "name": games[game].name }));
   const zoom = scale * (game === "gs" ? 1.4 : 1);
   const pixelHeight = game === "gs" ? Math.round(height * zoom) : Math.ceil(height * zoom);
 
@@ -541,7 +545,7 @@ export async function renderGachaDetail(
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
     inline(ctx, [
-      { value: "Lotus-Yunzai", color: "#fff", size: 14, bold: true },
+      { value: $t("gacha-detail-card.text_3867834e77"), color: "#fff", size: 14, bold: true, footer: true },
     ], 375, bottom + 19, true);
     ctx.restore();
   }, mode, { renderScale: scale, allowHalfScale: scale === 4 });

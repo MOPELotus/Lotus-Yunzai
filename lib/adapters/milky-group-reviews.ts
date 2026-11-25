@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { GroupRequest, GroupRequestType } from "../messages.ts";
 import type { PendingGroupInvitation, PendingGroupInvitationList } from "../group-invitations.ts";
 import type { MilkyConfirmation } from "./milky-api.ts";
@@ -19,7 +22,7 @@ const observedLifetime = 60 * 60 * 1_000;
 export function createMilkyGroupReviews() {
   const requests = new Map<string, Entry>();
   const maxRequests = 4096;
-  const unconfirmed = () => new Error("Milky 群请求审批结果未确认。");
+  const unconfirmed = () => new Error($t("lib.adapters.milky-group-reviews.text_36838f1083"));
 
   function register(request: Pick<GroupRequest, "self_id" | "sub_type" | "flag" | "group_id" | "user_id" | "nickname">, decision: Decision,
     observedSession?: symbol): boolean {

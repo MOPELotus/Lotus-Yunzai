@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 function record(value: unknown): Record<string, unknown> | undefined {
   if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
 }
@@ -53,7 +56,7 @@ export const wishDefaultSettings: WishSettings = { ...wishDefaultRates, ...wishD
 function checkAmount(value: unknown, key: keyof WishAllowance): number {
   const max = key === "recallSeconds" ? 120 : 10_000;
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= max) return value;
-  throw new TypeError(`模拟祈愿设置 ${key} 需为 0–${max} 的整数。`);
+  throw new TypeError($t("lib.genshin-wish-settings-model.text_aecfbda2e8", { "key": key, "max": max }));
 }
 
 function rateLimit(key: keyof WishRates) {
@@ -63,7 +66,7 @@ function rateLimit(key: keyof WishRates) {
 function checkRate(value: unknown, key: keyof WishRates): number {
   const max = rateLimit(key);
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= max) return value;
-  throw new TypeError(`模拟祈愿概率须为 0–${max} 的整数。`);
+  throw new TypeError($t("lib.genshin-wish-settings-model.text_a51b2cd7eb", { "max": max }));
 }
 
 const flowerRates = {
@@ -95,8 +98,8 @@ function poolNames(value: unknown, key: WishPoolKey): readonly string[] {
   if (Array.isArray(value) && value.length <= wishPoolLimits[key] &&
       (key !== "poolWeaponFive" || value.length === 0 || value.length === 2) &&
       value.every(validWishPoolName) && new Set(value).size === value.length) return value;
-  throw new TypeError(key === "poolWeaponFive" ? "手工五星武器须为两件不同的武器。"
-    : "手工卡池名单须包含有效且不重复的名称。");
+  throw new TypeError(key === "poolWeaponFive" ? $t("lib.genshin-wish-settings-model.text_d2da4b173a")
+    : $t("lib.genshin-wish-settings-model.text_54904c4f8d"));
 }
 
 export function legacyWishPools(source: Record<string, unknown> | undefined, ...rules: readonly (Record<string, unknown> | undefined)[]) {
@@ -130,22 +133,22 @@ export function validWishGroup(id: string) {
 
 function allowance(value: unknown) {
   const raw = record(value);
-  if (!raw || Object.keys(raw).some(key => !keys.includes(key as keyof WishAllowance))) throw new TypeError("群祈愿设置无效。");
+  if (!raw || Object.keys(raw).some(key => !keys.includes(key as keyof WishAllowance))) throw new TypeError($t("lib.genshin-wish-settings-model.text_73fbe14d49"));
   return Object.fromEntries(keys.flatMap(key => Object.hasOwn(raw, key) ? [[key, checkAmount(raw[key], key)]] : []));
 }
 
 function dailyDrawLimitSettings(value: unknown): WishDailyDrawLimits {
   const limits = record(value);
-  if (!limits || Object.keys(limits).length > 2002) throw new TypeError("模拟祈愿每日次数限制无效。");
+  if (!limits || Object.keys(limits).length > 2002) throw new TypeError($t("lib.genshin-wish-settings-model.text_f534b8676f"));
   return Object.fromEntries(Object.entries(limits).map(([scope, limit]) => {
     if (scope !== "default" && scope !== "private" && !validWishGroup(scope)) {
-      throw new TypeError("每日次数限制须按默认、私聊或有效群号配置。");
+      throw new TypeError($t("lib.genshin-wish-settings-model.text_d3fc0edaaf"));
     }
     if (limit === null) return [scope, null];
     const row = record(limit);
     if (!row || Object.keys(row).length !== 2 || typeof row.count !== "number" || !Number.isSafeInteger(row.count) ||
         row.count < 0 || row.count > maximumWishDailyBatches || typeof row.separate !== "boolean") {
-      throw new TypeError("每日次数限制须含非负整数 count 与布尔值 separate。");
+      throw new TypeError($t("lib.genshin-wish-settings-model.text_c8d6598a7e"));
     }
     return [scope, { count: row.count, separate: row.separate }];
   }));
@@ -158,7 +161,7 @@ export function wishDailyDrawLimit(settings: WishSettings, scope: string) {
 
 export function parseWishSettings(value: unknown, base = wishDefaultSettings): WishSettings {
   const config = record(value);
-  if (!config) throw new TypeError("模拟祈愿设置应为映射。");
+  if (!config) throw new TypeError($t("lib.genshin-wish-settings-model.text_82b1c976a6"));
   const {
     groups, dailyDrawLimits = base.dailyDrawLimits, privateSingleRecallSeconds, reincarnationMinutes = base.reincarnationMinutes,
     enabled = base.enabled, multiple = base.multiple, characterFive = base.characterFive, characterFour = base.characterFour,
@@ -166,8 +169,8 @@ export function parseWishSettings(value: unknown, base = wishDefaultSettings): W
     automaticPools = base.automaticPools, poolCharacterFive = base.poolCharacterFive, poolCharacterFour = base.poolCharacterFour,
     poolWeaponFive = base.poolWeaponFive, poolWeaponFour = base.poolWeaponFour, ...defaults
   } = config;
-  if (typeof enabled !== "boolean" || typeof multiple !== "boolean" || typeof automaticPools !== "boolean") throw new TypeError("请选择模拟祈愿及多连开关。");
-  if (!validReincarnationMinutes(reincarnationMinutes)) throw new TypeError("转生冷却须为 1–1440 分钟的整数。");
+  if (typeof enabled !== "boolean" || typeof multiple !== "boolean" || typeof automaticPools !== "boolean") throw new TypeError($t("lib.genshin-wish-settings-model.text_fa8a846452"));
+  if (!validReincarnationMinutes(reincarnationMinutes)) throw new TypeError($t("lib.genshin-wish-settings-model.text_79f8d11ec2"));
   const fallback = { ...base, ...allowance(defaults), reincarnationMinutes, enabled, multiple, automaticPools,
     dailyDrawLimits: dailyDrawLimitSettings(dailyDrawLimits),
     poolCharacterFive: poolNames(poolCharacterFive, "poolCharacterFive"), poolCharacterFour: poolNames(poolCharacterFour, "poolCharacterFour"),
@@ -179,9 +182,9 @@ export function parseWishSettings(value: unknown, base = wishDefaultSettings): W
       ? checkAmount(privateSingleRecallSeconds, "recallSeconds") : base.privateSingleRecallSeconds };
   if (!Object.hasOwn(config, "groups")) return fallback;
   const rows = record(groups);
-  if (!rows || Object.keys(rows).length > 2000) throw new TypeError("分群祈愿设置无效。");
+  if (!rows || Object.keys(rows).length > 2000) throw new TypeError($t("lib.genshin-wish-settings-model.text_9b023d1f81"));
   const checked = Object.entries(rows).map(([id, row]) => {
-    if (!validWishGroup(id)) throw new TypeError("祈愿群号无效。");
+    if (!validWishGroup(id)) throw new TypeError($t("lib.genshin-wish-settings-model.text_6463f60c56"));
     return [id, allowance(row)];
   });
   return { ...fallback, groups: Object.fromEntries(checked) };

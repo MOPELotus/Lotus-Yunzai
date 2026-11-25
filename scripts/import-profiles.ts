@@ -1,10 +1,14 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { importProfiles } from "../packages/account/index.ts";
 
 const args = process.argv.slice(2);
 const apply = args[0] === "--apply";
 const [source, destination, ...extra] = apply ? args.slice(1) : args;
 if (!source || !destination || extra.length || source.startsWith("--") || destination.startsWith("--")) {
-  console.error("用法：bun scripts/import-profiles.ts [--apply] <旧档案副本目录> <目标档案目录>");
+  console.error($t("scripts.import-profiles.text_25564e0acb"));
   process.exit(2);
 }
 
@@ -13,6 +17,6 @@ try {
   console.log(JSON.stringify({ mode: apply ? "apply" : "dry-run", ...report }));
   if (report.conflict || report.invalid) process.exitCode = 1;
 } catch {
-  console.error("档案导入失败，请检查来源和目标目录。已成功导入的文件可在重跑时复用。");
+  console.error($t("scripts.import-profiles.text_b6ecad044c"));
   process.exitCode = 1;
 }

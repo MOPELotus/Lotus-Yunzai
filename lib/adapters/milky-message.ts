@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { Buffer } from "node:buffer";
 import { encodeChatFile, isChatFileName, maxChatFileBytes, readQqChatFile, type ChatFile, type IncomingChatFile } from "../chat-files.ts";
 import { sendSessionMedia } from "../media-delivery.ts";
@@ -564,7 +567,7 @@ export function milkyMessage(
       if (!messages) return false;
       const result = await forwardCall(action, { ...target, message: [{ type: "forward", data: { messages } }] });
       if (result === undefined) return false;
-      if (!isSequence(result?.message_seq)) throw new Error("Milky 合并转发结果未确认。");
+      if (!isSequence(result?.message_seq)) throw new Error($t("lib.adapters.milky-message.text_9e5f447332"));
       const seconds = replyRecallSeconds(options?.recallMsg);
       if (seconds !== undefined) scheduleRecall?.(isGroup ? "recall_group_message" : "recall_private_message", { ...target, message_seq: result.message_seq }, seconds);
       return true;

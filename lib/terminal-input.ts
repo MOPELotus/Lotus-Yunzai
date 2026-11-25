@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { setInteractiveTerminalInputActive } from "./terminal-output.ts";
 import { createInterface, clearLine, clearScreenDown, cursorTo, moveCursor } from "node:readline";
 

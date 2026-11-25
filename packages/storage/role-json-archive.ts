@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("storage", messageCatalog.messages);
 import { constants, linkSync, lstatSync, renameSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -11,7 +14,7 @@ function missing(error: unknown): boolean {
 
 function checkIdentity(qq: string, uid: string, subject: string): void {
   if (!/^[1-9]\d*$/u.test(qq) || !/^[1-9]\d*$/u.test(uid)) {
-    throw new TypeError(`${subject}的 QQ 或 UID 无效。`);
+    throw new TypeError($t("role-json-archive.text_56fd35ae8d", { "subject": subject }));
   }
 }
 
@@ -22,18 +25,18 @@ async function readSnapshot(file: string, subject: string, maxBytes?: number) {
   if (!handle) return;
   try {
     const info = await handle.stat();
-    if (!info.isFile()) throw new Error(`${subject}须为普通 JSON 文件。`);
+    if (!info.isFile()) throw new Error($t("role-json-archive.text_432e4d576e", { "subject": subject }));
     if (maxBytes === undefined) return { info, bytes: await handle.readFile() };
-    if (info.size > maxBytes) throw new Error(`${subject}的 JSON 文件过大。`);
+    if (info.size > maxBytes) throw new Error($t("role-json-archive.text_7d4b274ac1", { "subject": subject }));
     const bytes = Buffer.alloc(info.size);
     for (let offset = 0; offset < bytes.length;) {
       const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
-      if (!bytesRead) throw new Error(`${subject}已变更，请重新读取。`);
+      if (!bytesRead) throw new Error($t("role-json-archive.text_8e5f924492", { "subject": subject }));
       offset += bytesRead;
     }
     const latest = await handle.stat();
     if (latest.size !== info.size || latest.ctimeMs !== info.ctimeMs || latest.mtimeMs !== info.mtimeMs) {
-      throw new Error(`${subject}已变更，请重新读取。`);
+      throw new Error($t("role-json-archive.text_8e5f924492", { "subject": subject }));
     }
     return { info, bytes };
   } finally {
@@ -47,10 +50,10 @@ function decode(current: StoredSnapshot | undefined, subject: string, rejectNull
   if (!current) return null;
   try {
     const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(current.bytes));
-    if (rejectNull && value === null) throw new TypeError("缺少存档数据。");
+    if (rejectNull && value === null) throw new TypeError($t("role-json-archive.text_471376bc28"));
     return value;
   } catch {
-    throw new Error(`${subject}的 JSON 格式无效。`);
+    throw new Error($t("role-json-archive.text_9762775415", { "subject": subject }));
   }
 }
 
@@ -70,9 +73,9 @@ async function save(
   maxBytes?: number,
 ): Promise<void> {
   const encoded = JSON.stringify(data, null, 2);
-  if (encoded === undefined) throw new TypeError(`${subject}缺少可保存的 JSON。`);
+  if (encoded === undefined) throw new TypeError($t("role-json-archive.text_22772dbab6", { "subject": subject }));
   if (maxBytes !== undefined && Buffer.byteLength(encoded, "utf8") + 1 > maxBytes) {
-    throw new Error(`${subject}的 JSON 文件过大。`);
+    throw new Error($t("role-json-archive.text_7d4b274ac1", { "subject": subject }));
   }
   const staging = await mkdtemp(join(directory, ".lotus-gacha-write-"));
   try {
@@ -94,7 +97,7 @@ async function save(
 
     const latest = original && await readSnapshot(file, subject, maxBytes);
     if (original && !unchanged(original, latest)) {
-      throw new Error(`${subject}已变更，请重新更新。`);
+      throw new Error($t("role-json-archive.text_1d920f74f1", { "subject": subject }));
     }
     await verifyProfile();
     if (latest) {
@@ -102,7 +105,7 @@ async function save(
       if (!beforeReplace?.isFile() || beforeReplace.ino !== latest.info.ino ||
           beforeReplace.dev !== latest.info.dev || beforeReplace.size !== latest.info.size ||
           beforeReplace.ctimeMs !== latest.info.ctimeMs || beforeReplace.mtimeMs !== latest.info.mtimeMs) {
-        throw new Error(`${subject}已变更，请重新更新。`);
+        throw new Error($t("role-json-archive.text_1d920f74f1", { "subject": subject }));
       }
       renameSync(pending, file);
     } else {
@@ -124,7 +127,7 @@ export function createRoleJsonArchive(
   },
 ) {
   if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 1)) {
-    throw new RangeError(`${subject}的 JSON 文件大小上限无效。`);
+    throw new RangeError($t("role-json-archive.text_b8c99f0a49", { "subject": subject }));
   }
   async function locate(qq: string, create: boolean) {
     if (create) await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -133,7 +136,7 @@ export function createRoleJsonArchive(
       const target = join(root, qq);
       if (create) await mkdir(target, { recursive: true, mode: 0o700 });
       if (!(await lstat(target)).isDirectory() || await realpath(target) !== target) {
-        throw new Error(`${subject}的 QQ 目录须为实际目录。`);
+        throw new Error($t("role-json-archive.text_e33b804f96", { "subject": subject }));
       }
       return target;
     } catch (error) {
@@ -163,7 +166,7 @@ export function createRoleJsonArchive(
         const original = await readSnapshot(file, subject, maxBytes);
         const prepared = await prepare(decode(original, subject, rejectNull));
         if ("document" in prepared) {
-          if (rejectNull && prepared.document === null) throw new TypeError(`${subject}缺少可保存的数据。`);
+          if (rejectNull && prepared.document === null) throw new TypeError($t("role-json-archive.text_401ef51e73", { "subject": subject }));
           await save(userDirectory, file, original, prepared.document, verifyProfile, subject, maxBytes);
         } else {
           await verifyProfile();

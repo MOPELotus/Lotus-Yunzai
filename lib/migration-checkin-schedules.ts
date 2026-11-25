@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, mkdtemp, readdir, realpath, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isCheckinScheduleDate } from "./checkin-schedule-plan.ts";
@@ -19,13 +22,13 @@ export async function stageLegacyCheckinSchedules(source: string, stage: string,
       if (error.code !== "ENOENT") throw error;
     });
     if (!info) continue;
-    if (!info.isDirectory() || await realpath(directory) !== directory) throw new Error("旧签到计划路径须为实体目录。");
+    if (!info.isDirectory() || await realpath(directory) !== directory) throw new Error($t("lib.migration-checkin-schedules.text_980b41c35d"));
     for (const file of await readdir(directory)) {
       if (!file.endsWith(".json")) continue;
       const date = file.slice(0, -5);
       if (!isCheckinScheduleDate(date)) continue;
       const stats = await lstat(join(directory, file));
-      if (!stats.isFile() || stats.nlink !== 1) throw new Error("旧签到计划须为无硬链接的普通文件。");
+      if (!stats.isFile() || stats.nlink !== 1) throw new Error($t("lib.migration-checkin-schedules.text_a7ff6e8483"));
       if (stats.size === 0) {
         emptyFiles++;
         continue;
@@ -44,7 +47,7 @@ export async function stageLegacyCheckinSchedules(source: string, stage: string,
         signal?.throwIfAborted();
         const store = createCheckinScheduleStore(temporary, locations);
         entries += await store.update(date, plan => {
-          if (!plan) throw new Error("旧签到计划在迁移期间消失。");
+          if (!plan) throw new Error($t("lib.migration-checkin-schedules.text_af96c08352"));
           return { plan, result: plan.entries.length };
         });
       }

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { Database } from "bun:sqlite";
 import type { Stats } from "node:fs";
 import { lstat, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
@@ -15,7 +18,7 @@ const preserved = [databaseName, walName, journalName] as const;
 type PreservedName = typeof preserved[number];
 const maximumFileBytes = 64 * 1024 * 1024;
 class IncompleteSnapshot extends Error {}
-const recapture = () => new IncompleteSnapshot("旧登录数据库快照不完整。");
+const recapture = () => new IncompleteSnapshot($t("lib.migration-official-bindings.text_603dce1219"));
 
 async function optionalStat(path: string): Promise<Stats | undefined> {
   return lstat(path).catch((error: NodeJS.ErrnoException) => {

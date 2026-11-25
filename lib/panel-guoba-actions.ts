@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { GuobaButton, GuobaField, GuobaInput } from "./panel-guoba.ts";
 
 type Argument = string | number | boolean | null | Argument[] | { [key: string]: Argument };
@@ -24,7 +27,7 @@ function argument(value: unknown, depth = 0): Argument {
       return Object.fromEntries(entries.map(([key, item]) => [key, argument(item, depth + 1)]));
     }
   }
-  throw new TypeError("插件按钮参数不受支持。");
+  throw new TypeError($t("lib.panel-guoba-actions.text_6bc90a7eb5"));
 }
 
 function buttonText(input: unknown, max: number) {
@@ -76,7 +79,7 @@ export function guobaActions(raw: readonly unknown[], handlers: unknown, canRead
       }
     }
     if (buttons.length) groups.set(index, {
-      component: "GButtons", label: buttonText(schema.label, 120) ?? "插件操作",
+      component: "GButtons", label: buttonText(schema.label, 120) ?? $t("lib.panel-guoba-actions.text_879fedbbec"),
       componentProps: { buttons },
     });
   }

@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -56,7 +57,7 @@ async function prepare(root: string) {
   const installed = join(root, "plugins/starrail");
   await cp(modulePath, installed, { recursive: true, filter: item => ![".git", "node_modules", "test"].includes(basename(item)) });
   await symlink(join(modulePath, "node_modules"), join(installed, "node_modules"), "dir");
-  await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+  await linkHostPackages(root);
   if (proof && await Bun.file(join(proof, "theme/character/imgs/bg-02.jpg")).exists()) {
     await cp(join(proof, "theme"), join(root, "theme"), { recursive: true });
   }

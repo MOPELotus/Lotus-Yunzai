@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { HandlerScope } from "./plugins/handler.ts";
 import { legacyHostCronTimeZone, LegacyTasks } from "./plugins/tasks.ts";
 
@@ -5,8 +8,8 @@ export function scheduleDispatchPower(config: Record<string, unknown>, setPaused
   const tasks = new LegacyTasks(undefined, legacyHostCronTimeZone);
   const owner = new HandlerScope();
   for (const [field, name, paused] of [
-    ["stop_cron", "定时关机", true],
-    ["start_cron", "定时开机", false],
+    ["stop_cron", $t("lib.dispatch-power-schedule.text_3a545518bd"), true],
+    ["start_cron", $t("lib.dispatch-power-schedule.text_5e55e9df17"), false],
   ] as const) {
     const value = config[field];
     for (const cron of Array.isArray(value) ? value : [value]) {
@@ -14,7 +17,7 @@ export function scheduleDispatchPower(config: Record<string, unknown>, setPaused
       try {
         tasks.register(owner, { name, task: { cron, fnc: () => setPaused(paused) } });
       } catch {
-        console.warn(`[任务] 跳过 bot.yaml 中无效的 ${field}。`);
+        console.warn($t("lib.dispatch-power-schedule.text_19862731dc", { "field": field }));
       }
     }
   }

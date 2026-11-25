@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { ManagedUpdateProgress } from "./managed-update-protocol.ts";
 import type { MessageEvent } from "./messages.ts";
 import { canManagePackages } from "./command-permissions.ts";
@@ -10,18 +13,18 @@ const command = /^#(全部)?(安?静)?(强制)?更新/u;
 const legacyStarRailWarpUpdate = /^#?(?:\*|星铁|星轨|穹轨|星穹|崩铁|星穹铁道|崩坏星穹铁道|铁道)抽卡(?:插件)?(强制)?更新$/u;
 const quietStatuses = new Set<ManagedUpdateProgress>(["checking", "building", "switching", "current"]);
 const replies: Readonly<Record<ManagedUpdateProgress, string>> = {
-  checking: "开始更新，正在检查。",
-  building: "正在准备候选版本。",
-  switching: "正在切换到候选版本。",
-  busy: "已有更新或进程切换正在进行，请稍后再试。",
-  current: "当前已是最新版本。",
-  dirty: "工作区有未提交的修改，更新未执行。",
-  ahead: "当前提交领先于上游，更新未执行。",
-  diverged: "当前提交与上游已分叉，更新未执行。",
-  rejected: "更新候选未通过检查，更新未执行。",
-  unavailable: "无法取得更新候选，请检查更新目标和上游配置。",
-  "storage-changed": "Valkey 配置已变更或无法读取，当前宿主继续运行。要启用新配置，请先正常停机再启动。",
-  failed: "更新失败，请检查宿主日志。",
+  checking: $t("lib.update-command.text_4bfc24f08b"),
+  building: $t("lib.update-command.text_029f28b6f1"),
+  switching: $t("lib.update-command.text_96790a7d94"),
+  busy: $t("lib.update-command.text_4bb4fe218d"),
+  current: $t("lib.update-command.text_ca9955f4ec"),
+  dirty: $t("lib.update-command.text_e55718b0a0"),
+  ahead: $t("lib.update-command.text_44001503e0"),
+  diverged: $t("lib.update-command.text_e0389507bc"),
+  rejected: $t("lib.update-command.text_759c00b5d9"),
+  unavailable: $t("lib.update-command.text_3d6415ebf8"),
+  "storage-changed": $t("lib.update-command.text_642562fa39"),
+  failed: $t("lib.update-command.text_2236b3d59a"),
 };
 
 export function describeUpdateProgress(status: ManagedUpdateProgress): string {
@@ -47,7 +50,7 @@ function updatePrefix(message: string): RegExpExecArray | undefined {
 function updateInput(text: string) {
   const message = text.trimStart();
   const legacy = legacyStarRailWarpUpdate.exec(message.trimEnd());
-  return legacy ? `#${legacy[1] ?? ""}更新 starrail` : message;
+  return legacy ? $t("lib.update-command.text_79a21d49b4", { "value1": legacy[1] ?? "" }) : message;
 }
 
 export function isUpdateCommand(text: string): boolean {
@@ -68,7 +71,7 @@ export function createUpdateCommand(request: RequestUpdate) {
     const match = updatePrefix(message);
     if (!match) return;
     if (!canManagePackages(event)) {
-      await event.reply("暂无权限，只有主人才能操作");
+      await event.reply($t("lib.update-command.text_ee7b348d1b"));
       return;
     }
 
@@ -77,31 +80,31 @@ export function createUpdateCommand(request: RequestUpdate) {
     const force = match[3] !== undefined;
     const requested = parseUpdateTarget(message.slice(match[0].length));
     if (all && requested !== "") {
-      await event.reply(force ? "请只发送 #全部强制更新、#全部静强制更新 或 #全部安静强制更新。"
-        : "请只发送 #全部更新、#全部静更新 或 #全部安静更新。");
+      await event.reply(force ? $t("lib.update-command.text_197cd5caf2")
+        : $t("lib.update-command.text_c3a2df2402"));
       return;
     }
     if (requested === undefined) {
       const example = force ? "#强制更新" : "#更新";
-      await event.reply(`请输入有效的插件名，例如 ${example} system 或 ${example} @lotus-yunzai/system。`);
+      await event.reply($t("lib.update-command.text_09fe40ea71", { "example": example, "value2": example }));
       return;
     }
 
     let pending = Promise.resolve();
     const report = (status: ManagedUpdateProgress) => {
       if (quiet && quietStatuses.has(status)) return;
-      const reply = force && status === "checking" ? "开始强制更新，正在检查。" : replies[status];
+      const reply = force && status === "checking" ? $t("lib.update-command.text_0127364ac8") : replies[status];
       pending = pending.then(async () => { await event.reply(reply); }).catch(() => undefined);
     };
     let sent: boolean;
     try {
       sent = await request(event, requested || undefined, quiet, report, all, force);
     } catch {
-      await event.reply("发送更新请求失败，请稍后重试。");
+      await event.reply($t("lib.update-command.text_8ec36d4e0b"));
       return;
     }
     if (!sent) {
-      await event.reply("当前未启用受管更新。请在宿主目录运行 bun run start 后重试。");
+      await event.reply($t("lib.update-command.text_60901977ce"));
       return;
     }
     await pending;

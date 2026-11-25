@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isDeepStrictEqual } from "node:util";
 import { parseDocument } from "yaml";
 import { GlobalConfigWriteError, readCanonicalLocalConfiguration, updateLocalConfiguration } from "./lotus-global-config-write.ts";
@@ -18,37 +21,37 @@ export const maxGroupPanelRankLimit = 30;
 const minGroupPanelRankLimit = 5;
 export const defaultArtifactListLimit = 28;
 const artifactListField = {
-  key: "artifactListLimit", label: "原神圣遗物与星铁遗器列表条数", type: "number", min: 4, max: 100,
-  hint: "共用上限，默认 28 件。实际条数取决于已收录角色中符合筛选规则的装备。",
+  key: "artifactListLimit", label: $t("lib.group-panel-rank-settings.text_a1865cea53"), type: "number", min: 4, max: 100,
+  hint: $t("lib.group-panel-rank-settings.text_d154a13e8b"),
 } as const;
 const commaGroupField = {
-  key: "commaGroup", label: "原铁面板数字逗号分组", type: "number", min: 1, max: 16,
-  hint: "只影响显示。默认 3 为千位分组，4 为万位分组，小数位数不变。",
+  key: "commaGroup", label: $t("lib.group-panel-rank-settings.text_575638439f"), type: "number", min: 1, max: 16,
+  hint: $t("lib.group-panel-rank-settings.text_4e03672cf3"),
 } as const;
 
 const rankFields = games.flatMap(game => {
-  const label = game === "gs" ? "原神" : "星铁";
+  const label = game === "gs" ? $t("lib.group-panel-rank-settings.text_d1597c51ed") : $t("lib.group-panel-rank-settings.text_a2927891f0");
   return [
-    { key: `${game}Default`, label: `${label}群榜默认开启`, type: "boolean",
-      hint: "关闭时只允许明确列出的群。启用和停用名单优先于默认值。" },
-    { key: game, label: `${label}群榜启用群`, type: "list" },
-    { key: `${game}Disabled`, label: `${label}群榜停用群`, type: "list" },
-    { key: `${game}Limit`, label: `${label}角色群榜条数`, type: "number",
+    { key: `${game}Default`, label: $t("lib.group-panel-rank-settings.text_4098659c2c", { "label": label }), type: "boolean",
+      hint: $t("lib.group-panel-rank-settings.text_5ccedf0c84") },
+    { key: game, label: $t("lib.group-panel-rank-settings.text_cf039a9bf3", { "label": label }), type: "list" },
+    { key: `${game}Disabled`, label: $t("lib.group-panel-rank-settings.text_768caa5899", { "label": label }), type: "list" },
+    { key: `${game}Limit`, label: $t("lib.group-panel-rank-settings.text_bbdf13a5f6", { "label": label }), type: "number",
       min: minGroupPanelRankLimit, max: maxGroupPanelRankLimit },
   ] as const;
 });
 const stygianFields = [
-  { key: "stygianArk", label: "原神幽境危战群榜 Ark 来源", type: "boolean", hint: "只查询单独授权 Ark 的群成员。关掉后停止请求该站。" },
-  { key: "stygianAkasha", label: "原神幽境危战群榜 Akasha 来源", type: "boolean", hint: "只查询单独授权 Akasha 的群成员。关掉后停止请求该站。" },
+  { key: "stygianArk", label: $t("lib.group-panel-rank-settings.text_2d4ef8badc"), type: "boolean", hint: $t("lib.group-panel-rank-settings.text_4c7fd306f1") },
+  { key: "stygianAkasha", label: $t("lib.group-panel-rank-settings.text_45d2e3e684"), type: "boolean", hint: $t("lib.group-panel-rank-settings.text_c4db7e8aa8") },
 ] as const;
 const fields = [artifactListField, commaGroupField, ...rankFields, ...stygianFields];
 
 const legacyRankPolicies = [
-  "不限",
-  "已绑定 CK",
-  "16 个角色或已绑定 CK",
-  "含安柏、凯亚、丽莎或已绑定 CK",
-  "16 个角色且含安柏、凯亚、丽莎，或已绑定 CK",
+  $t("lib.group-panel-rank-settings.text_f203d577d1"),
+  $t("lib.group-panel-rank-settings.text_635dc1e483"),
+  $t("lib.group-panel-rank-settings.text_0d0f66116a"),
+  $t("lib.group-panel-rank-settings.text_2ac0072a74"),
+  $t("lib.group-panel-rank-settings.text_3abde73295"),
 ];
 
 function rankSettingsSnapshot(raw: Readonly<Record<string, unknown>>, values = effective(configured(raw))) {
@@ -57,7 +60,7 @@ function rankSettingsSnapshot(raw: Readonly<Record<string, unknown>>, values = e
     ? legacyRankPolicies[legacyMode - 1] : undefined;
   const explainedFields = fields.map(field => {
     if (!legacyPolicy || field.key !== "gsDefault") return field;
-    return { ...field, hint: `${field.hint} 原铁旧参榜条件为「${legacyPolicy}」。目前只收录主动登记且已登录核验的角色，已满足旧条件允许的 CK 分支。` };
+    return { ...field, hint: $t("lib.group-panel-rank-settings.text_0a19a6b9fa", { "hint": field.hint, "legacyPolicy": legacyPolicy }) };
   });
   return { fields: explainedFields, values };
 }

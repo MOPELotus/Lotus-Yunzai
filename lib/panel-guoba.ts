@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHmac, randomBytes } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
@@ -686,23 +689,23 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
           return { values, configuredPasswords, ...(Object.keys(subforms).length ? { subforms } : {}),
             ...(allowed.actions.size ? { actionRevision: actionSnapshot(data).revision } : {}) };
         } catch {
-          throw new Error("无法读取插件配置。");
+          throw new Error($t("lib.panel-guoba.text_ba82e02bb0"));
         }
       },
       async save(data, guard) {
-        if (!writable || typeof setConfigData !== "function") return { ok: false, status: 405, message: "此插件表单只读。" };
+        if (!writable || typeof setConfigData !== "function") return { ok: false, status: 405, message: $t("lib.panel-guoba.text_3b6de8842d") };
         let values: Record<string, unknown>;
         try {
           values = submitted(data, compiled);
         } catch {
-          return { ok: false, status: 400, message: "插件表单包含未知字段或无效值。" };
+          return { ok: false, status: 400, message: $t("lib.panel-guoba.text_71e6dfe8d1") };
         }
         const changedFields = Object.freeze(Object.keys(values));
 
         return queueWrite(file, async () => {
           try {
             if (guard && (guard.signal.aborted || !guard.verify())) {
-              return { ok: false, status: 401, message: "面板登录已失效。" };
+              return { ok: false, status: 401, message: $t("lib.panel-guoba.text_92caaefd8b") };
             }
             let current: Record<string, unknown> | undefined;
             for (const [field, { schema, parts }] of compiled.fields) {
@@ -734,10 +737,10 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
                 await supportFile(pluginDirectory).catch(() => undefined) === file &&
                 await providerVersion(file).catch(() => undefined) === version;
               if (!sameProvider || !guard.registered()) {
-                return { ok: false, status: 409, message: "插件表单已变更，请重新读取。" };
+                return { ok: false, status: 409, message: $t("lib.panel-guoba.text_912344073e") };
               }
               if (guard.signal.aborted || !guard.verify()) {
-                return { ok: false, status: 401, message: "面板登录已失效。" };
+                return { ok: false, status: 401, message: $t("lib.panel-guoba.text_92caaefd8b") };
               }
             }
             // Legacy setters still receive the expanded form. Opt-in setters can edit only the submitted fields.
@@ -745,64 +748,64 @@ export async function loadGuobaForm(pluginDirectory: string): Promise<GuobaForm 
             if (result instanceof Result && !result.isOk) {
               const status = result.httpStatus;
               return { ok: false, status: Number.isInteger(status) && status >= 400 && status <= 599 ? status : 400,
-                message: "插件拒绝保存配置。" };
+                message: $t("lib.panel-guoba.text_f71df173e4") };
             }
-            return { ok: true, status: 200, message: "配置已保存。" };
+            return { ok: true, status: 200, message: $t("lib.panel-guoba.text_09d89ed905") };
           } catch (error) {
-            if (error instanceof SubformConflict) return { ok: false, status: 409, message: "子表单已变更，请重新读取。" };
-            if (error instanceof SubformInputError) return { ok: false, status: 400, message: "子表单包含无效或缺少必填的值。" };
-            return { ok: false, status: 500, message: "无法保存插件配置。" };
+            if (error instanceof SubformConflict) return { ok: false, status: 409, message: $t("lib.panel-guoba.text_8cedc84def") };
+            if (error instanceof SubformInputError) return { ok: false, status: 400, message: $t("lib.panel-guoba.text_edd788753b") };
+            return { ok: false, status: 500, message: $t("lib.panel-guoba.text_534fc40b47") };
           }
         });
       },
       async action(data, verify, registered, signal) {
         if (!record(data) || !Object.keys(data).every(key => ["button", "revision", "fields"].includes(key)) ||
             typeof data.button !== "string" || typeof data.revision !== "string" || !/^[a-f0-9]{64}$/u.test(data.revision)) {
-          return { ok: false, status: 400, message: "插件操作请求无效。" };
+          return { ok: false, status: 400, message: $t("lib.panel-guoba.text_5752da48b4") };
         }
         const selected = allowed.actions.get(data.button);
-        if (!selected || selected.button.disabled) return { ok: false, status: 404, message: "插件操作不可用。" };
+        if (!selected || selected.button.disabled) return { ok: false, status: 404, message: $t("lib.panel-guoba.text_1e66b08d27") };
         let edits: Record<string, GuobaInput>;
         try {
           const input = submitted(data.fields === undefined ? {} : data.fields, compiled);
           if (!Object.keys(input).every(key => selected.button.fields.includes(key))) throw new Error();
           edits = input as Record<string, GuobaInput>;
         } catch {
-          return { ok: false, status: 400, message: "插件操作包含未知字段或无效值。" };
+          return { ok: false, status: 400, message: $t("lib.panel-guoba.text_a8b9d4d733") };
         }
         return queueWrite(file, async () => {
           try {
-            if (signal.aborted || !verify()) return { ok: false, status: 401, message: "面板登录已失效。" };
-            if (!registered()) return { ok: false, status: 409, message: "插件表单已变更，请重新读取。" };
+            if (signal.aborted || !verify()) return { ok: false, status: 401, message: $t("lib.panel-guoba.text_92caaefd8b") };
+            if (!registered()) return { ok: false, status: 409, message: $t("lib.panel-guoba.text_912344073e") };
             const current = actionSnapshot(await readData());
             if (current.revision !== data.revision || !registered() || await supportFile(pluginDirectory) !== file ||
                 await providerVersion(file).catch(() => undefined) !== version) {
-              return { ok: false, status: 409, message: "插件表单已变更，请重新读取。" };
+              return { ok: false, status: 409, message: $t("lib.panel-guoba.text_912344073e") };
             }
             for (const [field, value] of Object.entries(edits)) {
               const options = compiled.fields.get(field)?.schema.componentProps?.options;
               if (options?.some(({ disabled, value: option }) =>
                 disabled && [value].flat().includes(option) !== [current.values[field]].flat().includes(option))) {
-                return { ok: false, status: 400, message: "插件操作包含当前不可选的值。" };
+                return { ok: false, status: 400, message: $t("lib.panel-guoba.text_d1c0af1690") };
               }
             }
             const args = resolveGuobaArguments(selected.args, { ...current.values, ...edits });
-            if (JSON.stringify(args).length > 16_384) return { ok: false, status: 400, message: "插件操作参数过长。" };
-            if (!registered()) return { ok: false, status: 409, message: "插件表单已变更，请重新读取。" };
-            if (signal.aborted || !verify()) return { ok: false, status: 401, message: "面板登录已失效。" };
+            if (JSON.stringify(args).length > 16_384) return { ok: false, status: 400, message: $t("lib.panel-guoba.text_8a79013d25") };
+            if (!registered()) return { ok: false, status: 409, message: $t("lib.panel-guoba.text_912344073e") };
+            if (signal.aborted || !verify()) return { ok: false, status: 401, message: $t("lib.panel-guoba.text_92caaefd8b") };
             const handler = selected.handler;
             const result = await handler(args, { Result });
             if (result instanceof Result && result.isOk) {
-              return { ok: true, status: 200, message: "插件操作已完成。" };
+              return { ok: true, status: 200, message: $t("lib.panel-guoba.text_b25927712a") };
             }
-            return { ok: false, status: 422, message: "插件未确认操作完成，请检查当前状态。" };
+            return { ok: false, status: 422, message: $t("lib.panel-guoba.text_194947fa2e") };
           } catch {
-            return { ok: false, status: 500, message: "无法确认插件操作结果，请检查当前状态。" };
+            return { ok: false, status: 500, message: $t("lib.panel-guoba.text_b542846062") };
           }
         });
       },
     };
   } catch {
-    throw new Error("无法加载插件表单。");
+    throw new Error($t("lib.panel-guoba.text_9ed69d4d2b"));
   }
 }

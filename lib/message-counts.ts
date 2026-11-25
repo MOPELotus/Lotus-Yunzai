@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { connectStorage } from "@lotus-yunzai/storage";
 import { formatShanghaiDate } from "./shanghai-date.ts";
 
@@ -9,14 +12,14 @@ type Counts = { receive: string; send: string };
 const kindPattern = /^[A-Za-z0-9_-]{1,32}$/u;
 const scopePattern = /^(?:total|(?:bot|user|group):[1-9]\d*|(?:user|group):\*)$/u;
 const bucketPattern = /^(?:total|\d{4}(?::\d{2}(?::\d{2})?)?)$/u;
-const countUnavailable = () => new Error("消息统计服务暂不可用。");
+const countUnavailable = () => new Error($t("lib.message-counts.text_527a2ec546"));
 
 function countKey(direction: Direction, kind: string, scope: string, bucket: string): string {
   return `Yz:count:${direction}:${kind}:${scope}:${bucket}`;
 }
 
 function dateBuckets(date: Date): string[] {
-  if (!Number.isFinite(date.getTime())) throw new Error("消息统计日期无效。");
+  if (!Number.isFinite(date.getTime())) throw new Error($t("lib.message-counts.text_c598e94cab"));
   const day = formatShanghaiDate(date).replaceAll("-", ":");
   return [day, day.slice(0, 7), day.slice(0, 4), "total"];
 }
@@ -81,7 +84,7 @@ export function createMessageCounts(client: () => RedisClient | undefined, count
     const redis = client();
     if (!redis?.isReady) throw countUnavailable();
     if (!kindPattern.test(kind) || !scopePattern.test(scope) || !bucketPattern.test(bucket)) {
-      throw new Error("消息统计查询条件无效。");
+      throw new Error($t("lib.message-counts.text_793cc1b2fa"));
     }
     try {
       if (scope.endsWith(":*")) {

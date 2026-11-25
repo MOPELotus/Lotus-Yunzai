@@ -1,0 +1,82 @@
+{
+  "language": "zh-CN",
+  "name": "简体中文",
+  "namespace": "account",
+  "description": "账号档案",
+  "sections": {
+    "device-binding": {
+      "description": "账号档案：设备信息",
+      "source": "packages/account/device-binding.ts"
+    },
+    "group-rank-refresh": {
+      "description": "账号档案：群管理",
+      "source": "packages/account/group-rank-refresh.ts"
+    },
+    "index": {
+      "description": "账号档案",
+      "source": "packages/account/index.ts"
+    },
+    "region-display": {
+      "description": "账号档案",
+      "source": "packages/account/region-display.ts"
+    }
+  },
+  "messages": {
+    "device-binding.text_00c7b2076f": "请在同一条设备信息中同时提供设备 ID 和 FP。",
+    "device-binding.text_024297a620": "APK 未取得有效 OAID，请重新获取设备参数。",
+    "device-binding.text_1f5fcc390f": "安卓系统版本格式无效。",
+    "device-binding.text_5d3e5cca57": "设备 JSON 含重复字段，请保留一份确认的设备信息。",
+    "device-binding.text_704a85f1a1": "设备指纹响应未确认成功，请提供已有的真机设备 ID 和 FP。",
+    "device-binding.text_87110b5e0f": "输入中的设备字段相互冲突，请只发送同一设备的信息。",
+    "device-binding.text_90c0b0a166": "设备信息格式无效，请发送设备 JSON 或带名称的设备 ID 和 FP。",
+    "device-binding.text_9bf70b125f": "设备指纹申请中的 FP 是种子，请提供已有的真机设备 ID 和 FP。",
+    "device-binding.text_a0d5419d13": "设备 ID 或 FP 的格式无效。",
+    "device-binding.text_aac811e11e": "安卓设备参数格式无效，请重新复制 APK 导出的完整 JSON。",
+    "device-binding.text_ffbef5173b": "安卓设备参数不完整或无效，请重新复制 APK 导出的完整 JSON（含 OAID）。",
+    "group-rank-refresh.text_c8272e9db8": "无效的群榜刷新并发数。",
+    "index.text_004c23d73e": "请至少选择一款游戏。",
+    "index.text_0ad01bd814": "无法读取档案。",
+    "index.text_0b089c48f2": "档案已变更，请重新发起请求。",
+    "index.text_0cdf75fdad": "确认登录返回的档案账号不一致。",
+    "index.text_17a1fdaceb": "角色选择授权已失效。",
+    "index.text_27f8bb597a": "刷新返回的登录令牌与当前档案不一致。",
+    "index.text_2e450055a3": "档案没有该游戏角色。",
+    "index.text_349694e300": "QQ 或档案编号无效。",
+    "index.text_38fb3dc7bc": "档案内容、版本或身份无效。",
+    "index.text_4ead3a371d": "登录成功，角色暂未同步。",
+    "index.text_5156e890e2": "刷新返回的 Cookie 与档案账号不一致。",
+    "index.text_5572903c40": "无法读取档案目录。",
+    "index.text_7097bd8cc6": "确认登录返回的档案凭据无效。",
+    "index.text_70e1c1170d": "请先在聊天中绑定对应云游戏账号。",
+    "index.text_7fa9ba7fed": "官方未签发有效设备指纹。",
+    "index.text_806fdd6062": "请在同一份设备信息中提供设备 ID 和 FP。",
+    "index.text_884478e9a5": "刷新响应的凭据格式无效。",
+    "index.text_8edebd665e": "档案没有对应的游戏角色。",
+    "index.text_90e1e8d865": "档案导入需要不同的来源和目标目录。",
+    "index.text_ac14c9f1f5": "角色暂未同步。",
+    "index.text_b03d2fbde9": "档案",
+    "index.text_b639fdff8f": "档案账号不一致，请重新扫码后绑定。",
+    "index.text_bda4811c9c": "档案无法核验登录账号。",
+    "index.text_c7e942deb9": "档案须为普通文件。",
+    "index.text_ccf31274b1": "无法写入档案凭据。",
+    "index.text_d4aa366013": "档案不存在。",
+    "index.text_e026c6693d": "未绑定",
+    "index.text_ec1c922d00": "档案尚未登录。",
+    "index.text_ec6bfb8c49": "自动签到设置无效。",
+    "index.text_eef3f07f3c": "游戏类型无效。",
+    "index.text_f011fcab3c": "无法读取扫码登录档案。",
+    "index.text_f70c0007f3": "已绑定",
+    "index.text_ff3070d68b": "档案写入授权已失效。",
+    "region-display.text_04ed114576": "世界树",
+    "region-display.text_1ec27c8e85": "港澳台服",
+    "region-display.text_25762cbb7b": "国服 B 服",
+    "region-display.text_64b964d548": "欧服",
+    "region-display.text_6934e047bc": "天空岛",
+    "region-display.text_72ff6e3218": "亚服",
+    "region-display.text_a0a78c9733": "国服",
+    "region-display.text_bc17e4cff9": "美服",
+    "region-display.text_d27d31175b": "未知区服",
+    "region-display.text_d526ff7388": "渠道服"
+  },
+  "parameters": {}
+}

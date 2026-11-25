@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
 import { HoyoRequestError, verifyHoYoLabCookie } from "@lotus-yunzai/hoyo-client";
 import type { CommandContext, CommandModule, CommandReply } from "./commands.ts";
@@ -21,26 +24,26 @@ export function hoyoLabProfileCommands(directory: string | undefined, signal: Ab
   const profiles = createProfileStore(directory);
 
   async function bindCookie(message: string, context: CommandContext) {
-    if (context.message_type !== "private") return "请在私聊中绑定国际服 Cookie。";
+    if (context.message_type !== "private") return $t("lib.hoyolab-profile-commands.text_7aef9938a8");
     const match = cookieBinding.exec(message);
-    if (!match) return "请发送 #绑定国际服Cookie 加空格和 Cookie，可在指令后加档案编号。";
+    if (!match) return $t("lib.hoyolab-profile-commands.text_dbc8aed881");
     const suffix = match[1] ?? "";
     const id = Number(suffix || 1);
-    if ((suffix && !/^[1-9]\d{0,2}$/u.test(suffix)) || id > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
+    if ((suffix && !/^[1-9]\d{0,2}$/u.test(suffix)) || id > MAX_PROFILE_ID) return $t("lib.hoyolab-profile-commands.text_3dd62228d2");
     const { privateCredentialSignal: session, user_id: user } = context;
     if (!session || session.aborted || user === undefined || !Number.isSafeInteger(user) || user < 1) {
-      return "请从当前连接的机器人好友私聊绑定国际服 Cookie。";
+      return $t("lib.hoyolab-profile-commands.text_1c30c48efa");
     }
     const scoped = AbortSignal.any([signal, session]);
     const qq = String(user);
     let saved = false;
     try {
       const current = await profiles.checkinSettings(qq, id);
-      if (!current.loggedIn) return `请先登录档案 ${id}。`;
+      if (!current.loggedIn) return $t("lib.hoyolab-profile-commands.text_62b08191fe", { "id": id });
       async function verifyProfile() {
         scoped.throwIfAborted();
         const latest = await profiles.checkinSettings(qq, id).catch(() => undefined);
-        if (!latest?.loggedIn || latest.revision !== current.revision) throw new ProfileError("changed", "档案已变更。");
+        if (!latest?.loggedIn || latest.revision !== current.revision) throw new ProfileError("changed", $t("lib.hoyolab-profile-commands.text_8a1edc5158"));
         scoped.throwIfAborted();
       }
       await verifyProfile();
@@ -51,13 +54,13 @@ export function hoyoLabProfileCommands(directory: string | undefined, signal: Ab
       if (!scoped.aborted) return await viewProfile(id, context);
     } catch (error) {
       if (scoped.aborted) return;
-      if (saved) return `档案 ${id} 的国际服 Cookie 已绑定，暂时无法显示资料卡。`;
+      if (saved) return $t("lib.hoyolab-profile-commands.text_33ac99d56c", { "id": id });
       if (error instanceof ProfileError) {
-        if (error.code === "missing" || error.code === "login-required") return `请先登录档案 ${id}。`;
-        if (error.code === "changed") return "档案已变更，请重新绑定国际服 Cookie。";
+        if (error.code === "missing" || error.code === "login-required") return $t("lib.hoyolab-profile-commands.text_62b08191fe", { "id": id });
+        if (error.code === "changed") return $t("lib.hoyolab-profile-commands.text_7ecefd0f09");
       }
-      if (error instanceof HoyoRequestError && error.code === "invalid-input") return "请输入归属一致的国际服 Cookie。";
-      return "国际服 Cookie 未通过官方账号核验，档案未更新。";
+      if (error instanceof HoyoRequestError && error.code === "invalid-input") return $t("lib.hoyolab-profile-commands.text_5ca048764d");
+      return $t("lib.hoyolab-profile-commands.text_e886426f89");
     }
   }
 
@@ -76,10 +79,10 @@ export function hoyoLabProfileCommands(directory: string | undefined, signal: Ab
       if (!sign && !locale) return;
       const suffix = sign?.[2] ?? locale?.[1] ?? "";
       const id = Number(suffix || 1);
-      if ((suffix && !/^[1-9]\d{0,2}$/u.test(suffix)) || id > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
+      if ((suffix && !/^[1-9]\d{0,2}$/u.test(suffix)) || id > MAX_PROFILE_ID) return $t("lib.hoyolab-profile-commands.text_3dd62228d2");
       const user = context.user_id;
       if (user === undefined || !Number.isSafeInteger(user) || user < 1 || context.message_type === "terminal") {
-        return "请从对应的 QQ 会话设置国际服。";
+        return $t("lib.hoyolab-profile-commands.text_002224d14a");
       }
 
       const qq = String(user);
@@ -87,7 +90,7 @@ export function hoyoLabProfileCommands(directory: string | undefined, signal: Ab
       try {
         const current = await profiles.checkinSettings(qq, id);
         if (signal.aborted) return;
-        if (!current.loggedIn) return `请先登录档案 ${id}。`;
+        if (!current.loggedIn) return $t("lib.hoyolab-profile-commands.text_62b08191fe", { "id": id });
         await profiles.setProfileCheckinSettings(qq, id, current.revision, sign
           ? { type: "international", enabled: sign[1] === "启用" || sign[1] === "开启" }
           : { type: "international-language", language: locale![2]! });
@@ -96,12 +99,12 @@ export function hoyoLabProfileCommands(directory: string | undefined, signal: Ab
         return await viewProfile(id, context);
       } catch (error) {
         if (signal.aborted) return;
-        if (saved) return `档案 ${id} 的国际服设置已保存，暂时无法显示资料卡。`;
+        if (saved) return $t("lib.hoyolab-profile-commands.text_0085b5fd55", { "id": id });
         if (error instanceof ProfileError) {
-          if (error.code === "missing" || error.code === "login-required") return `请先登录档案 ${id}。`;
-          if (error.code === "changed") return "档案设置已变化，请重试。";
+          if (error.code === "missing" || error.code === "login-required") return $t("lib.hoyolab-profile-commands.text_62b08191fe", { "id": id });
+          if (error.code === "changed") return $t("lib.hoyolab-profile-commands.text_3ddebc59b1");
         }
-        return "暂时无法保存国际服设置。";
+        return $t("lib.hoyolab-profile-commands.text_2860d30205");
       }
     },
   };

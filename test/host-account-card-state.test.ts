@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -50,7 +51,7 @@ test("本人资料卡在素材等待期间换档内容时不发送旧角色", as
     expect(JSON.stringify(missing.params)).toContain("请先扫码登录档案 2");
     expect(JSON.stringify(missing.params)).not.toContain("新角色");
   }, 3_000, preload, async root => {
-    await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+    await linkHostPackages(root);
     await mkdir(join(root, "profiles"));
     await writeFile(join(root, "profiles", "42-2.yaml"), profile(42, 2, "100000055", "旧角色", true));
   });

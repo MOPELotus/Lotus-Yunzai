@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -34,7 +37,7 @@ interface HistoryLeaf {
 }
 
 function sourceChanged(): never {
-  throw new Error("旧跃迁或调频档案在迁移期间变更，请重新取得停写副本。");
+  throw new Error($t("lib.migration-shared-game-history.text_a8f9da3f0a"));
 }
 
 async function statIfPresent(path: string) {
@@ -103,7 +106,7 @@ export async function stageLegacySharedGameHistory(sourcePath: string, stateDire
   const [sourceInfo, stageInfo] = await Promise.all([lstat(source), lstat(stage)]);
   if (!sourceInfo.isDirectory() || !stageInfo.isDirectory() || stage !== resolve(stateDirectory) ||
       (stageInfo.mode & 0o077) || withinInstallation(source, stage) || withinInstallation(stage, source)) {
-    throw new Error("旧跃迁或调频资料暂存须使用独立的私有实体目录。");
+    throw new Error($t("lib.migration-shared-game-history.text_f779b2b296"));
   }
   const seenDirectories = new Map<string, Stats>([[source, sourceInfo]]);
   const leaves = new Map<string, HistoryLeaf[]>();
@@ -114,7 +117,7 @@ export async function stageLegacySharedGameHistory(sourcePath: string, stateDire
     if (!await oldDirectory(dirname(path))) return false;
     const info = await statIfPresent(path);
     if (!info) return false;
-    if (!info.isDirectory() || await realpath(path) !== path) throw new Error("旧跃迁或调频路径须为实体目录。");
+    if (!info.isDirectory() || await realpath(path) !== path) throw new Error($t("lib.migration-shared-game-history.text_db066fc62a"));
     seenDirectories.set(path, info);
     return true;
   }
@@ -128,7 +131,7 @@ export async function stageLegacySharedGameHistory(sourcePath: string, stateDire
       info = await lstat(path);
     }
     if (!info.isDirectory() || (info.mode & 0o077) || await realpath(path) !== path) {
-      throw new Error("旧跃迁或调频资料暂存路径须为私有实体目录。");
+      throw new Error($t("lib.migration-shared-game-history.text_48deb323e9"));
     }
   }
 
@@ -146,7 +149,7 @@ export async function stageLegacySharedGameHistory(sourcePath: string, stateDire
           const info = await statIfPresent(absolute);
           if (!info) sourceChanged();
           if (!info.isFile() || info.nlink !== 1 || info.size > maxFileBytes) {
-            throw new Error(`旧跃迁或调频资料 ${family} 须为大小有效且无硬链接的普通文件。`);
+            throw new Error($t("lib.migration-shared-game-history.text_3ef85f80f5", { "family": family }));
           }
           const key = join(family, qq, name);
           const group = leaves.get(key) ?? [];
@@ -168,7 +171,7 @@ export async function stageLegacySharedGameHistory(sourcePath: string, stateDire
       try {
         documents.push(parseHistory(bytes));
       } catch {
-        throw new Error(`旧跃迁或调频资料 ${family} 含无效或不宜迁移的 JSON 内容。`);
+        throw new Error($t("lib.migration-shared-game-history.text_5cba2e0a77", { "family": family }));
       }
       const relative = join(migrationRoot, item.plugin, family);
       const root = join(stage, relative);
@@ -196,7 +199,7 @@ export async function stageLegacySharedGameHistory(sourcePath: string, stateDire
         if (snapshots.some(row => row.updatedAt === first.updatedAt && !isDeepStrictEqual(row, first))) throw new Error();
       }
     } catch {
-      throw new Error(`旧跃迁或调频资料 ${family} 与当前读档格式不兼容，或多个旧目录的同档记录冲突。`);
+      throw new Error($t("lib.migration-shared-game-history.text_a7e9a99df0", { "family": family }));
     }
   }
   for (const [path, info] of seenDirectories) {

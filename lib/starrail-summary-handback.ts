@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isDeepStrictEqual } from "node:util";
 import { starRailGachaPools } from "../packages/hoyo-client/starrail-gacha.ts";
 
@@ -16,11 +19,11 @@ const timeFields = ["time", "legacy_time"] as const;
 const credentials = /^(?:cookie|cookie_token(?:_v2)?|stoken(?:_v2)?|ltoken(?:_v2)?|authkey|login_ticket|stoken_cookie)$/iu;
 
 function invalid(): never {
-  throw new StarRailSummaryHandbackError("星铁官方汇总的格式、档案或区服无效。");
+  throw new StarRailSummaryHandbackError($t("lib.starrail-summary-handback.text_df6ebf04a6"));
 }
 
 function conflict(): never {
-  throw new StarRailSummaryHandbackError("两份星铁官方汇总不是同一档案的连续记录，或已有统计及明确字段冲突。");
+  throw new StarRailSummaryHandbackError($t("lib.starrail-summary-handback.text_971dacf550"));
 }
 
 function object(value: unknown): Json {

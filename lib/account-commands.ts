@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isDeepStrictEqual } from "node:util";
 import { createProfileStore, gameRegionDisplayName, MAX_PROFILE_ID, ProfileError, profileGames, type Game } from "@lotus-yunzai/account";
 import { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
@@ -8,13 +11,13 @@ import { segment } from "./messages.ts";
 type RenderRefreshCard = (title: string, lead: string, contents: readonly string[], at: Date) =>
   Promise<{ readonly png: Uint8Array }>;
 
-const roleLabels = { gs: "原神", sr: "星铁", zzz: "绝区零" } as const;
+const roleLabels = { gs: $t("lib.account-commands.text_d1597c51ed"), sr: $t("lib.account-commands.text_a2927891f0"), zzz: $t("lib.account-commands.text_b1110352c9") } as const;
 const checkinItems = [
-  ["原神", "genshin", 2], ["崩坏2", "honkai2", 3], ["崩坏3", "honkai3rd", 1],
-  ["未定事件簿", "tears_of_themis", 4], ["大别野", "", 5], ["星铁", "honkai_sr", 6],
-  ["绝区零", "zzz", 8], ["因缘精灵", "hna", 9], ["星布谷地", "", 10],
+  [$t("lib.account-commands.text_d1597c51ed"), "genshin", 2], [$t("lib.account-commands.text_7deeae4b7e"), "honkai2", 3], [$t("lib.account-commands.text_6d3d8653d7"), "honkai3rd", 1],
+  [$t("lib.account-commands.text_a6e4fbed57"), "tears_of_themis", 4], [$t("lib.account-commands.text_102f77a733"), "", 5], [$t("lib.account-commands.text_a2927891f0"), "honkai_sr", 6],
+  [$t("lib.account-commands.text_b1110352c9"), "zzz", 8], [$t("lib.account-commands.text_467c7ad0b9"), "hna", 9], [$t("lib.account-commands.text_6f70b509e8"), "", 10],
 ] as const;
-const switchState = (enabled: boolean) => enabled ? "开启" : "关闭";
+const switchState = (enabled: boolean) => enabled ? $t("lib.account-commands.text_8da97ddda9") : $t("lib.account-commands.text_3fd47edce4");
 const refreshAliases = ["自动签到", "c", "ck", "Cookie"];
 const clearVerbs = ["清除", "删除"];
 const clearNouns = ["登录", "扫码登录", "cookie", "Cookie"];
@@ -39,7 +42,7 @@ export async function removeSelectedGameLogin(profiles: Pick<ReturnType<typeof c
   async function matchingProfiles() {
     const matches: { id: number; revision: string }[] = [];
     for (const id of await profiles.listIds(qq)) {
-      if (!active()) throw new DOMException("登录清除授权已失效。", "AbortError");
+      if (!active()) throw new DOMException($t("lib.account-commands.text_bd244511e6"), "AbortError");
       try {
         const { revision } = await profiles.requestSelectedContext(qq, id, game);
         matches.push({ id, revision });
@@ -54,9 +57,9 @@ export async function removeSelectedGameLogin(profiles: Pick<ReturnType<typeof c
   try {
     const matches = await matchingProfiles();
     if (!active()) return;
-    if (matches.length === 0) return `没有找到已登录的${roleLabels[game]}档案。可发送 #登录列表 查看。`;
+    if (matches.length === 0) return $t("lib.account-commands.text_aeabd1a18d", { "value1": roleLabels[game] });
     if (matches.length > 1) {
-      return `${roleLabels[game]}角色分布在多个登录档案（${matches.map(({ id }) => id).join("、")}）。请用 #清除登录 加档案编号指定。`;
+      return $t("lib.account-commands.text_9dd53d894a", { "value1": roleLabels[game], "value2": matches.map(({ id }) => id).join("、") });
     }
     const { id, revision } = matches[0]!;
     await profiles.clearLogin(qq, id, {
@@ -64,15 +67,15 @@ export async function removeSelectedGameLogin(profiles: Pick<ReturnType<typeof c
       async verify() {
         const latest = await matchingProfiles();
         if (latest.length !== 1 || latest[0]?.id !== id || latest[0]?.revision !== revision) {
-          throw new ProfileError("changed", "对应登录档案已变更。");
+          throw new ProfileError("changed", $t("lib.account-commands.text_0a28e4d3b9"));
         }
       },
     });
-    if (active()) return `已清除档案 ${id} 的米游社登录信息，设备和角色设置已保留。`;
+    if (active()) return $t("lib.account-commands.text_3e0f1b7442", { "id": id });
   } catch (error) {
     if (!active()) return;
-    if (error instanceof ProfileError && error.code === "changed") return "对应登录档案已变更，请发送 #登录列表 确认后重试。";
-    return "无法清除登录信息，请发送 #登录列表 确认后重试。";
+    if (error instanceof ProfileError && error.code === "changed") return $t("lib.account-commands.text_3b65f7e015");
+    return $t("lib.account-commands.text_724f85b665");
   }
 }
 
@@ -87,98 +90,98 @@ export function accountCommands(
 
   function refresh(profileId?: number): CommandHandler {
     return async (argument, context) => {
-      if (argument) return "用法：#刷新cookie 或 #刷新cookie2";
-      if (context.user_id === undefined) return "请从 QQ 会话发送刷新指令。";
-      if (!canRefresh(context)) return "当前不允许刷新登录信息，请联系机器人主人。";
+      if (argument) return $t("lib.account-commands.text_81a73575f3");
+      if (context.user_id === undefined) return $t("lib.account-commands.text_5c65a9c72f");
+      if (!canRefresh(context)) return $t("lib.account-commands.text_16e39e5f0f");
 
       const qq = String(context.user_id);
       const ids = profileId === undefined ? await profiles.listIds(qq) : [profileId];
-      if (!ids.length) return "当前 QQ 尚未创建档案。";
-      const title = "Cookie 刷新";
+      if (!ids.length) return $t("lib.account-commands.text_a08de24fa5");
+      const title = $t("lib.account-commands.text_793c7f24fb");
       const outcomes: { id: number; message: string }[] = [];
       let refreshed = 0;
       for (const id of ids) {
         try {
           const { rolesSynced } = await client.refreshProfile(await profiles.accountContext(qq, id));
           refreshed++;
-          outcomes.push({ id, message: rolesSynced ? "刷新成功" : "刷新成功，角色同步失败" });
+          outcomes.push({ id, message: rolesSynced ? $t("lib.account-commands.text_83913e71fc") : $t("lib.account-commands.text_d5c4322221") });
         } catch {
-          outcomes.push({ id, message: "刷新失败，请确认登录状态后重试" });
+          outcomes.push({ id, message: $t("lib.account-commands.text_dcf389fa33") });
         }
       }
       if (renderRefreshCard) {
         const message = profileId === undefined
           ? (refreshed === ids.length
-            ? "所有档案的登录信息已刷新。"
-            : `登录信息刷新成功 ${refreshed}/${ids.length}。`)
-          : (refreshed ? `档案 ${profileId} 登录信息已刷新。` : `档案 ${profileId} 的登录信息未能刷新。`);
+            ? $t("lib.account-commands.text_8f957c8686")
+            : $t("lib.account-commands.text_9477637c5d", { "refreshed": refreshed, "length": ids.length }))
+          : (refreshed ? $t("lib.account-commands.text_971af2fbe9", { "profileId": profileId }) : $t("lib.account-commands.text_074a95a269", { "profileId": profileId }));
         try {
-          const contents = outcomes.map(({ id, message }) => `档案 ${id}：${message}`);
+          const contents = outcomes.map(({ id, message }) => $t("lib.account-commands.text_77102dc310", { "id": id, "message": message }));
           const { png } = await renderRefreshCard(title, `QQ ${qq}\n${message}`, contents, new Date());
           if (png.byteLength) return segment.image(png);
         } catch {
           // The refresh results stay available if the optional card cannot be drawn.
         }
       }
-      return [title, ...outcomes.map(({ id, message }) => `档案 ${id} · ${message}`)].join("\n");
+      return [title, ...outcomes.map(({ id, message }) => $t("lib.account-commands.text_987ae72631", { "id": id, "message": message }))].join("\n");
     };
   }
 
   function sync(id: number): CommandHandler {
     return async (argument, context) => {
-      if (argument) return "用法：#同步角色 或 #同步角色2";
-      if (context.user_id === undefined) return "请从 QQ 会话发送同步角色指令。";
+      if (argument) return $t("lib.account-commands.text_6bc530d707");
+      if (context.user_id === undefined) return $t("lib.account-commands.text_41980a91d3");
 
       try {
         const profile = await profiles.accountContext(String(context.user_id), id);
         const roles = await client.syncRoles(profile, canRefresh(context));
-        return `档案 ${id} 角色已同步。原神 ${roles.gs.length}，星铁 ${roles.sr.length}，绝区零 ${roles.zzz.length}。`;
+        return $t("lib.account-commands.text_e623664c82", { "id": id, "length": roles.gs.length, "value3": roles.sr.length, "value4": roles.zzz.length });
       } catch {
-        return `无法同步档案 ${id} 的角色，请确认登录状态后重试。`;
+        return $t("lib.account-commands.text_7b5c090f79", { "id": id });
       }
     };
   }
 
   function clear(id: number): CommandHandler {
     return async (argument, context) => {
-      if (argument) return "用法：#清除登录 或 #清除登录2";
-      if (context.user_id === undefined) return "请从 QQ 会话发送清除登录指令。";
+      if (argument) return $t("lib.account-commands.text_b605222a05");
+      if (context.user_id === undefined) return $t("lib.account-commands.text_ed7488ebef");
 
       try {
         await profiles.clearLogin(String(context.user_id), id);
-        return `档案 ${id} 的登录信息已清除，设备和角色设置已保留。`;
+        return $t("lib.account-commands.text_3db385c0e4", { "id": id });
       } catch {
-        return `无法清除档案 ${id} 的登录信息，请检查档案是否存在。`;
+        return $t("lib.account-commands.text_e959863834", { "id": id });
       }
     };
   }
 
   function describe(id: number): CommandHandler {
     return async (argument, context) => {
-      if (argument) return "用法：#配置 或 #配置2";
+      if (argument) return $t("lib.account-commands.text_c92ad69cc2");
       if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) {
-        return "请从 QQ 会话发送配置查询指令。";
+        return $t("lib.account-commands.text_2bc06036cf");
       }
       const signal = context.message_type === "group" ? context.groupActivitySignal : context.privateCredentialSignal;
       if (signal?.aborted) return [];
       const qq = String(context.user_id);
       const profile = await profiles.describe(qq, id).catch(() => undefined);
       if (signal?.aborted) return [];
-      if (!profile?.loggedIn) return `请先扫码登录档案 ${id}。`;
-      const mode = !profile.enabled ? "仅手动" : profile.schedule.mode === "fixed" ? profile.schedule.fixedTime || "固定"
-        : profile.schedule.mode === "random" ? "随机" : "跟随全局";
-      const device = profile.deviceBound ? profile.device.name || "已绑定" : profile.device.generated
-        ? [`自动设备 · ${profile.device.name || "Lotus-Yunzai"}`, !profile.device.hasFingerprint && "FP 待获取"].filter(Boolean).join(" · ")
-        : "未绑定";
+      if (!profile?.loggedIn) return $t("lib.account-commands.text_5c992b438d", { "id": id });
+      const mode = !profile.enabled ? $t("lib.account-commands.text_46e152919d") : profile.schedule.mode === "fixed" ? profile.schedule.fixedTime || $t("lib.account-commands.text_d4b3f49cd2")
+        : profile.schedule.mode === "random" ? $t("lib.account-commands.text_75ca4f9214") : $t("lib.account-commands.text_bba7ef6ba2");
+      const device = profile.deviceBound ? profile.device.name || $t("lib.account-commands.text_f70c0007f3") : profile.device.generated
+        ? [$t("lib.account-commands.text_27eec3434a", { "value1": profile.device.name || "Lotus-Yunzai" }), !profile.device.hasFingerprint && $t("lib.account-commands.text_f3e18fd945")].filter(Boolean).join(" · ")
+        : $t("lib.account-commands.text_e026c6693d");
       const settings: { label: string; value: string }[] = checkinItems.map(([label, game, forum]) => ({
-        label, value: `游戏 ${game ? switchState(profile.gameCheckin[game] === true) : "无"} · 社区 ${switchState(profile.communityCheckin.includes(forum))}`,
+        label, value: $t("lib.account-commands.text_06f550ea02", { "value1": game ? switchState(profile.gameCheckin[game] === true) : $t("lib.account-commands.text_484d556139"), "value2": switchState(profile.communityCheckin.includes(forum)) }),
       }));
       if (profile.international.enabled) settings.push({
-        label: "国际服", value: `${profile.international.language} · ${profile.international.hasCookie ? "已保存" : "未保存"}`,
+        label: $t("lib.account-commands.text_970d688dd6"), value: `${profile.international.language} · ${profile.international.hasCookie ? $t("lib.account-commands.text_1bd91a7d0c") : $t("lib.account-commands.text_6a1be012c9")}`,
       });
       if (profile.cloud.length) settings.push({
-        label: "云游戏", value: profile.cloud.map(({ game, hasToken }) =>
-          `${game === "genshin" ? "云原神" : "云绝区零"}${hasToken ? "" : "（缺凭据）"}`).join(" / "),
+        label: $t("lib.account-commands.text_0e1f644c82"), value: profile.cloud.map(({ game, hasToken }) =>
+          `${game === "genshin" ? $t("lib.account-commands.text_8d17468984") : $t("lib.account-commands.text_6e50693925")}${hasToken ? "" : $t("lib.account-commands.text_bd98ac6357")}`).join(" / "),
       });
       const roleGroups = profileGames.map((game) => ({
         label: roleLabels[game],
@@ -190,17 +193,17 @@ export function accountCommands(
         })),
       }));
       const account = [
-        { label: "通行证", value: profile.passport },
-        { label: "Cookie", value: profile.hasCookie ? "已保存" : "未保存" },
-        { label: "SToken", value: profile.hasStoken ? "已保存" : "未保存" },
-        { label: "设备信息", value: device },
+        { label: $t("lib.account-commands.text_2f0a2b5a01"), value: profile.passport },
+        { label: "Cookie", value: profile.hasCookie ? $t("lib.account-commands.text_1bd91a7d0c") : $t("lib.account-commands.text_6a1be012c9") },
+        { label: "SToken", value: profile.hasStoken ? $t("lib.account-commands.text_1bd91a7d0c") : $t("lib.account-commands.text_6a1be012c9") },
+        { label: $t("lib.account-commands.text_6c07bb6fd4"), value: device },
       ];
       const title = profile.nickname || `QQ ${qq}`;
-      const subtitle = `档案 ${id} · ${profile.name || "default"}`;
-      const summary = `签到模式：${mode} · 通知：${switchState(profile.notifications)}。敏感字段已脱敏显示。`;
+      const subtitle = $t("lib.account-commands.text_89406be5fa", { "id": id, "value2": profile.name || "default" });
+      const summary = $t("lib.account-commands.text_59c4758bd2", { "mode": mode, "value2": switchState(profile.notifications) });
       const warnings = [
-        ...(profile.rolesPending ? ["角色暂未同步，可发送 #同步角色 后重试。"] : []),
-        ...(!profile.device.hasFingerprint ? ["社区任务需要配对的设备 ID 与 FP，也可绑定真机。"] : []),
+        ...(profile.rolesPending ? [$t("lib.account-commands.text_27c634819b")] : []),
+        ...(!profile.device.hasFingerprint ? [$t("lib.account-commands.text_b177a3598a")] : []),
       ];
       let image: Uint8Array | undefined;
       try {
@@ -231,11 +234,11 @@ export function accountCommands(
       const current = await profiles.describe(qq, id).catch(() => undefined);
       if (signal?.aborted) return [];
       if (!isDeepStrictEqual(profile, current)) {
-        return `档案在查询期间已更新，请重新发送 #配置${id === 1 ? "" : id}。`;
+        return $t("lib.account-commands.text_aa7d7e8267", { "value1": id === 1 ? "" : id });
       }
       if (image) return segment.image(image);
       return [title, subtitle, summary, ...account.map(({ label, value }) => `${label} · ${value}`),
-        ...roleGroups.map(({ label, rows }) => `${label} · ${rows.map(({ uid, active }) => `${uid}${active ? "（当前）" : ""}`).join("、") || "未同步"}`),
+        ...roleGroups.map(({ label, rows }) => `${label} · ${rows.map(({ uid, active }) => `${uid}${active ? $t("lib.account-commands.text_58d8cd20d2") : ""}`).join("、") || $t("lib.account-commands.text_9a964fbc3d")}`),
         ...settings.map(({ label, value }) => `${label} · ${value}`), ...warnings].join("\n");
     };
   }
@@ -271,19 +274,19 @@ export function accountCommands(
 
   function userInventory(action: "查看" | "刷新" | "重置", command: string): CommandHandler {
     return async (argument, context) => {
-      if (!context.isMaster || context.isDelegated) return "只有机器人主人可以查看用户统计。";
-      if (argument) return `用法：${command}`;
+      if (!context.isMaster || context.isDelegated) return $t("lib.account-commands.text_e52600e94c");
+      if (argument) return $t("lib.account-commands.text_3e19d96793", { "command": command });
       const connection = context.message_type === "group" ? context.groupActivitySignal : context.privateCredentialSignal;
-      if (context.message_type !== "terminal" && connection?.aborted !== false) return "请从已绑定的机器人会话查看用户统计。";
-      if (action === "重置") return "本机用户统计每次直接读取档案。旧共享 Cookie 查询计数已停用，无需重置。";
+      if (context.message_type !== "terminal" && connection?.aborted !== false) return $t("lib.account-commands.text_0459e9382e");
+      if (action === "重置") return $t("lib.account-commands.text_0559412a4e");
       try {
         const { users, profiles: total, domestic, international, legacyProfiles, unreadable } = await profiles.credentialInventory();
         if (connection?.aborted) return [];
-        return [action === "刷新" && "已重新读取本机用户档案。", "用户统计（本机档案）", `QQ 用户 ${users} · 可读取档案 ${total}`,
-          `米游社已保存 ${domestic} 个去重账号 · HoYoLAB 已保存 ${international} 个去重账号`,
-          `仅查询旧 Cookie 档案 ${legacyProfiles} · 无法读取档案 ${unreadable}`].filter(Boolean).join("\n");
+        return [action === "刷新" && $t("lib.account-commands.text_5dde10bcf5"), $t("lib.account-commands.text_b5c3728574"), $t("lib.account-commands.text_197366a759", { "users": users, "total": total }),
+          $t("lib.account-commands.text_bb01438bbb", { "domestic": domestic, "international": international }),
+          $t("lib.account-commands.text_4546e9f71c", { "legacyProfiles": legacyProfiles, "unreadable": unreadable })].filter(Boolean).join("\n");
       } catch {
-        return connection?.aborted ? [] : "暂时无法读取本机档案统计。";
+        return connection?.aborted ? [] : $t("lib.account-commands.text_64969eb803");
       }
     };
   }
@@ -297,36 +300,37 @@ export function accountCommands(
       "#刷新用户缓存": userInventory("刷新", "#刷新用户缓存"),
       "#重置用户缓存": userInventory("重置", "#重置用户缓存"),
       async "#登录列表"(argument: string, context: CommandContext) {
-        if (argument) return "用法：#登录列表";
-        if (context.user_id === undefined) return "请从 QQ 会话发送 #登录列表。";
+        if (argument) return $t("lib.account-commands.text_690c0778e9");
+        if (context.user_id === undefined) return $t("lib.account-commands.text_986404ab01");
 
         const qq = String(context.user_id);
         const ids = await profiles.listIds(qq);
         const items: string[] = [];
-        const lines = ["登录列表"];
+        const lines = [$t("lib.account-commands.text_0686f985ae")];
         for (const id of ids) {
           try {
             const profile = await profiles.describe(qq, id);
-            const status = profile.loggedIn ? "已登录" : profile.legacyCookie ? "旧 Cookie（仅查询）" : "未登录";
-            const selected = `原${profile.activeRoles.gs || "-"} / 铁${profile.activeRoles.sr || "-"} / 绝${profile.activeRoles.zzz || "-"}`;
-            items.push(`档案 ${id}：${status} · ${selected}`);
-            lines.push(`档案 ${id} · ${status}`);
+            const status = profile.loggedIn ? $t("lib.account-commands.text_0a01eee1cd") : profile.legacyCookie ? $t("lib.account-commands.text_ccb647d7de") : $t("lib.account-commands.text_c1f6583730");
+            const selected = $t("lib.account-commands.text_0c0b590627", { "value1": profile.activeRoles.gs || "-", "value2": profile.activeRoles.sr || "-", "value3": profile.activeRoles.zzz || "-" });
+            items.push($t("lib.account-commands.text_265d0900d6", { "id": id, "status": status, "selected": selected }));
+            lines.push($t("lib.account-commands.text_f5c8c4f5dc", { "id": id, "status": status }));
           } catch (error) {
             if (!(error instanceof ProfileError)) throw error;
-            items.push(`档案 ${id}：无法读取`);
-            lines.push(`档案 ${id} · 无法读取`);
+            items.push($t("lib.account-commands.text_a236b4e001", { "id": id }));
+            lines.push($t("lib.account-commands.text_3c8b2f265d", { "id": id }));
           }
         }
         if (renderRefreshCard) {
-          const lead = `QQ ${qq}\n${ids.length ? "当前 QQ 已创建的档案。" : "尚未创建档案。"}`;
+          const lead = `QQ ${qq}
+${ids.length ? $t("lib.account-commands.text_9d36c8e2b8") : $t("lib.account-commands.text_09b138a3f1")}`;
           try {
-            const { png } = await renderRefreshCard("登录列表", lead, items, new Date());
+            const { png } = await renderRefreshCard($t("lib.account-commands.text_0686f985ae"), lead, items, new Date());
             if (png.byteLength) return segment.image(png);
           } catch {
             // Keep the same list available as text.
           }
         }
-        return ids.length ? lines.join("\n") : "当前 QQ 尚未创建档案。";
+        return ids.length ? lines.join("\n") : $t("lib.account-commands.text_a08de24fa5");
       },
     },
   };

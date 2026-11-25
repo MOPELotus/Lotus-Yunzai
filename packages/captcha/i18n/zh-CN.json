@@ -1,0 +1,77 @@
+{
+  "language": "zh-CN",
+  "name": "简体中文",
+  "namespace": "captcha",
+  "description": "验证码",
+  "sections": {
+    "src.infrastructure.models": {
+      "description": "验证码",
+      "source": "packages/captcha/src/infrastructure/models.ts"
+    },
+    "src.infrastructure.resize": {
+      "description": "验证码",
+      "source": "packages/captcha/src/infrastructure/resize.ts"
+    },
+    "src.protocols.v3.client": {
+      "description": "验证码",
+      "source": "packages/captcha/src/protocols/v3/client.ts"
+    },
+    "src.protocols.v3.codec": {
+      "description": "验证码",
+      "source": "packages/captcha/src/protocols/v3/codec.ts"
+    },
+    "src.solvers.embedded": {
+      "description": "验证码",
+      "source": "packages/captcha/src/solvers/embedded.ts"
+    },
+    "src.solvers.grid": {
+      "description": "验证码",
+      "source": "packages/captcha/src/solvers/grid.ts"
+    }
+  },
+  "messages": {
+    "src.infrastructure.models.text_88c035ff99": "网络错误",
+    "src.infrastructure.models.text_9e4cc7b109": "验证码模型 {id} 从 {hostname} 下载失败（已尝试3次：{value3}）。已校验模型已保留，重新运行初始化可重试。",
+    "src.infrastructure.models.text_d8a98724fd": "本地验证码模型尚未初始化。",
+    "src.infrastructure.resize.text_1c5e95babe": "不支持的重采样方式：{kernel}",
+    "src.protocols.v3.client.text_2139bea0dc": "极验接口 HTTP {status}",
+    "src.protocols.v3.client.text_3b5a0f0414": "极验未返回验证码图片",
+    "src.protocols.v3.client.text_41724b43f0": "没有识别到验证码坐标",
+    "src.protocols.v3.client.text_4e2ea83a80": "验证码图片体积无效",
+    "src.protocols.v3.client.text_5ae2e847f2": "极验返回无效 challenge",
+    "src.protocols.v3.client.text_5d6e6dc70b": "本地尚未支持该极验动态协议，请使用后续过码方案",
+    "src.protocols.v3.client.text_848fee00b1": "极验动态协议体积无效",
+    "src.protocols.v3.client.text_88c6b202b4": "无效的极验 challenge",
+    "src.protocols.v3.client.text_946fa7616c": "验证码图片 HTTP {status}",
+    "src.protocols.v3.client.text_a14e227981": "极验返回无效 s",
+    "src.protocols.v3.client.text_bb7a134042": "极验初始化缺少 c/s",
+    "src.protocols.v3.client.text_c09671368e": "极验动态协议 HTTP {status}",
+    "src.protocols.v3.client.text_d9da348fc2": "极验返回无效 c",
+    "src.protocols.v3.codec.text_0ecaa562fd": "本地尚未支持该极验初始协议版本，请使用后续过码方案",
+    "src.protocols.v3.codec.text_5d6e6dc70b": "本地尚未支持该极验动态协议，请使用后续过码方案",
+    "src.protocols.v3.codec.text_d42a666438": "极验资源服务器无效",
+    "src.protocols.v3.codec.text_d793db508a": "本地尚未支持该极验点击协议版本，请使用后续过码方案",
+    "src.solvers.embedded.text_19fce01e2b": "图标模型未识别到匹配项",
+    "src.solvers.embedded.text_699b30879c": "图标检测不完整",
+    "src.solvers.grid.text_f6ffa1f886": "九宫格模型未识别到匹配项"
+  },
+  "parameters": {
+    "src.infrastructure.models.text_9e4cc7b109": {
+      "id": "id",
+      "hostname": "url.hostname",
+      "value3": "details.code ?? '网络错误'"
+    },
+    "src.infrastructure.resize.text_1c5e95babe": {
+      "kernel": "kernel"
+    },
+    "src.protocols.v3.client.text_2139bea0dc": {
+      "status": "result.status"
+    },
+    "src.protocols.v3.client.text_c09671368e": {
+      "status": "response.status"
+    },
+    "src.protocols.v3.client.text_946fa7616c": {
+      "status": "response.status"
+    }
+  }
+}

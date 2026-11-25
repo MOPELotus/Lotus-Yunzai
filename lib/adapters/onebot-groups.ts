@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { MessageReply } from "../messages.ts";
 import type { BotNotifications } from "../checkin-notify.ts";
 import type { ChatFile, ChatFileResult } from "../chat-files.ts";
@@ -167,7 +170,7 @@ export class OneBotGroups implements GroupTransport {
       if (!account) return [];
       const { calls, send } = account.connection;
       const check = (signal?: AbortSignal) => {
-        if (signal?.aborted || this.#connected.get(botId) !== account) throw new NoticeNotSentError("原公告会话已关闭。");
+        if (signal?.aborted || this.#connected.get(botId) !== account) throw new NoticeNotSentError($t("lib.adapters.onebot-groups.text_9acbcc8dc4"));
       };
       return [{ botId, adapter: "onebot", async listGroups(signal) {
         check(signal);
@@ -178,20 +181,20 @@ export class OneBotGroups implements GroupTransport {
         check(signal);
         const message = encodeOneBotReply(content);
         if (message === undefined || !Number.isSafeInteger(groupId) || groupId < 1) {
-          throw new NoticeNotSentError("公告群号或内容无效。");
+          throw new NoticeNotSentError($t("lib.adapters.onebot-groups.text_bd0c0d1cdd"));
         }
         let messageId: number | undefined;
         // A shutdown stops new sends, but the original connection can still confirm a send already on the wire.
         const status = await calls.sendConfirmed(send, { group_id: groupId }, message, undefined, id => { messageId = id; });
-        if (status === "rejected") throw new NoticeNotSentError("公告未发出。");
-        if (messageId === undefined) throw new Error("公告发送结果未确认。");
+        if (status === "rejected") throw new NoticeNotSentError($t("lib.adapters.onebot-groups.text_c3ee1c1dec"));
+        if (messageId === undefined) throw new Error($t("lib.adapters.onebot-groups.text_2b9d68f771"));
         return messageId;
       }, async recall(_groupId, messageId, signal) {
         check(signal);
-        if (!Number.isSafeInteger(messageId)) throw new NoticeNotSentError("公告消息编号无效。");
+        if (!Number.isSafeInteger(messageId)) throw new NoticeNotSentError($t("lib.adapters.onebot-groups.text_317cb8f97b"));
         const status = await calls.recallMessage(send, messageId);
-        if (status === "rejected") throw new NoticeNotSentError("公告撤回未执行。");
-        if (status !== "confirmed") throw new Error("公告撤回结果未确认。");
+        if (status === "rejected") throw new NoticeNotSentError($t("lib.adapters.onebot-groups.text_39712068e9"));
+        if (status !== "confirmed") throw new Error($t("lib.adapters.onebot-groups.text_7018210e4f"));
       } } satisfies NoticeGroupAccount];
     });
   }
@@ -199,7 +202,7 @@ export class OneBotGroups implements GroupTransport {
   async sendGroup(botId: number, groupId: number, content: MessageReply): Promise<number> {
     const message = encodeOneBotReply(content);
     if (message === undefined || !Number.isSafeInteger(groupId) || groupId < 1) {
-      throw new OneBotNotSentError("群号或待发送消息无效。");
+      throw new OneBotNotSentError($t("lib.adapters.onebot-groups.text_b85bb61da8"));
     }
     const { calls, send } = this.#connection(botId);
     return calls.sendGroup(send, groupId, message);
@@ -208,21 +211,21 @@ export class OneBotGroups implements GroupTransport {
   async sendPrivate(botId: number, userId: number, content: MessageReply): Promise<boolean> {
     const message = encodeOneBotReply(content);
     if (message === undefined || !Number.isSafeInteger(userId) || userId < 1) {
-      throw new OneBotNotSentError("用户 QQ 或待发送消息无效。");
+      throw new OneBotNotSentError($t("lib.adapters.onebot-groups.text_3d754ab22f"));
     }
     const { calls, send } = this.#connection(botId);
     return calls.replyWithConfirmation(send, { message_type: "private", user_id: userId, message, auto_escape: true });
   }
 
   async deleteMessage(botId: number, messageId: number): Promise<void> {
-    if (!Number.isSafeInteger(messageId)) throw new OneBotNotSentError("消息编号无效。");
+    if (!Number.isSafeInteger(messageId)) throw new OneBotNotSentError($t("lib.adapters.onebot-groups.text_60cd785a4b"));
     const { calls, send } = this.#connection(botId);
     await calls.deleteMessage(send, messageId);
   }
 
   #connection(botId: number): Connection {
     const account = this.#connected.get(botId);
-    if (!account) throw new OneBotNotSentError("指定机器人未连接 OneBot。");
+    if (!account) throw new OneBotNotSentError($t("lib.adapters.onebot-groups.text_690b9e32ac"));
     return account.connection;
   }
 }

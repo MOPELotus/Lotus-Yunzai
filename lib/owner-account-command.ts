@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { ownerAccountGender, ownerAccountSession, ownerAccountStatus, type OwnerAccountOperation } from "./adapters/owner-account.ts";
 import type { MessageEvent } from "./messages.ts";
 
@@ -27,12 +30,12 @@ export function createOwnerAccountCommand() {
     if (!match || event.isDelegated) return false;
     const session = event[ownerAccountSession];
     if (!session || !session.isOwner()) {
-      await event.reply("只有当前机器人的主人可在群聊或好友私聊使用此功能。");
+      await event.reply($t("lib.owner-account-command.text_2376d77177"));
       return true;
     }
     if (session.signal.aborted || workflow.aborted || !allowed()) return true;
     if (match[1] === "设置机型") {
-      await event.reply("当前协议端未确认支持修改机型显示。");
+      await event.reply($t("lib.owner-account-command.text_eda200f345"));
       return true;
     }
 
@@ -42,30 +45,30 @@ export function createOwnerAccountCommand() {
     if (match[1] === "删好友") {
       const userId = friendId(event, text);
       if (userId === undefined || userId === event.self_id) {
-        await event.reply("请指定一个有效的好友 QQ 号或只提及一位好友。");
+        await event.reply($t("lib.owner-account-command.text_b981d1f93a"));
         return true;
       }
       operation = { kind: "deleteFriend", userId };
-      label = "删除好友";
+      label = $t("lib.owner-account-command.text_3cb3cff22b");
     } else if (match[1] === "改状态") {
       if (!Object.hasOwn(ownerAccountStatus, text)) {
-        await event.reply(`可选在线状态为${Object.keys(ownerAccountStatus).join("、")}。`);
+        await event.reply($t("lib.owner-account-command.text_d7b8ee3526", { "value1": Object.keys(ownerAccountStatus).join("、") }));
         return true;
       }
       operation = { kind: "status", status: ownerAccountStatus[text as keyof typeof ownerAccountStatus] };
-      label = "修改在线状态";
+      label = $t("lib.owner-account-command.text_c15720c414");
     } else if (match[1] === "改性别") {
       if (!Object.hasOwn(ownerAccountGender, text)) {
-        await event.reply("可选性别为男、女、无。");
+        await event.reply($t("lib.owner-account-command.text_f5b413f2f2"));
         return true;
       }
       operation = { kind: "gender", gender: ownerAccountGender[text as keyof typeof ownerAccountGender] };
-      label = "修改性别";
+      label = $t("lib.owner-account-command.text_66eb1c77a2");
     } else {
       const signature = match[1] === "改签名";
-      label = signature ? "修改签名" : "修改昵称";
+      label = signature ? $t("lib.owner-account-command.text_37968cced8") : $t("lib.owner-account-command.text_8634d262cf");
       if ((!signature && !text) || Buffer.byteLength(text) > 512 || /[\u0000-\u001f\u007f]/u.test(text)) {
-        await event.reply(signature ? "签名格式无效。" : "请输入有效昵称。");
+        await event.reply(signature ? $t("lib.owner-account-command.text_4f264a272a") : $t("lib.owner-account-command.text_f17d584dba"));
         return true;
       }
       operation = { kind: signature ? "signature" : "nickname", text };
@@ -78,11 +81,11 @@ export function createOwnerAccountCommand() {
     history.add(key);
     const outcome = await session.perform(operation, workflow, allowed);
     if (session.signal.aborted || workflow.aborted || !session.isOwner() || !allowed()) return true;
-    const reply = outcome === "confirmed" ? `${label}成功。`
-      : outcome === "notFriend" ? "当前机器人的好友列表中没有这个 QQ 号。"
-      : outcome === "unsupported" ? `当前协议端未确认支持${label}。`
-      : outcome === "unavailable" ? "无法确认当前会话的权限或好友关系。"
-      : outcome === "unknown" ? `${label}结果未确认，请在 QQ 中核对。` : `${label}失败。`;
+    const reply = outcome === "confirmed" ? $t("lib.owner-account-command.text_699c0487e3", { "label": label })
+      : outcome === "notFriend" ? $t("lib.owner-account-command.text_da8a2d6174")
+      : outcome === "unsupported" ? $t("lib.owner-account-command.text_c4e2cbb46d", { "label": label })
+      : outcome === "unavailable" ? $t("lib.owner-account-command.text_64cbde6a0f")
+      : outcome === "unknown" ? $t("lib.owner-account-command.text_0888f34a60", { "label": label }) : $t("lib.owner-account-command.text_262854e58d", { "label": label });
     await event.reply(reply);
     return true;
   };

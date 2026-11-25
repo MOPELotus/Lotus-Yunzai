@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../../i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("captcha", messageCatalog.messages);
 import { setTimeout as sleep } from 'node:timers/promises'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -101,7 +104,7 @@ export class ModelStore {
     signal ??= this.activeSignal
     signal?.throwIfAborted()
     if (await this.valid(id, signal, onProgress)) return path.join(this.directory, this.asset(id).file)
-    if (!this.allowDownload) throw new CaptchaError('model_missing', '本地验证码模型尚未初始化。', true)
+    if (!this.allowDownload) throw new CaptchaError('model_missing', $t("src.infrastructure.models.text_d8a98724fd"), true)
     let promise = this.pending.get(id)
     if (!promise) {
       promise = this.download(id, signal, onProgress)
@@ -135,7 +138,7 @@ export class ModelStore {
           /^(?:ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|UND_ERR_SOCKET|UND_ERR_CONNECT_TIMEOUT)$/.test(details.code ?? '') ||
           /fetch failed|network|socket|connection|TLS|certificate/i.test(details.message ?? '')
         if (!retryable) throw error
-        if (attempt === 3) throw new Error(`验证码模型 ${id} 从 ${url.hostname} 下载失败（已尝试3次：${details.code ?? '网络错误'}）。已校验模型已保留，重新运行初始化可重试。`, { cause: error })
+        if (attempt === 3) throw new Error($t("src.infrastructure.models.text_9e4cc7b109", { "id": id, "hostname": url.hostname, "value3": details.code ?? $t("src.infrastructure.models.text_88c035ff99") }), { cause: error })
         await sleep(500 * attempt, undefined, { signal })
       }
     }

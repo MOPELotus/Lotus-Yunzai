@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isIP } from "node:net";
 import { readLocalConfig } from "../config.ts";
 import { publicPostPath } from "../server.ts";
@@ -14,7 +17,7 @@ export interface MilkySettings {
 }
 
 function invalid(field: string): never {
-  throw new Error(`config/milky.yaml 的 ${field} 无效。`);
+  throw new Error($t("lib.adapters.milky-config.text_7448aa8b64", { "field": field }));
 }
 
 function section(value: unknown, field: string): Record<string, unknown> {

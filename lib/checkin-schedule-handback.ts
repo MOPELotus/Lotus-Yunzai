@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { ProfileAccountContext } from "@lotus-yunzai/account";
@@ -29,7 +32,7 @@ function settled({ runningAt: _running, communityRetry: _retry, communityWrites:
 }
 
 function held(entry: Entry): Entry {
-  return { ...settled(entry), done: true, ok: false, stage: checkinHandbackHoldStage, message: "交还时签到结果待核对。" };
+  return { ...settled(entry), done: true, ok: false, stage: checkinHandbackHoldStage, message: $t("lib.checkin-schedule-handback.text_76fc69e016") };
 }
 
 function hasProgress(entry: Entry) {
@@ -71,7 +74,7 @@ export async function prepareLegacyCheckinSchedule(
   source: CheckinSchedulePlan, legacy: CheckinSchedulePlan | undefined, target: LegacyVersion,
   { now = Date.now(), accountAtExecution }: { readonly now?: number; readonly accountAtExecution?: GetAccount } = {},
 ) {
-  if (legacy && legacy.date !== source.date) throw new Error("新旧签到计划日期不一致。");
+  if (legacy && legacy.date !== source.date) throw new Error($t("lib.checkin-schedule-handback.text_7ce0343143"));
   const today = checkinScheduleClock(now).date;
   const earlier = new Map(legacy?.entries.map(entry => [entryKey(entry), entry]));
   const currentEntries = new Set(source.entries.map(entryKey));
@@ -167,7 +170,7 @@ function digest(plan: CheckinSchedulePlan) {
 }
 
 function transferFailure(): never {
-  throw new Error("旧版签到回执无法核验，已冻结所涉的自动补跑。");
+  throw new Error($t("lib.checkin-schedule-handback.text_78a112aee8"));
 }
 
 function validateReceipt(transfer: ReceiptTransfer, raw: unknown, startedAt: number): Map<string, ValidatedReceiptEntry> {
@@ -227,17 +230,17 @@ function applyReceipt(entry: Entry, row: ValidatedReceiptEntry,
   };
   if (forums.length || games.length) {
     return { ...previous, ...logs, done: false, ok: false, stage: "checkin",
-      message: "旧版签到回接后已安排剩余项目补跑。",
+      message: $t("lib.checkin-schedule-handback.text_01fc8f5e86"),
       communityRetry: { forums, ...(games.length && { games }), attempts: row.attempts,
         nextAt: row.nextAt!, verifiedUnsent: true, accountKey: row.accountKey, otherFailure } };
   }
   return { ...previous, ...logs, done: true, ok, doneAt: checkinScheduleClock(now).iso,
     stage: unknown ? legacyUnconfirmedStage : "checkin",
-    message: unknown ? "旧版签到提交结果待核对。" : ok ? "旧版已完成签到。" : "旧版签到有未完成的项目。" };
+    message: unknown ? $t("lib.checkin-schedule-handback.text_f91aa59b9f") : ok ? $t("lib.checkin-schedule-handback.text_2e722c95de") : $t("lib.checkin-schedule-handback.text_423b8c97fe") };
 }
 
 async function guardedScopes(source: CheckinSchedulePlan, legacy: CheckinSchedulePlan | undefined, startedAt: number, loadAccount: GetAccount) {
-  if (legacy && legacy.date !== source.date) throw new Error("新旧签到计划日期不一致。");
+  if (legacy && legacy.date !== source.date) throw new Error($t("lib.checkin-schedule-handback.text_7ce0343143"));
   if (checkinScheduleClock(startedAt).date !== source.date) return [];
   const date = source.date;
   const entries: ReceiptTransfer["entries"][number][] = [];
@@ -290,7 +293,7 @@ export async function runGuardedLegacyCheckinTransfer(store: Store, date: string
 }) {
   return store.withExecutionLock(date, async () => {
     const startedAt = now();
-    if (checkinScheduleClock(startedAt).date !== date) throw new Error("签到执行交还仅支持同日计划。");
+    if (checkinScheduleClock(startedAt).date !== date) throw new Error($t("lib.checkin-schedule-handback.text_35769928fb"));
     const prepared = await store.update(date, async source => {
       if (!source) return { result: undefined };
       const entries = await guardedScopes(source, legacy, startedAt, loadAccount);
@@ -300,7 +303,7 @@ export async function runGuardedLegacyCheckinTransfer(store: Store, date: string
         id: randomUUID(), planDigest: digest(source), entries };
       const frozen: CheckinSchedulePlan = { ...source, entries: source.entries.map(entry => selected.has(entryKey(entry))
         ? { ...entry, done: true, ok: false, stage: legacyUnconfirmedStage,
-          message: "旧版执行签到期间已冻结新版补跑。" } : entry) };
+          message: $t("lib.checkin-schedule-handback.text_f4f58508d6") } : entry) };
       return { plan: frozen, result: { transfer, frozenDigest: digest(frozen) } };
     });
     if (!prepared) return 0;

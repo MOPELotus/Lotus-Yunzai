@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isInternalAddress } from "./network-access.ts";
 import { isAbsolute } from "node:path";
 import { readLocalConfig } from "./config.ts";
@@ -45,7 +48,7 @@ function webMountSettings(value: unknown): WebMountSettings | undefined {
   const { directory, socket } = record(value) ? value : {};
   if (typeof directory !== "string" || typeof socket !== "string" ||
       !isAbsolute(directory) || !isAbsolute(socket) || /[\u0000-\u001f]/u.test(directory + socket)) {
-    throw new Error("config/server.yaml 的 web_mount.directory 和 web_mount.socket 须为绝对路径。");
+    throw new Error($t("lib.server.text_ece3e76647"));
   }
   return { directory, socket };
 }
@@ -54,19 +57,19 @@ function port(value: unknown, source: string): number | undefined {
   if (value === undefined) return;
   const number = typeof value === "string" && /^\d+$/u.test(value) ? Number(value) : value;
   if (typeof number !== "number" || !Number.isInteger(number) || number < 0 || number > 65535) {
-    throw new Error(`${source} 须为 0–65535 的端口号。`);
+    throw new Error($t("lib.server.text_dc3165726e", { "source": source }));
   }
   return number;
 }
 
-function publicHttpUrl(value: unknown, sourceName = "config/server.yaml 的 url"): URL | undefined {
+function publicHttpUrl(value: unknown, sourceName = $t("lib.server.text_2cabdb5bc2")): URL | undefined {
   if (value === null || value === undefined) return;
   const source = typeof value === "string" ? value.trim() : "";
   if (typeof value === "string" && !source) return;
   const url = /^https?:\/\/[^/@]+(?:\/.*)?$/iu.test(source) && !/[\s\\?#\0]/u.test(source)
     ? URL.parse(source) : null;
   if (!url || url.username || url.password) {
-    throw new Error(`${sourceName} 须为不含认证信息、查询参数或片段的 HTTP(S) 绝对地址。`);
+    throw new Error($t("lib.server.text_e485b0b865", { "sourceName": sourceName }));
   }
   url.pathname = `${url.pathname.replace(/\/+$/u, "")}/`;
   return url;
@@ -83,14 +86,14 @@ export function panelPublicPage(base: URL | undefined) {
 function authHeaders(value: unknown): Headers {
   const headers = new Headers();
   if (value === undefined || value === null) return headers;
-  if (!record(value)) throw new Error("config/server.yaml 的 auth 须为请求头映射。");
+  if (!record(value)) throw new Error($t("lib.server.text_9b88612044"));
   try {
     for (const [key, item] of Object.entries(value)) {
       if (typeof item !== "string" || !item.trim()) throw new Error();
       headers.set(key, item);
     }
   } catch {
-    throw new Error("config/server.yaml 的 auth 请求头无效。");
+    throw new Error($t("lib.server.text_805b191330"));
   }
   return headers;
 }
@@ -98,11 +101,11 @@ function authHeaders(value: unknown): Headers {
 function withToken(base: Headers, token: string | undefined, source: string): Headers {
   const headers = new Headers(base);
   if (token !== undefined) {
-    if (!token.trim() || /[\s\0]/u.test(token)) throw new Error(`${source} 的令牌格式无效。`);
+    if (!token.trim() || /[\s\0]/u.test(token)) throw new Error($t("lib.server.text_d64598da26", { "source": source }));
     try {
       headers.set("Authorization", `Bearer ${token}`);
     } catch {
-      throw new Error(`${source} 的令牌格式无效。`);
+      throw new Error($t("lib.server.text_d64598da26", { "source": source }));
     }
   }
   return headers;
@@ -150,25 +153,25 @@ export async function readServerSettings(root: URL, env: ServerEnvironment): Pro
 }
 
 export function parseServerSettings(config: Readonly<Record<string, unknown>>, env: ServerEnvironment): ServerSettings {
-  const configured = port(env.LOTUS_HTTP_PORT ?? config.port, "LOTUS_HTTP_PORT 或 server.port");
+  const configured = port(env.LOTUS_HTTP_PORT ?? config.port, $t("lib.server.text_beff505ae5"));
   const oneBotOverride = port(env.LOTUS_ONEBOT_PORT, "LOTUS_ONEBOT_PORT");
   const legacyAuth = authHeaders(config.auth);
   const httpAuth = withToken(legacyAuth, env.LOTUS_HTTP_TOKEN, "LOTUS_HTTP_TOKEN");
   const oneBotToken = config.onebot_token;
   if (oneBotToken !== undefined && oneBotToken !== null && typeof oneBotToken !== "string") {
-    throw new Error("config/server.yaml 的 onebot_token 须为文本。");
+    throw new Error($t("lib.server.text_81d10852a1"));
   }
   const wsAuth = withToken(legacyAuth, env.LOTUS_ONEBOT_TOKEN ?? oneBotToken ?? undefined,
-    env.LOTUS_ONEBOT_TOKEN === undefined ? "config/server.yaml 的 onebot_token" : "LOTUS_ONEBOT_TOKEN");
+    env.LOTUS_ONEBOT_TOKEN === undefined ? $t("lib.server.text_05cd4dcddf") : "LOTUS_ONEBOT_TOKEN");
   const panelToken = env.LOTUS_PANEL_TOKEN;
   withToken(new Headers(), panelToken, "LOTUS_PANEL_TOKEN");
-  const panelPublicUrl = publicHttpUrl(env.LOTUS_PANEL_PUBLIC_URL ?? config.panel_url, "LOTUS_PANEL_PUBLIC_URL 或 server.panel_url");
+  const panelPublicUrl = publicHttpUrl(env.LOTUS_PANEL_PUBLIC_URL ?? config.panel_url, $t("lib.server.text_a1dd9f703a"));
   if (panelPublicUrl && !panelPublicPage(panelPublicUrl)) {
-    throw new Error("面板公开地址须为 HTTPS，内网及本机地址可用 HTTP。");
+    throw new Error($t("lib.server.text_9b9ee807ea"));
   }
   const captcha = config.captcha;
   const manualCaptchaUrl = env.LOTUS_CAPTCHA_PUBLIC_URL ?? (record(captcha) && typeof captcha.url === "string" ? captcha.url : undefined);
-  if (config.onebot_enable !== undefined && typeof config.onebot_enable !== "boolean") throw new Error("server.onebot_enable 须为布尔值。");
+  if (config.onebot_enable !== undefined && typeof config.onebot_enable !== "boolean") throw new Error($t("lib.server.text_a8c83aaa99"));
   const wsPort = config.onebot_enable === false ? undefined : oneBotOverride ?? configured ?? 2536;
   const httpPort = configured ?? wsPort ??
     (env.LOTUS_HTTP_TOKEN !== undefined || panelToken !== undefined || panelPublicUrl !== undefined ? 2536 : undefined);

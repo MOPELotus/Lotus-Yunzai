@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { setTimeout as wait } from "node:timers/promises";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -90,7 +93,7 @@ function whole(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isSafeInteger(value)) return value;
 }
 
-function badLink(message = "请输入完整的绝区零官方抽卡记录链接。"): never {
+function badLink(message = $t("zzz-gacha-link.text_49d3b89275")): never {
   throw new HoyoRequestError("invalid-input", message);
 }
 
@@ -99,14 +102,14 @@ function badResponse(message: string): never {
 }
 
 export function resolveZzzGachaLinkRole({ uid, region: selectedRegion, gameBiz: selectedBiz }: ZzzGachaLinkRole): ZzzGachaLink {
-  if (typeof uid !== "string") badLink("绝区零档案未绑定可核验的 UID 和区服。");
+  if (typeof uid !== "string") badLink($t("zzz-gacha-link.text_a1486ef0dc"));
   const overseas = /^[1-9]\d{9}$/u.test(uid) ? overseasRegions[uid.slice(0, 2) as keyof typeof overseasRegions] : undefined;
   const cn = /^[1-9]\d{7,8}$/u.test(uid);
   const region = selectedRegion?.trim() || overseas || (cn ? "prod_gf_cn" : undefined);
   const gameBiz = overseas ? "nap_global" : "nap_cn";
   if (selectedBiz && selectedBiz !== gameBiz ||
       (overseas ? region !== overseas : !cn || (region !== "prod_gf_cn" && region !== "prod_qd_cn"))) {
-    badLink("绝区零档案未绑定可核验的 UID 和区服。");
+    badLink($t("zzz-gacha-link.text_a1486ef0dc"));
   }
   return Object.freeze({ uid, region: region as Region, gameBiz });
 }
@@ -133,10 +136,10 @@ export function parseZzzGachaLink(input: string, role: ZzzGachaLinkRole): ZzzGac
     if (found.length > 1) badLink();
     return found[0];
   }
-  if (query("game_biz") !== expected.gameBiz || query("region") !== expected.region) badLink("抽卡链接与当前绝区零档案的区服不一致。");
+  if (query("game_biz") !== expected.gameBiz || query("region") !== expected.region) badLink($t("zzz-gacha-link.text_119cb23596"));
   for (const name of ["uid", "game_uid"]) {
     const uid = query(name);
-    if (uid !== undefined && uid !== expected.uid) badLink("抽卡链接与当前绝区零档案的 UID 不一致。");
+    if (uid !== undefined && uid !== expected.uid) badLink($t("zzz-gacha-link.text_3dc5855f82"));
   }
   for (const [name, fixed] of [["authkey_ver", "1"], ["sign_type", "2"], ["auth_appid", "webview_gacha"]] as const) {
     const supplied = query(name);
@@ -161,7 +164,7 @@ function requestUrl(link: ZzzGachaLink, key: string, band: Band, page: number, c
 }
 
 function draw(value: unknown, uid: string, band: Band, key: string, encodedKey: string): ZzzGachaLinkDraw {
-  if (!object(value) || decimal(value.uid) !== uid) badResponse("绝区零逐抽记录与当前档案的 UID 不一致。");
+  if (!object(value) || decimal(value.uid) !== uid) badResponse($t("zzz-gacha-link.text_7053782a77"));
   const id = decimal(value.id);
   const itemId = decimal(value.item_id);
   const gachaId = decimal(value.gacha_id);
@@ -174,16 +177,16 @@ function draw(value: unknown, uid: string, band: Band, key: string, encodedKey: 
     (band.gachaType === "103" && raw === "3"));
   if ((raw !== band.gachaType && raw !== band.requestType && !taggedReturn) ||
       (value.real_gacha_type !== undefined && declared !== band.gachaType && declared !== band.requestType)) {
-    badResponse("绝区零逐抽记录的频段与请求不一致。");
+    badResponse($t("zzz-gacha-link.text_d2bde6ff8a"));
   }
   if (!id || !itemId || !gachaId || count === undefined || count <= 0 || (rank !== "2" && rank !== "3" && rank !== "4") ||
       (itemType !== "代理人" && itemType !== "音擎" && itemType !== "邦布") || lang !== "zh-cn" || typeof name !== "string" ||
       !name.trim() || !name.isWellFormed() || Buffer.byteLength(name) > 512 || /[\x00-\x1F\x7F]|https?:\/\//iu.test(name) ||
-      name.includes(key) || name.includes(encodedKey)) badResponse("绝区零逐抽记录包含无效的编号、物品或稀有度。");
-  if (typeof time !== "string" || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(time)) badResponse("绝区零逐抽记录的时间无效。");
+      name.includes(key) || name.includes(encodedKey)) badResponse($t("zzz-gacha-link.text_2d34ffbc28"));
+  if (typeof time !== "string" || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(time)) badResponse($t("zzz-gacha-link.text_9ed7924fb6"));
   const instant = Date.parse(`${time.replace(" ", "T")}Z`);
   if (!Number.isFinite(instant) || new Date(instant).toISOString().slice(0, 19).replace("T", " ") !== time) {
-    badResponse("绝区零逐抽记录的时间无效。");
+    badResponse($t("zzz-gacha-link.text_9ed7924fb6"));
   }
   return { id, itemId, gachaId, count, time, name, lang, itemType, rank };
 }
@@ -191,9 +194,9 @@ function draw(value: unknown, uid: string, band: Band, key: string, encodedKey: 
 async function readPage(response: Response, signal: AbortSignal): Promise<unknown> {
   if (Number(response.headers.get("Content-Length")) > maxResponseBytes) {
     await response.body?.cancel().catch(() => undefined);
-    badResponse("绝区零抽卡的单页响应超过大小上限。");
+    badResponse($t("zzz-gacha-link.text_e9792f7548"));
   }
-  if (!response.body) badResponse("绝区零抽卡接口未返回 JSON 响应。");
+  if (!response.body) badResponse($t("zzz-gacha-link.text_edf8261a16"));
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -203,15 +206,15 @@ async function readPage(response: Response, signal: AbortSignal): Promise<unknow
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > maxResponseBytes) badResponse("绝区零抽卡的单页响应超过大小上限。");
+      if (size > maxResponseBytes) badResponse($t("zzz-gacha-link.text_e9792f7548"));
       chunks.push(value);
     }
     signal.throwIfAborted();
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks, size))) as unknown;
   } catch (error) {
-    if (signal.aborted) throw new HoyoRequestError("transport", "绝区零抽卡读取已取消或超时。");
+    if (signal.aborted) throw new HoyoRequestError("transport", $t("zzz-gacha-link.text_2ad3db443e"));
     if (error instanceof HoyoRequestError) throw error;
-    badResponse("绝区零抽卡接口未返回有效的 JSON。");
+    badResponse($t("zzz-gacha-link.text_0fde82ace9"));
   } finally {
     await reader.cancel().catch(() => undefined);
     reader.releaseLock();
@@ -219,12 +222,12 @@ async function readPage(response: Response, signal: AbortSignal): Promise<unknow
 }
 
 function apiFailure(retcode: number, status: number): never {
-  if (retcode === -100) throw new ZzzGachaLinkError("expired", "api", "绝区零抽卡链接已失效，请重新获取官方链接。", status, retcode);
-  if (retcode === -110) throw new ZzzGachaLinkError("rate-limited", "api", "绝区零抽卡请求过于频繁，请稍后再试。", status, retcode);
+  if (retcode === -100) throw new ZzzGachaLinkError("expired", "api", $t("zzz-gacha-link.text_26a1089ff8"), status, retcode);
+  if (retcode === -110) throw new ZzzGachaLinkError("rate-limited", "api", $t("zzz-gacha-link.text_622350c4b3"), status, retcode);
   if (retcode === 1034 || retcode === 10035 || retcode === 10041) {
-    throw new ZzzGachaLinkError("risk", "api", "绝区零抽卡接口要求完成验证，请在官方客户端处理后重试。", status, retcode);
+    throw new ZzzGachaLinkError("risk", "api", $t("zzz-gacha-link.text_a3e3173849"), status, retcode);
   }
-  throw new HoyoRequestError("api", "绝区零抽卡接口拒绝请求。", status, retcode);
+  throw new HoyoRequestError("api", $t("zzz-gacha-link.text_f3d71c689a"), status, retcode);
 }
 
 export async function readZzzGachaLink(link: ZzzGachaLink, transport: HoyoTransport,
@@ -233,7 +236,7 @@ export async function readZzzGachaLink(link: ZzzGachaLink, transport: HoyoTransp
   const key = credentials.get(link);
   if (!key) badLink();
   if (!Number.isSafeInteger(intervalMs) || intervalMs < 0 || intervalMs > 60_000 ||
-      !Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 500) badLink("绝区零抽卡的请求间隔或分页上限无效。");
+      !Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 500) badLink($t("zzz-gacha-link.text_c560bbef16"));
 
   let requested = false;
   let timezone: number | undefined;
@@ -243,20 +246,20 @@ export async function readZzzGachaLink(link: ZzzGachaLink, transport: HoyoTransp
   const pools: ZzzGachaLinkSnapshot["pools"][number][] = [];
 
   async function guard() {
-    if (signal?.aborted) throw new HoyoRequestError("transport", "绝区零抽卡读取已取消。");
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("zzz-gacha-link.text_7680614ff1"));
     await verifyProfile?.();
-    if (signal?.aborted) throw new HoyoRequestError("transport", "绝区零抽卡读取已取消。");
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("zzz-gacha-link.text_7680614ff1"));
   }
 
   async function request(band: Band, page: number, cursor: string, secret: string) {
     if (requested && intervalMs) {
       try { await wait(intervalMs, undefined, { signal }); }
-      catch { throw new HoyoRequestError("transport", "绝区零抽卡读取已取消。"); }
+      catch { throw new HoyoRequestError("transport", $t("zzz-gacha-link.text_7680614ff1")); }
     }
     await guard();
     requested = true;
     const timestamp = Math.floor(now() / 1000);
-    if (!Number.isSafeInteger(timestamp) || timestamp <= 0) badLink("绝区零抽卡的请求时间无效。");
+    if (!Number.isSafeInteger(timestamp) || timestamp <= 0) badLink($t("zzz-gacha-link.text_1b0d64e47b"));
     const timeout = AbortSignal.timeout(20_000);
     const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
     let response: Response;
@@ -266,21 +269,21 @@ export async function readZzzGachaLink(link: ZzzGachaLink, transport: HoyoTransp
         redirect: "error", credentials: "omit", referrerPolicy: "no-referrer", signal: requestSignal,
       });
     } catch {
-      throw new HoyoRequestError("transport", "绝区零抽卡请求未完成。");
+      throw new HoyoRequestError("transport", $t("zzz-gacha-link.text_9b59addfa4"));
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       await guard();
-      if (response.status === 429) throw new ZzzGachaLinkError("rate-limited", "http", "绝区零抽卡请求过于频繁，请稍后再试。", 429);
-      if (response.status === 401) throw new ZzzGachaLinkError("expired", "http", "绝区零抽卡链接已失效，请重新获取官方链接。", 401);
-      throw new HoyoRequestError("http", "绝区零抽卡接口返回 HTTP 错误。", response.status);
+      if (response.status === 429) throw new ZzzGachaLinkError("rate-limited", "http", $t("zzz-gacha-link.text_622350c4b3"), 429);
+      if (response.status === 401) throw new ZzzGachaLinkError("expired", "http", $t("zzz-gacha-link.text_26a1089ff8"), 401);
+      throw new HoyoRequestError("http", $t("zzz-gacha-link.text_15906085d6"), response.status);
     }
     const payload = await readPage(response, requestSignal);
     await guard();
     const retcode = object(payload) ? whole(payload.retcode) : undefined;
-    if (!object(payload) || retcode === undefined) badResponse("绝区零抽卡接口响应缺少有效的状态。");
+    if (!object(payload) || retcode === undefined) badResponse($t("zzz-gacha-link.text_93e99fcfcb"));
     if (retcode !== 0) apiFailure(retcode, response.status);
-    if (!object(payload.data)) badResponse("绝区零抽卡接口响应缺少有效的记录页。");
+    if (!object(payload.data)) badResponse($t("zzz-gacha-link.text_a315d9b0b0"));
     return payload.data;
   }
 
@@ -293,19 +296,19 @@ export async function readZzzGachaLink(link: ZzzGachaLink, transport: HoyoTransp
       const offset = whole(data.region_time_zone);
       if (data.region !== link.region || offset === undefined || offset < -12 || offset > 14 ||
           (timezone !== undefined && offset !== timezone) || (data.uid !== undefined && decimal(data.uid) !== link.uid)) {
-        badResponse("绝区零抽卡响应的 UID、区服或时区不一致。");
+        badResponse($t("zzz-gacha-link.text_f01ebbbcef"));
       }
       timezone = offset;
       verifiedUid ||= data.uid !== undefined;
       const size = data.size === undefined ? pageSize : whole(data.size);
       if (!Array.isArray(data.list) || size === undefined || size < data.list.length || size > pageSize) {
-        badResponse("绝区零抽卡响应的单页记录数量无效。");
+        badResponse($t("zzz-gacha-link.text_9d46c12f89"));
       }
       if (!data.list.length) { finished = true; break; }
       for (const row of data.list) {
         const current = draw(row, link.uid, band, key, encodedKey);
         if (seenIds.has(current.id) || (cursor !== "0" && BigInt(current.id) >= BigInt(cursor))) {
-          badResponse("绝区零抽卡出现重复的逐抽编号或错误的分页顺序。");
+          badResponse($t("zzz-gacha-link.text_d0a58e1e9b"));
         }
         seenIds.add(current.id);
         records.push(current);
@@ -313,12 +316,12 @@ export async function readZzzGachaLink(link: ZzzGachaLink, transport: HoyoTransp
       }
       verifiedUid = true;
     }
-    if (!finished) badResponse("绝区零抽卡读取达到分页上限，本次未取完。");
+    if (!finished) badResponse($t("zzz-gacha-link.text_3d477d7397"));
     pools.push({ type: band.type, gachaType: band.gachaType, name: zzzTuningPools[band.type].name, records });
   }
   await guard();
   if (!verifiedUid || timezone === undefined) {
-    throw new ZzzGachaLinkError("empty-unverified", "response", "绝区零抽卡链接没有返回可核对 UID 的记录。");
+    throw new ZzzGachaLinkError("empty-unverified", "response", $t("zzz-gacha-link.text_57ef76b88a"));
   }
   return { ...link, timezone, pools };
 }

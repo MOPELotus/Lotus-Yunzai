@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { reportResourceProgress, type ResourceProgressCallback } from "./resource-progress.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { link, lstat, mkdir, mkdtemp, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -114,7 +117,7 @@ export async function prepareFixedTheme(checkout: URL, { resourcePath, sourceRoo
   source = checkout, override, download, signal, onProgress,
 }: FixedThemeOptions = {}): Promise<Status> {
   const report = (message: string, completed?: number, total?: number) => reportResourceProgress(onProgress, signal, "theme", message, completed, total);
-  report("检查本地主题");
+  report($t("lib.fixed-theme.text_06590db234"));
   signal?.throwIfAborted();
   if (override) return "configured";
   const root = await realpath(fileURLToPath(checkout));
@@ -130,13 +133,13 @@ export async function prepareFixedTheme(checkout: URL, { resourcePath, sourceRoo
   const request = typeof download === "function" ? download : fetch;
   const contents: { path: string; bytes: Uint8Array }[] = [];
   for (const [index, asset] of assets.entries()) {
-    report(`准备 ${asset[0]}`, index, assets.length);
+    report($t("lib.fixed-theme.text_93df5190ce", { "value1": asset[0] }), index, assets.length);
     const bytes = await readOriginal(asset, donor, sourceRoots, signal) ??
       (download ? await downloadOriginal(asset, raw, request, downloadSignal) : undefined);
     signal?.throwIfAborted();
     if (!bytes) return "missing";
     contents.push({ path: asset[0], bytes });
-    report(`已取得 ${asset[0]}`, index + 1, assets.length);
+    report($t("lib.fixed-theme.text_4e9d3e124e", { "value1": asset[0] }), index + 1, assets.length);
   }
 
   if (existing === "incomplete") return repairTheme(target, contents, signal);
@@ -149,7 +152,7 @@ export async function prepareFixedTheme(checkout: URL, { resourcePath, sourceRoo
   const stage = await mkdtemp(join(dirname(target), ".theme-"));
   try {
     for (const [index, { path, bytes }] of contents.entries()) {
-      reportResourceProgress(onProgress, signal, "theme-write", `保存 ${path}`, index, contents.length);
+      reportResourceProgress(onProgress, signal, "theme-write", $t("lib.fixed-theme.text_457b3717d2", { "path": path }), index, contents.length);
       const file = join(stage, path);
       await mkdir(dirname(file), { mode: 0o700, recursive: true });
       await writeFile(file, bytes, { mode: 0o600, flag: "wx", signal });
@@ -165,7 +168,7 @@ export async function prepareFixedTheme(checkout: URL, { resourcePath, sourceRoo
       if (code === "EEXIST" || code === "ENOTEMPTY") return await localTheme(target, assets) ?? "missing";
       throw error;
     }
-    reportResourceProgress(onProgress, signal, "theme-write", "主题已保存", contents.length, contents.length);
+    reportResourceProgress(onProgress, signal, "theme-write", $t("lib.fixed-theme.text_61d9fc644d"), contents.length, contents.length);
     return "installed";
   } finally {
     await rm(stage, { recursive: true, force: true });

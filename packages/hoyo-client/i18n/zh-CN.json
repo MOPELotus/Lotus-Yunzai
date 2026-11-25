@@ -1,0 +1,1369 @@
+{
+  "language": "zh-CN",
+  "name": "简体中文",
+  "namespace": "hoyo-client",
+  "description": "米游社与游戏请求",
+  "sections": {
+    "bbs-checkin": {
+      "description": "米游社与游戏请求：米游社社区 · 签到",
+      "source": "packages/hoyo-client/bbs-checkin.ts"
+    },
+    "bbs-forum-posts": {
+      "description": "米游社与游戏请求：米游社社区",
+      "source": "packages/hoyo-client/bbs-forum-posts.ts"
+    },
+    "captcha-business": {
+      "description": "米游社与游戏请求：验证码",
+      "source": "packages/hoyo-client/captcha-business.ts"
+    },
+    "cloud-genshin-wallet": {
+      "description": "米游社与游戏请求：原神",
+      "source": "packages/hoyo-client/cloud-genshin-wallet.ts"
+    },
+    "cloud-zzz-wallet": {
+      "description": "米游社与游戏请求：绝区零",
+      "source": "packages/hoyo-client/cloud-zzz-wallet.ts"
+    },
+    "cn-read-diagnostics": {
+      "description": "米游社与游戏请求",
+      "source": "packages/hoyo-client/cn-read-diagnostics.ts"
+    },
+    "credentials": {
+      "description": "米游社与游戏请求",
+      "source": "packages/hoyo-client/credentials.ts"
+    },
+    "daily-note": {
+      "description": "米游社与游戏请求：每日便笺",
+      "source": "packages/hoyo-client/daily-note.ts"
+    },
+    "device-fingerprint": {
+      "description": "米游社与游戏请求：设备信息",
+      "source": "packages/hoyo-client/device-fingerprint.ts"
+    },
+    "errors": {
+      "description": "米游社与游戏请求",
+      "source": "packages/hoyo-client/errors.ts"
+    },
+    "gacha-auth-request": {
+      "description": "米游社与游戏请求：抽卡记录 · 请求",
+      "source": "packages/hoyo-client/gacha-auth-request.ts"
+    },
+    "game-checkin": {
+      "description": "米游社与游戏请求：游戏 · 签到",
+      "source": "packages/hoyo-client/game-checkin.ts"
+    },
+    "game-record": {
+      "description": "米游社与游戏请求：游戏",
+      "source": "packages/hoyo-client/game-record.ts"
+    },
+    "genshin-backpack": {
+      "description": "米游社与游戏请求：原神 · 背包",
+      "source": "packages/hoyo-client/genshin-backpack.ts"
+    },
+    "genshin-blueprint": {
+      "description": "米游社与游戏请求：原神",
+      "source": "packages/hoyo-client/genshin-blueprint.ts"
+    },
+    "genshin-gacha": {
+      "description": "米游社与游戏请求：原神 · 抽卡记录",
+      "source": "packages/hoyo-client/genshin-gacha.ts"
+    },
+    "genshin-gcg": {
+      "description": "米游社与游戏请求：原神",
+      "source": "packages/hoyo-client/genshin-gcg.ts"
+    },
+    "genshin-hard-challenge": {
+      "description": "米游社与游戏请求：原神",
+      "source": "packages/hoyo-client/genshin-hard-challenge.ts"
+    },
+    "genshin-miniapp": {
+      "description": "米游社与游戏请求：原神",
+      "source": "packages/hoyo-client/genshin-miniapp.ts"
+    },
+    "genshin-monthly": {
+      "description": "米游社与游戏请求：原神 · 月历",
+      "source": "packages/hoyo-client/genshin-monthly.ts"
+    },
+    "genshin-panel": {
+      "description": "米游社与游戏请求：原神 · 面板",
+      "source": "packages/hoyo-client/genshin-panel.ts"
+    },
+    "genshin-pay-log": {
+      "description": "米游社与游戏请求：原神",
+      "source": "packages/hoyo-client/genshin-pay-log.ts"
+    },
+    "genshin-team-damage": {
+      "description": "米游社与游戏请求：原神",
+      "source": "packages/hoyo-client/genshin-team-damage.ts"
+    },
+    "genshin-world-boss": {
+      "description": "米游社与游戏请求：原神",
+      "source": "packages/hoyo-client/genshin-world-boss.ts"
+    },
+    "hoyolab-bh3-checkin": {
+      "description": "米游社与游戏请求：HoYoLAB · 签到",
+      "source": "packages/hoyo-client/hoyolab-bh3-checkin.ts"
+    },
+    "hoyolab-checkin-transport": {
+      "description": "米游社与游戏请求：HoYoLAB · 签到",
+      "source": "packages/hoyo-client/hoyolab-checkin-transport.ts"
+    },
+    "hoyolab-cookie": {
+      "description": "米游社与游戏请求：HoYoLAB",
+      "source": "packages/hoyo-client/hoyolab-cookie.ts"
+    },
+    "hoyolab-default-checkin": {
+      "description": "米游社与游戏请求：HoYoLAB · 签到",
+      "source": "packages/hoyo-client/hoyolab-default-checkin.ts"
+    },
+    "hoyolab-genshin-checkin": {
+      "description": "米游社与游戏请求：HoYoLAB · 原神 · 签到",
+      "source": "packages/hoyo-client/hoyolab-genshin-checkin.ts"
+    },
+    "hoyolab-role-checkin": {
+      "description": "米游社与游戏请求：HoYoLAB · 签到",
+      "source": "packages/hoyo-client/hoyolab-role-checkin.ts"
+    },
+    "index": {
+      "description": "米游社与游戏请求",
+      "source": "packages/hoyo-client/index.ts"
+    },
+    "legacy-cookie-token": {
+      "description": "米游社与游戏请求",
+      "source": "packages/hoyo-client/legacy-cookie-token.ts"
+    },
+    "miyoushe-exchange": {
+      "description": "米游社与游戏请求",
+      "source": "packages/hoyo-client/miyoushe-exchange.ts"
+    },
+    "miyoushe-shop": {
+      "description": "米游社与游戏请求：米游币商城",
+      "source": "packages/hoyo-client/miyoushe-shop.ts"
+    },
+    "passport-qr": {
+      "description": "米游社与游戏请求：通行证 · 二维码",
+      "source": "packages/hoyo-client/passport-qr.ts"
+    },
+    "record-fingerprint": {
+      "description": "米游社与游戏请求",
+      "source": "packages/hoyo-client/record-fingerprint.ts"
+    },
+    "redeem-preview.games": {
+      "description": "米游社与游戏请求：兑换",
+      "source": "packages/hoyo-client/redeem-preview/games.ts"
+    },
+    "redeem-preview.http": {
+      "description": "米游社与游戏请求：兑换",
+      "source": "packages/hoyo-client/redeem-preview/http.ts"
+    },
+    "redeem-preview.official": {
+      "description": "米游社与游戏请求：兑换",
+      "source": "packages/hoyo-client/redeem-preview/official.ts"
+    },
+    "redeem-preview.planet-launch": {
+      "description": "米游社与游戏请求：兑换",
+      "source": "packages/hoyo-client/redeem-preview/planet-launch.ts"
+    },
+    "redeem-preview.service": {
+      "description": "米游社与游戏请求：兑换",
+      "source": "packages/hoyo-client/redeem-preview/service.ts"
+    },
+    "redeem-submit": {
+      "description": "米游社与游戏请求：兑换",
+      "source": "packages/hoyo-client/redeem-submit.ts"
+    },
+    "registration-time": {
+      "description": "米游社与游戏请求：注册",
+      "source": "packages/hoyo-client/registration-time.ts"
+    },
+    "starrail-challenge": {
+      "description": "米游社与游戏请求：星铁",
+      "source": "packages/hoyo-client/starrail-challenge.ts"
+    },
+    "starrail-gacha": {
+      "description": "米游社与游戏请求：星铁 · 抽卡记录",
+      "source": "packages/hoyo-client/starrail-gacha.ts"
+    },
+    "starrail-grid-fight": {
+      "description": "米游社与游戏请求：星铁",
+      "source": "packages/hoyo-client/starrail-grid-fight.ts"
+    },
+    "starrail-growth": {
+      "description": "米游社与游戏请求：星铁",
+      "source": "packages/hoyo-client/starrail-growth.ts"
+    },
+    "starrail-ledger": {
+      "description": "米游社与游戏请求：星铁",
+      "source": "packages/hoyo-client/starrail-ledger.ts"
+    },
+    "starrail-monthly": {
+      "description": "米游社与游戏请求：星铁 · 月历",
+      "source": "packages/hoyo-client/starrail-monthly.ts"
+    },
+    "starrail-panel": {
+      "description": "米游社与游戏请求：星铁 · 面板",
+      "source": "packages/hoyo-client/starrail-panel.ts"
+    },
+    "starrail-record": {
+      "description": "米游社与游戏请求：星铁",
+      "source": "packages/hoyo-client/starrail-record.ts"
+    },
+    "starrail-rogue": {
+      "description": "米游社与游戏请求：星铁",
+      "source": "packages/hoyo-client/starrail-rogue.ts"
+    },
+    "starrail-roster": {
+      "description": "米游社与游戏请求：星铁",
+      "source": "packages/hoyo-client/starrail-roster.ts"
+    },
+    "zzz-climbing-tower": {
+      "description": "米游社与游戏请求：绝区零",
+      "source": "packages/hoyo-client/zzz-climbing-tower.ts"
+    },
+    "zzz-deadly": {
+      "description": "米游社与游戏请求：绝区零",
+      "source": "packages/hoyo-client/zzz-deadly.ts"
+    },
+    "zzz-exploration": {
+      "description": "米游社与游戏请求：绝区零",
+      "source": "packages/hoyo-client/zzz-exploration.ts"
+    },
+    "zzz-gacha-auth": {
+      "description": "米游社与游戏请求：绝区零 · 抽卡记录",
+      "source": "packages/hoyo-client/zzz-gacha-auth.ts"
+    },
+    "zzz-gacha-link": {
+      "description": "米游社与游戏请求：绝区零 · 抽卡记录",
+      "source": "packages/hoyo-client/zzz-gacha-link.ts"
+    },
+    "zzz-game-record": {
+      "description": "米游社与游戏请求：绝区零 · 游戏",
+      "source": "packages/hoyo-client/zzz-game-record.ts"
+    },
+    "zzz-hollow-zero": {
+      "description": "米游社与游戏请求：绝区零",
+      "source": "packages/hoyo-client/zzz-hollow-zero.ts"
+    },
+    "zzz-holo-boss": {
+      "description": "米游社与游戏请求：绝区零",
+      "source": "packages/hoyo-client/zzz-holo-boss.ts"
+    },
+    "zzz-monthly": {
+      "description": "米游社与游戏请求：绝区零 · 月历",
+      "source": "packages/hoyo-client/zzz-monthly.ts"
+    },
+    "zzz-panel": {
+      "description": "米游社与游戏请求：绝区零 · 面板",
+      "source": "packages/hoyo-client/zzz-panel.ts"
+    },
+    "zzz-shiyu": {
+      "description": "米游社与游戏请求：绝区零",
+      "source": "packages/hoyo-client/zzz-shiyu.ts"
+    },
+    "zzz-tuning": {
+      "description": "米游社与游戏请求：绝区零",
+      "source": "packages/hoyo-client/zzz-tuning.ts"
+    },
+    "zzz-void-front": {
+      "description": "米游社与游戏请求：绝区零",
+      "source": "packages/hoyo-client/zzz-void-front.ts"
+    },
+    "zzz-zenkov": {
+      "description": "米游社与游戏请求：绝区零",
+      "source": "packages/hoyo-client/zzz-zenkov.ts"
+    }
+  },
+  "messages": {
+    "bbs-checkin.text_102f77a733": "大别野",
+    "bbs-checkin.text_14e683c3f2": "官方社区任务状态返回 HTTP 错误。",
+    "bbs-checkin.text_1a05b73370": "社区请求需要在米游社官方客户端处理。",
+    "bbs-checkin.text_45d2c60d6a": "社区任务 Cookie 已失效。",
+    "bbs-checkin.text_467c7ad0b9": "因缘精灵",
+    "bbs-checkin.text_4bcf485973": "社区签到登录凭据已失效，请重新登录当前档案。",
+    "bbs-checkin.text_6aa3df09b8": "社区请求过于频繁，请稍后重试。",
+    "bbs-checkin.text_6b273becc9": "社区请求已取消。",
+    "bbs-checkin.text_6d3d8653d7": "崩坏3",
+    "bbs-checkin.text_6f70b509e8": "星布谷地",
+    "bbs-checkin.text_7deeae4b7e": "崩坏2",
+    "bbs-checkin.text_848515a190": "社区签到需要配对的设备 ID 与已签发的 FP。",
+    "bbs-checkin.text_976c972591": "社区任务状态暂时无法读取。",
+    "bbs-checkin.text_a2927891f0": "星铁",
+    "bbs-checkin.text_a361440f2b": "社区签到提交结果未确认。",
+    "bbs-checkin.text_a6e4fbed57": "未定事件簿",
+    "bbs-checkin.text_b1110352c9": "绝区零",
+    "bbs-checkin.text_c309ee4cda": "官方社区任务状态响应无效。",
+    "bbs-checkin.text_c8412f7c1d": "官方社区接口拒绝请求。",
+    "bbs-checkin.text_ce007da6aa": "社区签到需要归属一致的档案登录凭据。",
+    "bbs-checkin.text_d1597c51ed": "原神",
+    "bbs-checkin.text_f73b03d812": "请选择支持的社区签到分区。",
+    "bbs-forum-posts.text_3b59e5f86f": "暂时无法读取米游社论坛目录。",
+    "bbs-forum-posts.text_4c9d96afdf": "请选择支持的米游社版块。",
+    "bbs-forum-posts.text_a1c6becc82": "米游社论坛目录返回异常 HTTP 响应。",
+    "bbs-forum-posts.text_d6f2d91ea7": "米游社论坛目录返回的数据无效。",
+    "bbs-forum-posts.text_efca073e18": "米游社论坛目录拒绝请求。",
+    "captcha-business.text_7a9c999b3a": "验证码业务接口响应无效。",
+    "captcha-business.text_7d88c6c64a": "验证码业务账号状态已变化。",
+    "captcha-business.text_870449edea": "验证码响应与原请求角色不一致。",
+    "captcha-business.text_870e2a6aeb": "验证码业务接口请求频繁。",
+    "captcha-business.text_96cfb6920a": "验证码业务接口请求未完成。",
+    "captcha-business.text_bae9a27a8d": "官方验证码校验缺少业务凭证。",
+    "captcha-business.text_f0ae20c1eb": "验证码业务接口连接失败。",
+    "captcha-business.text_f65295a4bb": "官方未返回受支持的验证码挑战。",
+    "cloud-genshin-wallet.text_1170e193b3": "请输入有效的云原神凭据。",
+    "cloud-genshin-wallet.text_18590ee0eb": "{label}钱包返回的剩余免费时长无效。",
+    "cloud-genshin-wallet.text_2421bc1596": "{label}钱包返回了无效响应。",
+    "cloud-genshin-wallet.text_2bcd94a82c": "{label}钱包需要额外验证，请在官方客户端处理。",
+    "cloud-genshin-wallet.text_6001502d7a": "云原神浏览器设备标识无效。",
+    "cloud-genshin-wallet.text_70f61ef167": "云原神国际服档案的语言设置无效。",
+    "cloud-genshin-wallet.text_801ae69555": "云原神国际服",
+    "cloud-genshin-wallet.text_8d17468984": "云原神",
+    "cloud-genshin-wallet.text_90aebf1837": "{label}钱包请求过于频繁，请稍后重试。",
+    "cloud-genshin-wallet.text_a43032d39e": "{label}钱包拒绝请求。",
+    "cloud-genshin-wallet.text_ec84e20a79": "暂时无法查询{label}钱包。",
+    "cloud-genshin-wallet.text_fabe920fc2": "{label}钱包返回异常 HTTP 响应。",
+    "cloud-genshin-wallet.text_fc172384f6": "{label}凭据已失效，请在官方客户端重新登录后绑定。",
+    "cloud-zzz-wallet.text_0e5832f176": "云绝区零钱包需要额外验证，请在官方客户端处理。",
+    "cloud-zzz-wallet.text_2e7b160f1a": "云绝区零凭据已失效，请在官方客户端重新登录后绑定。",
+    "cloud-zzz-wallet.text_53978e659e": "云绝区零钱包返回了无效响应。",
+    "cloud-zzz-wallet.text_68a9afe81c": "云绝区零钱包请求过于频繁，请稍后重试。",
+    "cloud-zzz-wallet.text_889267d504": "请输入有效的云绝区零凭据。",
+    "cloud-zzz-wallet.text_a89cc5da36": "云绝区零钱包返回的剩余免费时长无效。",
+    "cloud-zzz-wallet.text_a9b1b1a325": "云绝区零钱包返回异常 HTTP 响应。",
+    "cloud-zzz-wallet.text_d796e8beb1": "云绝区零钱包拒绝请求。",
+    "cloud-zzz-wallet.text_f26d79ea5f": "暂时无法查询云绝区零钱包。",
+    "cloud-zzz-wallet.text_fa1317abca": "云绝区零钱包未返回剩余免费时长。",
+    "cn-read-diagnostics.text_67e59761e6": "[米游社 HTTP]",
+    "credentials.text_30aeb3b0d5": "{target} 换票未成功。",
+    "credentials.text_3920a61482": "档案登录信息缺失或账号归属冲突。",
+    "credentials.text_5ae4bd2792": "换票没有返回有效的 CookieToken。",
+    "credentials.text_624451d9b4": "{target} 换票请求未完成。",
+    "credentials.text_641592e9b6": "{target} 换票超时。",
+    "credentials.text_717358c7ff": "{target} 换票暂时无法核验。",
+    "credentials.text_765c68eea6": "v2 令牌缺少配套的账号 MID。",
+    "credentials.text_79193902c9": "{target} 换票需要在官方客户端完成验证。",
+    "credentials.text_8809dadbcc": "{target} 换票响应无法读取。",
+    "credentials.text_ab7cc83061": "换票没有返回有效的 LToken。",
+    "credentials.text_b3aa32f3ae": "令牌交换返回的账号身份与档案不一致。",
+    "credentials.text_e7c8543f5a": "{target} 换票 HTTP 请求失败。",
+    "daily-note.text_26d2b74fe7": "委托 {value1}",
+    "daily-note.text_4794ac2548": "官方体力响应缺少有效的当前值或上限。",
+    "daily-note.text_b45863fd07": "体力响应的游戏或区服与档案不一致。",
+    "daily-note.text_ebad213c04": "体力响应的角色与档案不一致。",
+    "device-fingerprint.text_8e17707fac": "设备指纹申请未完成，请稍后重试。",
+    "device-fingerprint.text_e45ff97bd2": "自动设备身份无效。",
+    "errors.text_08fac30eb6": "当前绝区零国际服档案需要手动录入官方抽卡链接。",
+    "errors.text_c8677c2a97": "验证码尚未完成，原社区请求未被受理，可重新发起。",
+    "gacha-auth-request.text_19d060bfda": "星铁流水",
+    "gacha-auth-request.text_7ee4355f5c": "{game}抽卡",
+    "gacha-auth-request.text_8d23d552a3": "星铁流水需要有效的档案登录凭据。",
+    "gacha-auth-request.text_d3a55d02ae": "{subject}需要归属一致的档案登录凭据。",
+    "game-checkin.text_06f1fca3ad": "{name}签到状态暂时无法读取。",
+    "game-checkin.text_2375fa68e4": "{name}签到",
+    "game-checkin.text_2d21f06659": "当前签到的人工验证结果格式无效。",
+    "game-checkin.text_3d0f75c29c": "官方{subject}返回 HTTP 错误。",
+    "game-checkin.text_68aa39d9ad": "{name}签到已取消。",
+    "game-checkin.text_6d3d8653d7": "崩坏3",
+    "game-checkin.text_a2927891f0": "星铁",
+    "game-checkin.text_a552ed7cd5": "请在米游社官方客户端完成{name}签到验证。",
+    "game-checkin.text_a6e4fbed57": "未定事件簿",
+    "game-checkin.text_b1110352c9": "绝区零",
+    "game-checkin.text_d1597c51ed": "原神",
+    "game-checkin.text_db5ac92505": "游戏签到需要当前档案中已确认的国服角色和区服。",
+    "game-checkin.text_e4e94cc9b7": "{name}签到提交结果未确认。",
+    "game-checkin.text_e4f69cc76f": "官方{name}签到响应无效。",
+    "game-checkin.text_e5b1fba52e": "崩坏学园2",
+    "game-checkin.text_e9d7dda1a2": "官方{subject}拒绝请求。",
+    "game-checkin.text_f4e5518f44": "当前档案的签到 Cookie 或设备字段无效。",
+    "game-record.text_0a991a8e6c": "迷宫诡域",
+    "game-record.text_0b3ee04b94": "原神面板",
+    "game-record.text_16a75e0027": "拟真鏖战试炼",
+    "game-record.text_20c322406a": "当前档案缺少设备 ID，请重新扫码登录后查询{label}。",
+    "game-record.text_2551c3eb77": "绝区零月报",
+    "game-record.text_291200ede8": "模拟宇宙查询期次无效。",
+    "game-record.text_29e80a0630": "拟境湮灭战",
+    "game-record.text_341ac2816f": "绝区零战绩",
+    "game-record.text_3cfdf51fa0": "绝区零战绩查询期次无效。",
+    "game-record.text_42a387e33f": "绝区零邦布",
+    "game-record.text_5a0e5f08d5": "星铁面板数据未公开或未绑定角色。",
+    "game-record.text_656c331127": "官方{label}响应格式无效。",
+    "game-record.text_68bc8c9666": "原石札记",
+    "game-record.text_6b92956648": "官方{subject}的 Cookie 已失效。",
+    "game-record.text_6bb5243e98": "货币战争战绩",
+    "game-record.text_6cc7ff1ae6": "绝区零面板代理人编号无效。",
+    "game-record.text_6ce5363a7d": "星铁面板",
+    "game-record.text_7121d16ea8": "星铁月收入月份无效。",
+    "game-record.text_7a715ff587": "官方{label}接口返回 HTTP 错误。",
+    "game-record.text_7c6d31e82d": "{label}查询",
+    "game-record.text_7dbba95ad1": "官方{label}响应缺少有效数据。",
+    "game-record.text_82f72c6585": "深境螺旋",
+    "game-record.text_86bf7c9458": "临界推演",
+    "game-record.text_8cb870ae6a": "幻想真境剧诗",
+    "game-record.text_92f4941f67": "星铁月收入",
+    "game-record.text_974ea07349": "原神面板角色编号无效。",
+    "game-record.text_99b53fb45b": "官方{subject}请求过于频繁，请稍后重试。",
+    "game-record.text_9a2fe7ac88": "{label}需使用档案中已同步的国服角色。",
+    "game-record.text_a00ef87f25": "米游社账号异常，暂时无法查询{value1}。",
+    "game-record.text_a2a4c50077": "原神战绩",
+    "game-record.text_ad3b2b17cf": "绝区零区域收集",
+    "game-record.text_aea96e3b9b": "当前档案的 Cookie 或设备字段无效。",
+    "game-record.text_b25bca67a8": "七圣召唤收藏",
+    "game-record.text_b28f638e75": "官方{label}接口拒绝请求。",
+    "game-record.text_c0ef333bd0": "星铁宇宙战绩",
+    "game-record.text_c0f09da0e9": "官方{subject}请求未完成。",
+    "game-record.text_c3354e0ec8": "幽境危战",
+    "game-record.text_ce4af56042": "绝区零面板",
+    "game-record.text_d6d2aa99fd": "体力",
+    "game-record.text_df1d8641e0": "官方{subject}要求验证，请在官方客户端处理后重试。",
+    "game-record.text_e03f7c80cf": "{subject}仅支持档案中已确认的国服游戏角色和区服。",
+    "game-record.text_e081ffda7d": "{subject}已取消。",
+    "game-record.text_e7cfad0439": "原石札记月份无效。",
+    "game-record.text_e865364b94": "零号空洞：枯萎苗圃",
+    "game-record.text_f30a132c32": "深境螺旋查询期次无效。",
+    "game-record.text_f61cd5e41f": "星铁角色名册",
+    "game-record.text_fa0be28724": "七圣召唤牌组",
+    "game-record.text_fc57224a51": "零号空洞：迷失之地",
+    "genshin-backpack.text_0418cc4709": "{kind}的 Cookie 或设备信息无效，请检查当前档案。",
+    "genshin-backpack.text_126e2a3c5f": "原神养成计算的目标等级或配方无效。",
+    "genshin-backpack.text_2957fe507f": "星铁养成计算",
+    "genshin-backpack.text_2a3c6b8bff": "原神背包",
+    "genshin-backpack.text_3985e7b035": "原神背包的养成计算配方无效。",
+    "genshin-backpack.text_3fcddb2f58": "官方{kind}响应格式或角色身份无效。",
+    "genshin-backpack.text_42c50e3155": "原神背包查询",
+    "genshin-backpack.text_5a46ba7be9": "官方{kind}接口拒绝请求。",
+    "genshin-backpack.text_79836ab0b2": "{kind}仅支持当前档案中已确认的国服原神角色。",
+    "genshin-backpack.text_a38207a01f": "官方{kind}请求未完成。",
+    "genshin-backpack.text_af8d452502": "官方{kind}接口返回 HTTP 错误。",
+    "genshin-backpack.text_c2122ca5f3": "官方养成计算器未返回账号背包，请在米游社核对当前角色绑定后重试。",
+    "genshin-backpack.text_d3694c2333": "原神养成计算",
+    "genshin-blueprint.text_16b3d8035b": "尘歌壶模数",
+    "genshin-blueprint.text_1b5e488ddf": "尘歌壶模数须为 10 到 15 位数字。",
+    "genshin-blueprint.text_8552020fa7": "尘歌壶模数计算仅支持当前档案中已确认的国服原神角色。",
+    "genshin-blueprint.text_c7bcc8d301": "官方尘歌壶模数响应中的摆设或材料无效。",
+    "genshin-gacha.text_0875a96f0e": "原神抽卡响应的账号或区服与档案不一致。",
+    "genshin-gacha.text_12af51d8d7": "原神抽卡接口响应格式有误。",
+    "genshin-gacha.text_12da1eff35": "原神抽卡的档案设备信息无效。",
+    "genshin-gacha.text_203e0e6c84": "原神卡池包含无效记录。",
+    "genshin-gacha.text_2d9e085462": "原神抽卡登录响应的凭据或角色身份无效。",
+    "genshin-gacha.text_300b6634fe": "常驻",
+    "genshin-gacha.text_43424ca534": "原神抽卡请求已取消。",
+    "genshin-gacha.text_46945a7aad": "原神抽卡请求间隔或分页上限无效。",
+    "genshin-gacha.text_4fe131173e": "武器",
+    "genshin-gacha.text_60a2671fe4": "原神抽卡响应缺少有效数据。",
+    "genshin-gacha.text_7fc7e6e79c": "原神抽卡请求未完成。",
+    "genshin-gacha.text_89d0456c9a": "原神抽卡列表超过分页上限，本次未取完。",
+    "genshin-gacha.text_8f161c1237": "集录",
+    "genshin-gacha.text_a1797bcbe4": "原神官方抽卡仅支持档案中已确认的国服角色与区服。",
+    "genshin-gacha.text_afa5d7703c": "原神抽卡响应的分页列表无效。",
+    "genshin-gacha.text_c47b54e84e": "角色",
+    "genshin-gacha.text_ce1ee3106c": "原神卡池返回了无效编号、账号或分类的记录。",
+    "genshin-gacha.text_d1597c51ed": "原神",
+    "genshin-gacha.text_e42ce73091": "原神抽卡响应的下一页游标无效。",
+    "genshin-gacha.text_e810ccba12": "原神抽卡接口拒绝请求。",
+    "genshin-gacha.text_f4f1c8af84": "原神抽卡接口返回 HTTP 错误。",
+    "genshin-gcg.text_2a4b4c6b6a": "七圣召唤牌组的卡牌格式无效。",
+    "genshin-gcg.text_4d7a4f23ec": "七圣召唤牌组的卡牌列表格式无效。",
+    "genshin-gcg.text_526cbdd718": "七圣召唤响应的账号角色或区服与已选档案不一致。",
+    "genshin-gcg.text_71808bfbd1": "七圣召唤牌组编号缺失或重复。",
+    "genshin-gcg.text_80a3559bc3": "七圣召唤收藏的持有张数格式无效。",
+    "genshin-gcg.text_9dbabc8b64": "七圣召唤响应的角色信息无效。",
+    "genshin-gcg.text_a2cefc4926": "七圣召唤响应缺少有效的牌组列表。",
+    "genshin-gcg.text_e2c87f1dcc": "七圣召唤收藏响应未返回完整卡牌列表。",
+    "genshin-hard-challenge.text_8e16b85d6c": "幽境危战响应缺少期次数据。",
+    "genshin-hard-challenge.text_a75ac03971": "幽境危战增益",
+    "genshin-hard-challenge.text_c3354e0ec8": "幽境危战",
+    "genshin-hard-challenge.text_ccd9b77241": "幽境危战查询期次无效。",
+    "genshin-miniapp.text_049644f776": "外部抽卡记录的 UID 与当前档案不一致。",
+    "genshin-miniapp.text_2b4fd575dd": "外部抽卡记录请求已取消或超时。",
+    "genshin-miniapp.text_37850bec03": "外部抽卡记录格式无效。",
+    "genshin-miniapp.text_4fd7f16c4d": "外部抽卡记录请求已取消。",
+    "genshin-miniapp.text_5cfb0de3a6": "外部抽卡记录文件过大。",
+    "genshin-miniapp.text_68dcc319d1": "外部抽卡记录的编号、名称、类别、星级或时间无效。",
+    "genshin-miniapp.text_745048fb7a": "外部服务没有返回有效的抽卡列表。",
+    "genshin-miniapp.text_95bba08030": "外部抽卡记录包含无效或不受支持的卡池编号。",
+    "genshin-miniapp.text_aa04f11a64": "提瓦特小助手暂无此账号的抽卡记录，本地记录已保留。",
+    "genshin-miniapp.text_b17fb797e2": "原神官方登录未返回抽卡凭据。",
+    "genshin-miniapp.text_ccefe3e714": "外部抽卡记录导出失败。",
+    "genshin-miniapp.text_da2004faf0": "外部服务未返回有效的抽卡记录 JSON。",
+    "genshin-miniapp.text_dd015b8345": "外部服务未返回抽卡记录文件。",
+    "genshin-miniapp.text_df5a53d65a": "外部抽卡记录请求未完成。",
+    "genshin-miniapp.text_fc651b4ea5": "外部抽卡记录缺少本档案 UID 或属于其他账号。",
+    "genshin-monthly.text_6f52cc4fa9": "官方原石札记数据无效。",
+    "genshin-panel.text_0b3ee04b94": "原神面板",
+    "genshin-panel.text_0fe9163af1": "原神天赋角色编号重复。",
+    "genshin-panel.text_298d166075": "原神面板角色编号缺失或重复。",
+    "genshin-panel.text_41b1813f8f": "{label}响应的角色或服务器不一致。",
+    "genshin-panel.text_45f231eb2d": "{label}响应的角色信息无效。",
+    "genshin-panel.text_a2a4c50077": "原神战绩",
+    "genshin-panel.text_a6d58d5007": "原神面板响应缺少有效角色列表。",
+    "genshin-panel.text_b6799b3176": "原神月谕圣牌",
+    "genshin-panel.text_b8c7872d89": "原神面板详情中的角色编号不一致。",
+    "genshin-panel.text_fe30b5a527": "原神面板角色详情不完整。",
+    "genshin-pay-log.text_fa4962f757": "{value1}月",
+    "genshin-team-damage.text_1db0db0de7": "提瓦特小助手请求未完成。",
+    "genshin-team-damage.text_435ca78aaa": "提瓦特小助手未返回有效的计算数据。",
+    "genshin-team-damage.text_4cbfe44036": "提瓦特小助手请求已取消。",
+    "genshin-team-damage.text_5501cdc4e9": "提瓦特小助手未返回有效的计算结果。",
+    "genshin-team-damage.text_59ce920bd4": "提瓦特小助手返回的 UID 与当前原神档案不一致。",
+    "genshin-team-damage.text_a28fb1470b": "提瓦特小助手暂时无法计算这支队伍。",
+    "genshin-team-damage.text_b00b203061": "提瓦特小助手计算超时。",
+    "genshin-team-damage.text_eb579cf89a": "提瓦特小助手接口未接受请求。",
+    "genshin-world-boss.text_30ef79f6c9": "原神世界 BOSS 响应的角色与当前档案不一致。",
+    "genshin-world-boss.text_647083b4e7": "原神世界 BOSS 响应的探索区域格式无效。",
+    "genshin-world-boss.text_6cb61a9a3a": "原神世界 BOSS 响应的区服与当前档案不一致。",
+    "genshin-world-boss.text_75ba12b239": "原神世界 BOSS 响应的区域或敌人名称无效。",
+    "genshin-world-boss.text_a8ccb77781": "原神世界 BOSS 响应的敌人记录格式无效。",
+    "genshin-world-boss.text_be5a4d0107": "原神世界 BOSS 响应的游戏与当前档案不一致。",
+    "genshin-world-boss.text_c215b18b32": "原神世界 BOSS 响应的敌人列表格式无效。",
+    "genshin-world-boss.text_f97a1e44ef": "原神世界 BOSS 响应的角色信息无效。",
+    "genshin-world-boss.text_fbb96dc152": "原神世界 BOSS 响应缺少有效数据。",
+    "genshin-world-boss.text_fd31ffc0bf": "原神世界 BOSS 响应的击杀数无效。",
+    "hoyolab-bh3-checkin.text_6d3d8653d7": "崩坏3",
+    "hoyolab-checkin-transport.text_3529a2f6a7": "绝区零国际服便笺",
+    "hoyolab-checkin-transport.text_3d0f75c29c": "官方{subject}返回 HTTP 错误。",
+    "hoyolab-checkin-transport.text_691992adbc": "官方{subject}响应无效。",
+    "hoyolab-checkin-transport.text_87fa9438da": "国际服请求需要同档案已核验的 HoYoLAB 登录凭据和有效语言。",
+    "hoyolab-checkin-transport.text_98c954c02f": "绝区零国际服角色目录",
+    "hoyolab-checkin-transport.text_b0adb2f5a6": "国际服浏览器会话 ID 无效。",
+    "hoyolab-checkin-transport.text_be525019c4": "官方{subject}结果未确认。",
+    "hoyolab-checkin-transport.text_c8da6cdd22": "官方{subject}返回了意外的地址。",
+    "hoyolab-checkin-transport.text_cbe06a21d0": "官方{subject}查询未完成。",
+    "hoyolab-checkin-transport.text_e8a41fe783": "绝区零国际服战绩",
+    "hoyolab-checkin-transport.text_e9d7dda1a2": "官方{subject}拒绝请求。",
+    "hoyolab-checkin-transport.text_f110be184c": "国际服角色目录不支持当前游戏。",
+    "hoyolab-checkin-transport.text_f1d3816702": "HoYoLAB 请求地址无效。",
+    "hoyolab-checkin-transport.text_fddc744949": "绝区零国际服月报",
+    "hoyolab-cookie.text_0a50e54fa2": "官方通行证返回的国际服 Cookie 归属证明无效。",
+    "hoyolab-cookie.text_3680405b29": "官方通行证需要额外验证，请在 HoYoLAB 处理。",
+    "hoyolab-cookie.text_58cea26160": "官方通行证未接受该国际服 Cookie。",
+    "hoyolab-cookie.text_5ead776a60": "请输入账号归属一致的国际服 Cookie。",
+    "hoyolab-cookie.text_b4daa24f80": "官方通行证国际服 Cookie 验证返回 HTTP 错误。",
+    "hoyolab-cookie.text_ff0ec0ee90": "国际服 Cookie 归属验证请求未完成。",
+    "hoyolab-default-checkin.text_2de6071f91": "{name}国际服签到提交",
+    "hoyolab-default-checkin.text_34486d64ee": "{name}国际服签到状态",
+    "hoyolab-default-checkin.text_3661f1e5e0": "{name}国际服角色目录",
+    "hoyolab-default-checkin.text_691992adbc": "官方{subject}响应无效。",
+    "hoyolab-default-checkin.text_85e5969f7c": "{name}国际服默认角色无法安全满足签到黑名单。",
+    "hoyolab-default-checkin.text_dc6c3b9e24": "{name}国际服当前账号状态无法发起签到。",
+    "hoyolab-genshin-checkin.text_d1597c51ed": "原神",
+    "hoyolab-role-checkin.text_2de6071f91": "{name}国际服签到提交",
+    "hoyolab-role-checkin.text_34486d64ee": "{name}国际服签到状态",
+    "hoyolab-role-checkin.text_3661f1e5e0": "{name}国际服角色目录",
+    "hoyolab-role-checkin.text_691992adbc": "官方{subject}响应无效。",
+    "hoyolab-role-checkin.text_7eb2cbbb20": "{name}国际服签到需要当前 HoYoLAB 档案的绑定角色，并须符合签到黑名单。",
+    "hoyolab-role-checkin.text_a2927891f0": "星铁",
+    "hoyolab-role-checkin.text_a6e4fbed57": "未定事件簿",
+    "hoyolab-role-checkin.text_b1110352c9": "绝区零",
+    "index.text_0b089c48f2": "档案已变更，请重新发起请求。",
+    "index.text_0cbed241c8": "续期后星铁档案的角色已变更，请重新更新抽卡记录。",
+    "index.text_15a4e9b61d": "体力查询的角色来自不同档案快照。",
+    "index.text_2a97f36b30": "旧 Cookie 已失效，无法自动续期，请扫码登录。",
+    "index.text_3726fda393": "档案在刷新后已变更。",
+    "index.text_3a615b3979": "游戏档案目录已变更，请重新发起请求。",
+    "index.text_4912ff14dd": "档案 Cookie 与当前登录账号不一致，请刷新或重新扫码登录。",
+    "index.text_4cd7171655": "米游社角色资料不完整。",
+    "index.text_50b01a077d": "未配置登录凭据刷新服务。",
+    "index.text_5a3e83688b": "未配置角色档案存储。",
+    "index.text_5da7db9e85": "米游社角色请求未完成。",
+    "index.text_6e2d2ce564": "米游社角色响应格式有误。",
+    "index.text_71220a29a5": "换票后的档案角色无法确认，请重新发起请求。",
+    "index.text_819bb9ded1": "游戏档案已变更，请重新发起请求。",
+    "index.text_96aeb69a7e": "续期后绝区零档案的角色已变更，请重新获取抽卡链接。",
+    "index.text_97be1ddb31": "档案 Cookie 无效。",
+    "index.text_9f552559dc": "续期后原神档案的角色已变更，请重新发起请求。",
+    "index.text_a244dc1d4d": "绝区零档案角色已变化，请重新发起请求。",
+    "index.text_b459dd4576": "续期后星铁档案角色已变更，请重新查询。",
+    "index.text_b88632271e": "米游社角色列表格式有误。",
+    "index.text_bc0b12a479": "米游社角色查询失败。",
+    "index.text_c4336e65d1": "该角色已不在续期后的档案中，请重新查询。",
+    "index.text_dda40ae7ab": "米游社返回 HTTP 错误。",
+    "index.text_e5f07e242e": "无法刷新当前档案的 Cookie，请确认登录状态后重试。",
+    "index.text_eef3f07f3c": "游戏类型无效。",
+    "legacy-cookie-token.text_00ebe861dc": "官方通行证 Cookie 验证请求未完成。",
+    "legacy-cookie-token.text_04aeadbbf8": "请输入有效的国服 v1 Cookie Token 和通行证 UID。",
+    "legacy-cookie-token.text_0cb89bd1c0": "官方通行证返回的 Cookie 身份证明无效。",
+    "legacy-cookie-token.text_15849001cc": "官方通行证要求额外验证，请在官方客户端处理。",
+    "legacy-cookie-token.text_2390c466ba": "官方通行证 Cookie 验证返回 HTTP 错误。",
+    "legacy-cookie-token.text_b3fde6aa06": "官方通行证未接受该 Cookie。",
+    "miyoushe-exchange.text_2d3785b72a": "当前档案的商城 Cookie 已失效，请重新登录。",
+    "miyoushe-exchange.text_339bacf403": "收",
+    "miyoushe-exchange.text_3516129b71": "请先核验当前档案绑定的设备。",
+    "miyoushe-exchange.text_3cac3a9428": "商城验证码校验未完成。",
+    "miyoushe-exchange.text_4a30deb8c5": "暂时无法读取兑换所需的账号信息。",
+    "miyoushe-exchange.text_5a564f3ae0": "当前档案缺少有效的商城 Cookie，请重新登录。",
+    "miyoushe-exchange.text_6a6523693b": "商城请求频繁，请稍后再试。",
+    "miyoushe-exchange.text_71b97b5205": "商品编号无效。",
+    "miyoushe-exchange.text_810c444061": "请在米游社官方客户端完成验证后重试。",
+    "miyoushe-exchange.text_b6acc481f2": "商城已关窗，未提交。",
+    "miyoushe-exchange.text_b8967756a3": "商城验证码校验响应无效。",
+    "miyoushe-exchange.text_bd9b3017f1": "兑换商品编号无效。",
+    "miyoushe-exchange.text_c57427e3c7": "兑换目标与商品类型不匹配。",
+    "miyoushe-exchange.text_e5919ff8b4": "商城验证码申请未完成。",
+    "miyoushe-exchange.text_e736eb4674": "商城验证码业务账号或频率限制，停止重试。",
+    "miyoushe-shop.text_19b2a64595": "米游社商城暂时不可用。",
+    "miyoushe-shop.text_6a6523693b": "商城请求频繁，请稍后再试。",
+    "miyoushe-shop.text_7ed5f7bf80": "暂时无法连接米游社商城。",
+    "miyoushe-shop.text_9ef1049ddc": "商城返回的数据格式有误。",
+    "miyoushe-shop.text_d80df97840": "商品不存在或已下架。",
+    "passport-qr.text_2f0d652824": "扫码登录未返回有效的米哈游通行证二维码地址。",
+    "passport-qr.text_3780a74cd0": "官方扫码登录返回了冲突的会话状态。",
+    "passport-qr.text_4215c2a56e": "扫码确认缺少可续期的登录令牌。",
+    "passport-qr.text_4abb92c8fb": "官方扫码登录二维码与会话票据不一致。",
+    "passport-qr.text_4cd4557440": "官方扫码登录要求额外验证，请在官方客户端处理。",
+    "passport-qr.text_4fa98861ab": "已取消扫码登录。",
+    "passport-qr.text_57613478ec": "扫码会话已结束或无效。",
+    "passport-qr.text_5e8371eeda": "扫码确认未提供唯一的可续期登录令牌。",
+    "passport-qr.text_60ada1dd3e": "官方扫码登录请求超时。",
+    "passport-qr.text_64800e273b": "官方扫码登录接口未接受本次请求。",
+    "passport-qr.text_66ff360cb8": "官方扫码登录请求未完成。",
+    "passport-qr.text_682fecd79d": "官方扫码二维码未使用可续期的 App 登录流程。",
+    "passport-qr.text_884cb3d5e5": "官方扫码登录请求过于频繁，请稍后重试。",
+    "passport-qr.text_92ec519f4a": "扫码确认缺少有效的账号 MID。",
+    "passport-qr.text_9caf6b7d06": "扫码登录需要当前档案的有效设备 ID。",
+    "passport-qr.text_a59425274e": "扫码登录的官方响应超过大小上限。",
+    "passport-qr.text_a729888f25": "扫码确认返回的账号标识缺失或不一致。",
+    "passport-qr.text_b8ee8a6b89": "扫码登录已停止。",
+    "passport-qr.text_bcc38b2d51": "官方扫码登录要求实名验证，请在官方客户端处理。",
+    "passport-qr.text_de9ca97ec8": "官方扫码二维码的有效期无效。",
+    "passport-qr.text_e54134365d": "二维码已过期，请重新发起扫码登录。",
+    "passport-qr.text_f602a6e540": "官方扫码登录状态无法识别，请重新发起扫码登录。",
+    "passport-qr.text_fb32829c08": "扫码会话正在查询。",
+    "passport-qr.text_fbec16341d": "扫码确认返回的令牌类型或格式不一致。",
+    "passport-qr.text_fddde555ea": "官方扫码登录响应缺少二维码数据。",
+    "record-fingerprint.text_725972774b": "米游社查询设备指纹申请失败，请稍后重试。",
+    "redeem-preview.games.text_4548f2ad35": "星穹铁道",
+    "redeem-preview.games.text_46f6225ff5": "崩铁",
+    "redeem-preview.games.text_6d3d8653d7": "崩坏3",
+    "redeem-preview.games.text_6e7dbd669b": "前瞻 特别节目",
+    "redeem-preview.games.text_8b0c294909": "崩坏星穹铁道",
+    "redeem-preview.games.text_8cfc959b53": "崩坏：星穹铁道",
+    "redeem-preview.games.text_95cec3b66b": "绝区",
+    "redeem-preview.games.text_a2927891f0": "星铁",
+    "redeem-preview.games.text_b1110352c9": "绝区零",
+    "redeem-preview.games.text_d1597c51ed": "原神",
+    "redeem-preview.games.text_df43f0569d": "崩三",
+    "redeem-preview.games.text_e3173a70bd": "崩坏三",
+    "redeem-preview.http.text_131ede9f29": "官方接口响应过大",
+    "redeem-preview.http.text_8f7fb7b501": "官方接口响应中断",
+    "redeem-preview.http.text_a5c7a696a8": "不支持的官方查询地址",
+    "redeem-preview.http.text_a7934a720b": "官方接口 HTTP {statusCode}",
+    "redeem-preview.official.text_03eaaa1efb": "{endpoint}：请求及直连重试均失败（{detail}；{value3}）",
+    "redeem-preview.official.text_08d0d3b14d": "{version} 前瞻 特别节目",
+    "redeem-preview.official.text_1c9cc227ad": "官方接口：{value1}",
+    "redeem-preview.official.text_1cf0e42297": "官方接口 HTTP {status}",
+    "redeem-preview.official.text_665d0143ee": "官方兑换码列表格式异常",
+    "redeem-preview.official.text_6916a57e6e": "官方活动详情暂不可用，请稍后重试",
+    "redeem-preview.official.text_6f83a34202": "返回格式异常",
+    "redeem-preview.official.text_8be5f4f843": "官方活动列表格式异常",
+    "redeem-preview.official.text_b1978d89b1": "活动发现不完整：{value1}",
+    "redeem-preview.official.text_b8c6a61c9f": "官方接口回包地址不一致",
+    "redeem-preview.official.text_e322210fc6": "官方接口响应格式异常或超限",
+    "redeem-preview.official.text_e512cf016f": "超时",
+    "redeem-preview.planet-launch.text_3220c0ee9b": "《星布谷地》公测前瞻兑换码",
+    "redeem-preview.planet-launch.text_49bbfc5d10": "兑换方式：游戏内【设置】—【账号】—【兑换码】，奖励在飞件箱领取。",
+    "redeem-preview.planet-launch.text_538aa1829d": "本次公测兑换码已过期。",
+    "redeem-preview.planet-launch.text_6470d3adae": "有效期至：2027-01-03 10:00:00 前（北京时间）",
+    "redeem-preview.planet-launch.text_774a7bbaca": "官方页面：https://www.miyoushe.com/planet/article/79270201",
+    "redeem-preview.planet-launch.text_777be4e7d1": "公测开服后可兑换，公测日期：2026年12月4日。",
+    "redeem-preview.planet-launch.text_7d4c901997": "奇物海哨×10",
+    "redeem-preview.planet-launch.text_fe2d59990d": "有效期来源：https://www.miyoushe.com/planet/article/79269582",
+    "redeem-preview.service.text_0aaab819f2": "本次前瞻兑换码已过期，请等待下一版本前瞻。",
+    "redeem-preview.service.text_19d5ed5edd": "官方尚未公布兑换码",
+    "redeem-preview.service.text_2a6e10e892": "官方未明确公布失效时间，请及时兑换。",
+    "redeem-preview.service.text_3298b9735c": "有效期来源：{expirySource}",
+    "redeem-preview.service.text_359268b261": "暂未找到当前版本的官方前瞻兑换码页面",
+    "redeem-preview.service.text_4827648c81": "{title}\n{reason}，请稍后再查。",
+    "redeem-preview.service.text_521a32bc59": "{name} {newestVersion} 版本前瞻",
+    "redeem-preview.service.text_61a96a0d13": "尚未获取到新版本的官方兑换码，请等待后续公布。",
+    "redeem-preview.service.text_63da29d5f7": "特别节目于 {end}（北京时间）结束。{reason}",
+    "redeem-preview.service.text_68077b9caf": "{title}\n官方来源查询失败，请稍后重试。\n{reason}",
+    "redeem-preview.service.text_76e449bc9c": "兑换码尚未发放。",
+    "redeem-preview.service.text_796fdd946e": "暂未找到官方公布的兑换码有效期，请查看官方活动页。",
+    "redeem-preview.service.text_8ffe9af59e": "有效期至：{text}（北京时间）",
+    "redeem-preview.service.text_9f92adbb68": "官方页面：{source}",
+    "redeem-preview.service.text_a96bfac325": "尚未接入该游戏的官方兑换码来源",
+    "redeem-preview.service.text_a9a43c79eb": "{gameName}前瞻兑换码",
+    "redeem-preview.service.text_b43efd3db4": "官方接口暂不可用",
+    "redeem-preview.service.text_bba8200d55": "该游戏的官方来源尚未接入",
+    "redeem-preview.service.text_c11f022b8d": "前瞻尚未开始，兑换码尚未发放",
+    "redeem-preview.service.text_c2e056c9fa": "官方公布的兑换码有效期无法识别，请查看官方活动页。",
+    "redeem-preview.service.text_cfdabe5eca": "兑换码活动记录格式无效",
+    "redeem-preview.service.text_d9da937f01": "官宣 {start}（北京时间）开播，兑换码尚未发放",
+    "redeem-submit.text_d1b88f9b64": "兑换角色不属于当前 HoYoLAB 档案。",
+    "registration-time.text_20a2a5a123": "注册时间活动登录未返回会话凭据。",
+    "registration-time.text_23a16bc4fc": "注册时间活动接口未返回有效数据。",
+    "registration-time.text_4834eb3f21": "注册时间活动接口请求失败。",
+    "registration-time.text_4e27f9cdde": "注册时间活动数据格式无效。",
+    "registration-time.text_66bf6927cf": "注册时间查询的账号或角色区域无效。",
+    "registration-time.text_891a938545": "活动登录返回的角色与当前档案不一致。",
+    "registration-time.text_e90387a2de": "注册时间活动数据缺失。",
+    "starrail-challenge.text_16c751a316": "星铁挑战战绩",
+    "starrail-challenge.text_2f183167d3": "官方星铁挑战战绩响应缺少有效数据。",
+    "starrail-challenge.text_476f451d7b": "官方星铁战绩返回的区服与当前档案不一致。",
+    "starrail-challenge.text_594b1c433e": "请核对档案中的星铁角色与国服区服。",
+    "starrail-challenge.text_633d6200dd": "官方星铁挑战战绩返回 HTTP 错误。",
+    "starrail-challenge.text_82bbd1f73d": "官方星铁战绩返回的角色与当前档案不一致。",
+    "starrail-challenge.text_83db12b536": "官方星铁挑战战绩请求未完成。",
+    "starrail-challenge.text_a9e2b58042": "当前档案的战绩 Cookie 或设备字段无效。",
+    "starrail-challenge.text_b670c6aa4e": "官方星铁挑战战绩响应格式无效。",
+    "starrail-challenge.text_dba87bf902": "官方星铁挑战战绩拒绝请求。",
+    "starrail-challenge.text_df83a69be3": "官方星铁战绩未公开、角色未绑定或未开放此项详细战绩。",
+    "starrail-challenge.text_f1e28e5bcc": "星铁挑战战绩查询类型无效。",
+    "starrail-gacha.text_0320ce8fa1": "星铁抽卡接口拒绝请求。",
+    "starrail-gacha.text_04ff2d3528": "星铁卡池统计缺少有效的卡池编号。",
+    "starrail-gacha.text_125e12ec17": "星铁活动登录没有返回活动凭据。",
+    "starrail-gacha.text_1ed006b38a": "联动角色跃迁",
+    "starrail-gacha.text_21ad31d679": "卡池统计",
+    "starrail-gacha.text_273b38ed64": "星铁五星列表包含无效条目。",
+    "starrail-gacha.text_27445215c7": "星铁抽卡响应的抽数无效。",
+    "starrail-gacha.text_3514254196": "星铁抽卡简要统计格式有误。",
+    "starrail-gacha.text_3652110bc3": "星铁抽卡响应缺少活动数据。",
+    "starrail-gacha.text_3cf5e6e7e1": "常驻跃迁",
+    "starrail-gacha.text_4f57c24f65": "星铁活动请求的档案 Cookie 或间隔无效。",
+    "starrail-gacha.text_518156fa06": "星铁抽卡接口响应格式有误。",
+    "starrail-gacha.text_52a41f0bbe": "星铁五星列表缺少明确的分页状态。",
+    "starrail-gacha.text_5a3c1d5e15": "简要统计",
+    "starrail-gacha.text_62eebc099d": "星铁官方小程序仅支持已确认的国服星铁档案区服。",
+    "starrail-gacha.text_6d6c9e4930": "星铁抽卡查询",
+    "starrail-gacha.text_6f94ca5c8d": "星铁抽卡请求已取消。",
+    "starrail-gacha.text_7b034fc2a6": "星铁五星列表的下一页游标缺失或重复。",
+    "starrail-gacha.text_80a6980896": "五星列表",
+    "starrail-gacha.text_8b1fff636e": "星铁抽卡请求未完成。",
+    "starrail-gacha.text_8f0536ad5e": "联动光锥跃迁",
+    "starrail-gacha.text_909ed726f9": "星铁抽卡接口返回 HTTP 错误。",
+    "starrail-gacha.text_a9bb7e0335": "光锥活动跃迁",
+    "starrail-gacha.text_b1c30ac953": "星铁五星记录或编号无效。",
+    "starrail-gacha.text_b5c16415a4": "新手跃迁",
+    "starrail-gacha.text_cf9f54731e": "星铁档案 Cookie 格式无效。",
+    "starrail-gacha.text_e37f4a45c0": "星铁抽卡响应缺少有效的{label}。",
+    "starrail-gacha.text_e568721bec": "星铁五星列表超过分页上限，本次未取完。",
+    "starrail-gacha.text_ebe9736b22": "角色活动跃迁",
+    "starrail-grid-fight.text_97e68f7926": "官方货币战争战绩格式无效。",
+    "starrail-grid-fight.text_f17aa157af": "货币战争回应的角色或区服与当前档案不一致。",
+    "starrail-growth.text_0f79801a1e": "米游社未返回该角色的完整主行迹。",
+    "starrail-growth.text_1695f4e124": "额外行迹",
+    "starrail-growth.text_2957fe507f": "星铁养成计算",
+    "starrail-growth.text_2d96229fd3": "星铁养成的角色或目标等级无效。",
+    "starrail-growth.text_4f052158b1": "已装备光锥",
+    "starrail-growth.text_6d8c868f52": "战技",
+    "starrail-growth.text_850933abee": "官方星铁养成计算响应格式无效。",
+    "starrail-growth.text_85f903a038": "星铁养成需要已同步的本人国服星铁档案。",
+    "starrail-growth.text_866e2e6d67": "天赋",
+    "starrail-growth.text_975639da14": "官方星铁养成响应的角色或区服与当前档案不一致。",
+    "starrail-growth.text_a985bc32b7": "终结技",
+    "starrail-growth.text_bb975c66db": "当前档案缺少设备 ID，无法查询星铁养成。",
+    "starrail-growth.text_d90c73f75a": "普通攻击",
+    "starrail-ledger.text_082511f5c8": "官方星铁开拓力流水的恢复时间无效。",
+    "starrail-ledger.text_26d24530b5": "官方星铁流水含无效记录或游标。",
+    "starrail-ledger.text_2a6a4c6138": "官方{action}响应格式无效。",
+    "starrail-ledger.text_43c9eaa282": "官方星铁流水含无效记录。",
+    "starrail-ledger.text_4464b90e26": "官方{action}请求未完成。",
+    "starrail-ledger.text_5183bb09c9": "星铁流水临时授权已失效，请重新查询。",
+    "starrail-ledger.text_6347e09a79": "星铁流水的档案设备信息无效。",
+    "starrail-ledger.text_6c958cb9ea": "官方星铁流水返回了重复或未递进的游标。",
+    "starrail-ledger.text_6e235a3e27": "星铁流水类型或页码无效，最多查询第 {maxLedgerPages} 页。",
+    "starrail-ledger.text_7a164fbe8a": "官方{action}请求过于频繁，请稍后重试。",
+    "starrail-ledger.text_81cb6e5539": "官方{action}要求验证，请在官方客户端处理后重试。",
+    "starrail-ledger.text_88023acf7c": "档案登录已失效，请重新登录后查询星铁流水。",
+    "starrail-ledger.text_920750a297": "官方{action}拒绝请求。",
+    "starrail-ledger.text_945311f4c5": "星铁流水临时授权无效。",
+    "starrail-ledger.text_a0c40c636e": "星铁流水仅支持当前档案已同步的国服角色。",
+    "starrail-ledger.text_b08c5f8c24": "官方星铁流水响应的记录无效。",
+    "starrail-ledger.text_c1db1d44aa": "星铁流水授权",
+    "starrail-ledger.text_c480639c27": "官方{action}响应的档案身份或数据无效。",
+    "starrail-ledger.text_d51a86f9d0": "官方{action}接口返回 HTTP 错误。",
+    "starrail-ledger.text_d668038810": "官方{action}超时。",
+    "starrail-ledger.text_e31092f63d": "星铁在线时长的翻页或间隔参数无效。",
+    "starrail-ledger.text_f2e78d1be7": "星铁流水查询",
+    "starrail-monthly.text_0fd2df4fca": "星铁月收入响应的角色归属不一致。",
+    "starrail-monthly.text_1ff0abb12b": "官方星铁月收入响应缺少有效数据。",
+    "starrail-monthly.text_38d5e49a5e": "星铁月收入响应的区服不一致。",
+    "starrail-monthly.text_8972dcc0fc": "星铁月收入响应月份与查询不一致。",
+    "starrail-monthly.text_9a7554ed65": "星铁月收入响应的游戏归属不一致。",
+    "starrail-panel.text_4f6f08a5ff": "星铁面板响应的区服不一致。",
+    "starrail-panel.text_581178a173": "星铁面板响应的角色归属不一致。",
+    "starrail-panel.text_800d70e129": "星铁面板响应缺少有效角色列表。",
+    "starrail-record.text_3f0a1ec0e2": "星铁战绩名片与当前档案的角色或区服不一致。",
+    "starrail-record.text_a3498c8358": "星铁战绩名片仅支持此档案中已同步的国服角色。",
+    "starrail-rogue.text_3192ab412a": "星铁宇宙战绩类型无效。",
+    "starrail-rogue.text_433ceb1e94": "官方星铁宇宙战绩的角色或区服与当前档案不一致。",
+    "starrail-rogue.text_435ac71733": "官方星铁宇宙战绩响应格式无效。",
+    "starrail-roster.text_3b4eb48e81": "星铁角色名册的游戏标识无效。",
+    "starrail-roster.text_54b13927db": "星铁角色名册响应缺少有效角色列表。",
+    "starrail-roster.text_6faec598a4": "星铁角色名册的区服与当前档案不一致。",
+    "starrail-roster.text_f206effef1": "星铁角色名册的 UID 与当前档案不一致。",
+    "zzz-climbing-tower.text_075007631d": "代理人排行",
+    "zzz-climbing-tower.text_0e8b1c78c5": "格式",
+    "zzz-climbing-tower.text_34992f6361": "排行代理人",
+    "zzz-climbing-tower.text_53aaa87438": "官方拟真鏖战试炼响应的{field}无效。",
+    "zzz-climbing-tower.text_5602f3b59b": "挑战分数",
+    "zzz-climbing-tower.text_5e66ce9fd0": "档案 UID",
+    "zzz-climbing-tower.text_6570a98f28": "排名",
+    "zzz-climbing-tower.text_6b16898934": "代理人分数",
+    "zzz-climbing-tower.text_6e35682bee": "层数",
+    "zzz-climbing-tower.text_7494b08fdb": "S{number}赛季",
+    "zzz-climbing-tower.text_7c0ac18ce6": "无伤通关",
+    "zzz-climbing-tower.text_86c4ddbcf0": "代理人排名",
+    "zzz-climbing-tower.text_89e35e662a": "分数",
+    "zzz-climbing-tower.text_a81ce382a1": "游戏标识",
+    "zzz-climbing-tower.text_df1277905d": "代理人编号",
+    "zzz-climbing-tower.text_e6dcb75782": "档案区服",
+    "zzz-deadly.text_24baf7e1a7": "官方危局强袭战响应的区服与当前档案不一致。",
+    "zzz-deadly.text_411108d216": "官方危局强袭战响应的战绩格式无效。",
+    "zzz-deadly.text_66e7aa36f7": "官方危局强袭战响应的统计周期无效。",
+    "zzz-deadly.text_cb22ead220": "官方危局强袭战响应的星级无效。",
+    "zzz-deadly.text_d1b8410c6a": "官方危局强袭战响应的周期选择与查询不一致。",
+    "zzz-deadly.text_d450f51e89": "官方危局强袭战响应的游戏与当前档案不一致。",
+    "zzz-deadly.text_fc501e5e31": "官方危局强袭战响应的 UID 与当前档案不一致。",
+    "zzz-exploration.text_0e8b1c78c5": "格式",
+    "zzz-exploration.text_3382870bc4": "区域",
+    "zzz-exploration.text_5a984ef42f": "子区域",
+    "zzz-exploration.text_5c543338a1": "完成度",
+    "zzz-exploration.text_5e66ce9fd0": "档案 UID",
+    "zzz-exploration.text_733e20df78": "区域收集页码无效。",
+    "zzz-exploration.text_958a74170a": "收集项",
+    "zzz-exploration.text_a81ce382a1": "游戏标识",
+    "zzz-exploration.text_c057402e30": "收集数",
+    "zzz-exploration.text_d056810820": "官方绝区零区域收集响应的{field}无效。",
+    "zzz-exploration.text_e6dcb75782": "档案区服",
+    "zzz-gacha-auth.text_01e8e3c81f": "绝区零抽卡链接授权请求已取消或超时。",
+    "zzz-gacha-auth.text_41c31f1d4c": "绝区零抽卡链接授权响应格式有误。",
+    "zzz-gacha-auth.text_4ee30b6ced": "自动获取绝区零抽卡链接仅支持已确认的国服档案。",
+    "zzz-gacha-auth.text_5306a4316c": "绝区零抽卡链接授权接口返回 HTTP 错误。",
+    "zzz-gacha-auth.text_5b56d34df4": "绝区零抽卡链接授权请求已取消。",
+    "zzz-gacha-auth.text_6e0b1412d9": "绝区零抽卡链接授权要求完成验证，请在官方客户端处理后重试。",
+    "zzz-gacha-auth.text_9877c3f652": "绝区零抽卡链接授权已失效，请刷新当前档案后重试。",
+    "zzz-gacha-auth.text_a99ef177b3": "绝区零抽卡的档案设备信息无效。",
+    "zzz-gacha-auth.text_ae9724debe": "绝区零抽卡链接授权接口拒绝请求。",
+    "zzz-gacha-auth.text_b1110352c9": "绝区零",
+    "zzz-gacha-auth.text_dbb3884f0c": "绝区零抽卡链接授权请求未完成。",
+    "zzz-gacha-link.text_0fde82ace9": "绝区零抽卡接口未返回有效的 JSON。",
+    "zzz-gacha-link.text_119cb23596": "抽卡链接与当前绝区零档案的区服不一致。",
+    "zzz-gacha-link.text_15906085d6": "绝区零抽卡接口返回 HTTP 错误。",
+    "zzz-gacha-link.text_1b0d64e47b": "绝区零抽卡的请求时间无效。",
+    "zzz-gacha-link.text_26a1089ff8": "绝区零抽卡链接已失效，请重新获取官方链接。",
+    "zzz-gacha-link.text_2ad3db443e": "绝区零抽卡读取已取消或超时。",
+    "zzz-gacha-link.text_2d34ffbc28": "绝区零逐抽记录包含无效的编号、物品或稀有度。",
+    "zzz-gacha-link.text_3d477d7397": "绝区零抽卡读取达到分页上限，本次未取完。",
+    "zzz-gacha-link.text_3dc5855f82": "抽卡链接与当前绝区零档案的 UID 不一致。",
+    "zzz-gacha-link.text_49d3b89275": "请输入完整的绝区零官方抽卡记录链接。",
+    "zzz-gacha-link.text_57ef76b88a": "绝区零抽卡链接没有返回可核对 UID 的记录。",
+    "zzz-gacha-link.text_622350c4b3": "绝区零抽卡请求过于频繁，请稍后再试。",
+    "zzz-gacha-link.text_7053782a77": "绝区零逐抽记录与当前档案的 UID 不一致。",
+    "zzz-gacha-link.text_7680614ff1": "绝区零抽卡读取已取消。",
+    "zzz-gacha-link.text_93e99fcfcb": "绝区零抽卡接口响应缺少有效的状态。",
+    "zzz-gacha-link.text_9b59addfa4": "绝区零抽卡请求未完成。",
+    "zzz-gacha-link.text_9d46c12f89": "绝区零抽卡响应的单页记录数量无效。",
+    "zzz-gacha-link.text_9ed7924fb6": "绝区零逐抽记录的时间无效。",
+    "zzz-gacha-link.text_a1486ef0dc": "绝区零档案未绑定可核验的 UID 和区服。",
+    "zzz-gacha-link.text_a315d9b0b0": "绝区零抽卡接口响应缺少有效的记录页。",
+    "zzz-gacha-link.text_a3e3173849": "绝区零抽卡接口要求完成验证，请在官方客户端处理后重试。",
+    "zzz-gacha-link.text_c560bbef16": "绝区零抽卡的请求间隔或分页上限无效。",
+    "zzz-gacha-link.text_d0a58e1e9b": "绝区零抽卡出现重复的逐抽编号或错误的分页顺序。",
+    "zzz-gacha-link.text_d2bde6ff8a": "绝区零逐抽记录的频段与请求不一致。",
+    "zzz-gacha-link.text_e9792f7548": "绝区零抽卡的单页响应超过大小上限。",
+    "zzz-gacha-link.text_edf8261a16": "绝区零抽卡接口未返回 JSON 响应。",
+    "zzz-gacha-link.text_f01ebbbcef": "绝区零抽卡响应的 UID、区服或时区不一致。",
+    "zzz-gacha-link.text_f3d71c689a": "绝区零抽卡接口拒绝请求。",
+    "zzz-game-record.text_0520c692fd": "请在此档案选中已绑定到 HoYoLAB 账号的绝区零国际服角色。",
+    "zzz-game-record.text_0c382eb58a": "邦布 {id}",
+    "zzz-game-record.text_62c41035d3": "官方绝区零战绩的游戏与当前档案不一致。",
+    "zzz-game-record.text_725c93487b": "代理人 {id}",
+    "zzz-game-record.text_76560c2f3d": "官方绝区零战绩的 UID 与当前档案不一致。",
+    "zzz-game-record.text_7ed2e4e53e": "官方绝区零战绩的代理人或邦布记录无效。",
+    "zzz-game-record.text_82d9a22b81": "官方绝区零战绩响应格式无效。",
+    "zzz-game-record.text_9bc390a796": "官方绝区零战绩的区服与当前档案不一致。",
+    "zzz-hollow-zero.text_127d116c3e": "探索耗时",
+    "zzz-hollow-zero.text_1b24e7d2ec": "影画等级",
+    "zzz-hollow-zero.text_1b55b3119c": "挑战详情",
+    "zzz-hollow-zero.text_21c04b2eee": "摘要",
+    "zzz-hollow-zero.text_24ec01f42b": "刀耕火焚",
+    "zzz-hollow-zero.text_35d1d42008": "阵容编号",
+    "zzz-hollow-zero.text_432a4cfcd8": "官方零号空洞响应的{field}无效。",
+    "zzz-hollow-zero.text_5aea7d747f": "代理人",
+    "zzz-hollow-zero.text_5e66ce9fd0": "档案 UID",
+    "zzz-hollow-zero.text_695046b8bb": "代理人队伍",
+    "zzz-hollow-zero.text_962c27ad90": "通关次数",
+    "zzz-hollow-zero.text_96fbc6a2a9": "以太活性",
+    "zzz-hollow-zero.text_a81ce382a1": "游戏标识",
+    "zzz-hollow-zero.text_aa46a7c35b": "邦布",
+    "zzz-hollow-zero.text_af11138f63": "最优挑战",
+    "zzz-hollow-zero.text_ba2612847b": "最高伤害",
+    "zzz-hollow-zero.text_cec5d0adeb": "阵容等级",
+    "zzz-hollow-zero.text_e4c3f6999a": "收集列表",
+    "zzz-hollow-zero.text_e6dcb75782": "档案区服",
+    "zzz-hollow-zero.text_e77e3d58b0": "耗时",
+    "zzz-hollow-zero.text_f9ba9c9b50": "邦布队伍",
+    "zzz-hollow-zero.text_fc78aa7096": "挑战摘要",
+    "zzz-holo-boss.text_08256966ea": "官方拟境湮灭战响应的{field}无效。",
+    "zzz-holo-boss.text_1053fbb75f": "队伍",
+    "zzz-holo-boss.text_3ed0782680": "挑战列表",
+    "zzz-holo-boss.text_4a703a03f5": "期次",
+    "zzz-holo-boss.text_58cae7ec87": "首领",
+    "zzz-holo-boss.text_5aea7d747f": "代理人",
+    "zzz-holo-boss.text_5e66ce9fd0": "档案 UID",
+    "zzz-holo-boss.text_6570a98f28": "排名",
+    "zzz-holo-boss.text_83c1bceb83": "首领记录",
+    "zzz-holo-boss.text_9c55a439d7": "星级",
+    "zzz-holo-boss.text_a81ce382a1": "游戏标识",
+    "zzz-holo-boss.text_beddbcb9d8": "解锁状态",
+    "zzz-holo-boss.text_c5c66a9f44": "挑战耗时",
+    "zzz-holo-boss.text_d3099bb227": "首领徽章",
+    "zzz-holo-boss.text_d8623bb355": "无伤标记",
+    "zzz-holo-boss.text_e6dcb75782": "档案区服",
+    "zzz-holo-boss.text_f4f09df9e1": "统计周期",
+    "zzz-monthly.text_2166719b56": "UID 或区服",
+    "zzz-monthly.text_27b6aef8fa": "重复货币",
+    "zzz-monthly.text_281478f903": "绝区零月报月份无效。",
+    "zzz-monthly.text_2b8777184f": "来源数量",
+    "zzz-monthly.text_3ab07bf4f4": "当前月份",
+    "zzz-monthly.text_3b1f210d39": "响应",
+    "zzz-monthly.text_54a124e369": "收入来源",
+    "zzz-monthly.text_7310cf1d4e": "官方绝区零月报的{field}无效。",
+    "zzz-monthly.text_91739da90d": "查询月份",
+    "zzz-monthly.text_a488e93d69": "来源",
+    "zzz-monthly.text_a81ce382a1": "游戏标识",
+    "zzz-monthly.text_c5cc2fb874": "可用月份",
+    "zzz-monthly.text_ce04180680": "货币数量",
+    "zzz-monthly.text_ce65729e0d": "收支数据",
+    "zzz-monthly.text_eac8bc429b": "货币列表",
+    "zzz-monthly.text_edc50739c0": "货币项",
+    "zzz-monthly.text_efb0768dcf": "收入占比",
+    "zzz-monthly.text_f68f3cc743": "货币类型",
+    "zzz-panel.text_57e2e6a94a": "官方绝区零面板的角色列表包含重复角色。",
+    "zzz-panel.text_6d6497248f": "官方绝区零面板的 UID 与当前档案不一致。",
+    "zzz-panel.text_970b9652e1": "官方绝区零面板的区服与当前档案不一致。",
+    "zzz-panel.text_aa52ab4a54": "官方绝区零面板的游戏与当前档案不一致。",
+    "zzz-panel.text_bdce567f78": "官方绝区零面板回包的角色与所选角色不一致。",
+    "zzz-panel.text_db6735c2a0": "绝区零面板的角色编号无效。",
+    "zzz-panel.text_ebea026f5f": "官方绝区零面板的角色资料无效。",
+    "zzz-panel.text_f1a030b56f": "绝区零面板的角色刷新间隔无效。",
+    "zzz-shiyu.text_2772c022fb": "官方式舆防卫战响应的区服与当前档案不一致。",
+    "zzz-shiyu.text_51d100b94e": "官方式舆防卫战响应的周期选择与查询不一致。",
+    "zzz-shiyu.text_67314fa4cb": "官方式舆防卫战响应的游戏与当前档案不一致。",
+    "zzz-shiyu.text_87eb73f73d": "官方式舆防卫战响应的战绩格式无效。",
+    "zzz-shiyu.text_a39d8a56f4": "官方式舆防卫战响应的 UID 与当前档案不一致。",
+    "zzz-shiyu.text_ed0c8ba545": "官方式舆防卫战响应的统计周期无效。",
+    "zzz-tuning.text_00ca9fd8a4": "绝区零官方调频接口响应格式有误。",
+    "zzz-tuning.text_042c6ef9ba": "绝区零官方调频响应与当前档案角色的 UID 或分区不一致。",
+    "zzz-tuning.text_127f09cf84": "绝区零官方调频仅支持已确认的国服绝区零档案。",
+    "zzz-tuning.text_1f0503de86": "绝区零官方调频总览缺少频段。",
+    "zzz-tuning.text_1fdfaa413c": "绝区零官方调频接口请求过于频繁。",
+    "zzz-tuning.text_2ab769470e": "绝区零官方调频接口返回 HTTP 错误。",
+    "zzz-tuning.text_2ab9667838": "绝区零官方调频总览未返回全部六个频段。",
+    "zzz-tuning.text_31a4180cb7": "绝区零官方调频库存数值无效。",
+    "zzz-tuning.text_3d61b75b23": "绝区零官方调频请求未完成。",
+    "zzz-tuning.text_3e77093711": "音擎回响",
+    "zzz-tuning.text_3ea1ef49dc": "音擎频段",
+    "zzz-tuning.text_44d1a27a4a": "绝区零官方调频「{name}」汇总与 S 级明细不一致。",
+    "zzz-tuning.text_48a6610cd3": "绝区零官方调频总览频段格式无效。",
+    "zzz-tuning.text_5004d886da": "绝区零官方调频 Cookie 已失效。",
+    "zzz-tuning.text_7ba978f27e": "绝区零官方调频库存列表格式无效。",
+    "zzz-tuning.text_83123df61a": "绝区零官方调频档案 Cookie 或请求间隔无效。",
+    "zzz-tuning.text_8763ccd035": "绝区零官方调频接口没有返回数据。",
+    "zzz-tuning.text_9c705789b8": "绝区零官方调频请求已取消。",
+    "zzz-tuning.text_9ca71e998a": "独家频段",
+    "zzz-tuning.text_a4013274c6": "绝区零官方调频期次格式无效。",
+    "zzz-tuning.text_ac9680b223": "绝区零官方调频历史期次返回不全或与请求期次不一致。",
+    "zzz-tuning.text_b09f99a850": "绝区零官方调频总览抽数无效。",
+    "zzz-tuning.text_bc19b1116f": "绝区零官方调频响应缺少期次列表。",
+    "zzz-tuning.text_c6435a050f": "绝区零官方调频接口拒绝请求。",
+    "zzz-tuning.text_c9f8671eae": "邦布频段",
+    "zzz-tuning.text_ccdd412151": "绝区零官方调频期次明细格式无效。",
+    "zzz-tuning.text_dfea447d04": "绝区零官方调频明细缺少有效物品编号。",
+    "zzz-tuning.text_e0b2744a47": "常驻频段",
+    "zzz-tuning.text_e9d285f473": "绝区零官方调频总览返回重复频段。",
+    "zzz-tuning.text_ed1b37a28a": "绝区零官方调频总览与分频段汇总不一致。",
+    "zzz-tuning.text_f20ecb2204": "绝区零官方调频期次编号无效。",
+    "zzz-tuning.text_f6dbc05fda": "独家重映",
+    "zzz-void-front.text_0481b2f6e8": "时间小时",
+    "zzz-void-front.text_089bce08ee": "子关",
+    "zzz-void-front.text_09689712df": "时间年",
+    "zzz-void-front.text_0e8b1c78c5": "格式",
+    "zzz-void-front.text_1053fbb75f": "队伍",
+    "zzz-void-front.text_106ea4a80e": "关卡得分",
+    "zzz-void-front.text_18537a49b5": "代理人影画",
+    "zzz-void-front.text_18c6ed8a22": "总得分",
+    "zzz-void-front.text_18fc58c624": "头像编号",
+    "zzz-void-front.text_2103bde828": "时间秒",
+    "zzz-void-front.text_3004d3e234": "关卡列表",
+    "zzz-void-front.text_4a703a03f5": "期次",
+    "zzz-void-front.text_52824cd001": "末关",
+    "zzz-void-front.text_5757c0470a": "时间日",
+    "zzz-void-front.text_58cae7ec87": "首领",
+    "zzz-void-front.text_5aea7d747f": "代理人",
+    "zzz-void-front.text_5e66ce9fd0": "档案 UID",
+    "zzz-void-front.text_6570a98f28": "排名",
+    "zzz-void-front.text_669109f62a": "官方临界推演响应的{field}无效。",
+    "zzz-void-front.text_76d70b2006": "增益",
+    "zzz-void-front.text_8b6ff49851": "时间",
+    "zzz-void-front.text_979a332955": "详情",
+    "zzz-void-front.text_98911a8894": "关卡满分",
+    "zzz-void-front.text_a33db57305": "总览",
+    "zzz-void-front.text_a81ce382a1": "游戏标识",
+    "zzz-void-front.text_aa46a7c35b": "邦布",
+    "zzz-void-front.text_c2fef1e66d": "时间月",
+    "zzz-void-front.text_cdd34874b1": "总满分",
+    "zzz-void-front.text_e6dcb75782": "档案区服",
+    "zzz-void-front.text_f4f09df9e1": "统计周期",
+    "zzz-void-front.text_f92d097331": "时间分钟",
+    "zzz-void-front.text_ff534801b8": "关卡",
+    "zzz-zenkov.text_008e539a00": "珍品图鉴",
+    "zzz-zenkov.text_0e8b1c78c5": "格式",
+    "zzz-zenkov.text_1625179bad": "月",
+    "zzz-zenkov.text_19e38bf0d1": "物资金额",
+    "zzz-zenkov.text_21558137d9": "收藏项",
+    "zzz-zenkov.text_3b6fefc50f": "小时",
+    "zzz-zenkov.text_3d6c83fd58": "探索记录",
+    "zzz-zenkov.text_41ab2e0ecb": "地图",
+    "zzz-zenkov.text_4aa71c5705": "高危",
+    "zzz-zenkov.text_4ea02714a1": "困难",
+    "zzz-zenkov.text_5309323295": "稀有度",
+    "zzz-zenkov.text_59eb8d03ef": "阶段",
+    "zzz-zenkov.text_5aea7d747f": "代理人",
+    "zzz-zenkov.text_5cffe43b16": "迷宫诡域战绩页码无效。",
+    "zzz-zenkov.text_5e66ce9fd0": "档案 UID",
+    "zzz-zenkov.text_5e688f58fe": "阵容",
+    "zzz-zenkov.text_60a53514eb": "收藏",
+    "zzz-zenkov.text_62ef900a8f": "年",
+    "zzz-zenkov.text_6570a98f28": "排名",
+    "zzz-zenkov.text_670575b685": "撤离率",
+    "zzz-zenkov.text_8013070a16": "地图项",
+    "zzz-zenkov.text_85217f7aff": "日",
+    "zzz-zenkov.text_8f0fbebec6": "赛季编号",
+    "zzz-zenkov.text_90fccf7d0c": "赛季",
+    "zzz-zenkov.text_9815726067": "赛季等级",
+    "zzz-zenkov.text_99674095ac": "百万撤离",
+    "zzz-zenkov.text_9dcdc2b289": "秒",
+    "zzz-zenkov.text_a4ccc0a299": "调查收获",
+    "zzz-zenkov.text_a8001a9008": "调查收获项",
+    "zzz-zenkov.text_a81ce382a1": "游戏标识",
+    "zzz-zenkov.text_acf9c8dd9c": "收藏总数",
+    "zzz-zenkov.text_bd957bc497": "分钟",
+    "zzz-zenkov.text_c96d1186d3": "Z级贵重物品",
+    "zzz-zenkov.text_cc17f034d7": "官方迷宫诡域响应的{field}无效。",
+    "zzz-zenkov.text_d4848bfff0": "物品数",
+    "zzz-zenkov.text_de907d10df": "普通",
+    "zzz-zenkov.text_df1277905d": "代理人编号",
+    "zzz-zenkov.text_e66da4b1b0": "影画",
+    "zzz-zenkov.text_e6dcb75782": "档案区服",
+    "zzz-zenkov.text_e77e3d58b0": "耗时",
+    "zzz-zenkov.text_e9cbb10b0e": "收藏数",
+    "zzz-zenkov.text_ecf4fa6e6c": "赛季剩余时间",
+    "zzz-zenkov.text_f4f3c06250": "开始时刻",
+    "zzz-zenkov.text_f9558d1121": "本周剩余时间"
+  },
+  "parameters": {
+    "cloud-genshin-wallet.text_fc172384f6": {
+      "label": "label"
+    },
+    "cloud-genshin-wallet.text_2bcd94a82c": {
+      "label": "label"
+    },
+    "cloud-genshin-wallet.text_90aebf1837": {
+      "label": "label"
+    },
+    "cloud-genshin-wallet.text_18590ee0eb": {
+      "label": "label"
+    },
+    "cloud-genshin-wallet.text_ec84e20a79": {
+      "label": "label"
+    },
+    "cloud-genshin-wallet.text_fabe920fc2": {
+      "label": "label"
+    },
+    "cloud-genshin-wallet.text_a43032d39e": {
+      "label": "label"
+    },
+    "cloud-genshin-wallet.text_2421bc1596": {
+      "label": "label"
+    },
+    "credentials.text_624451d9b4": {
+      "target": "target"
+    },
+    "credentials.text_e7c8543f5a": {
+      "target": "target"
+    },
+    "credentials.text_79193902c9": {
+      "target": "target"
+    },
+    "credentials.text_641592e9b6": {
+      "target": "target"
+    },
+    "credentials.text_8809dadbcc": {
+      "target": "target"
+    },
+    "credentials.text_717358c7ff": {
+      "target": "target"
+    },
+    "credentials.text_30aeb3b0d5": {
+      "target": "target"
+    },
+    "daily-note.text_26d2b74fe7": {
+      "value1": "index + 1"
+    },
+    "gacha-auth-request.text_d3a55d02ae": {
+      "subject": "subject"
+    },
+    "gacha-auth-request.text_7ee4355f5c": {
+      "game": "game"
+    },
+    "game-checkin.text_e4f69cc76f": {
+      "name": "route.name"
+    },
+    "game-checkin.text_a552ed7cd5": {
+      "name": "route.name"
+    },
+    "game-checkin.text_68aa39d9ad": {
+      "name": "route.name"
+    },
+    "game-checkin.text_e4e94cc9b7": {
+      "name": "route.name"
+    },
+    "game-checkin.text_06f1fca3ad": {
+      "name": "route.name"
+    },
+    "game-checkin.text_2375fa68e4": {
+      "name": "route.name"
+    },
+    "game-checkin.text_3d0f75c29c": {
+      "subject": "subject"
+    },
+    "game-checkin.text_e9d7dda1a2": {
+      "subject": "subject"
+    },
+    "game-record.text_6b92956648": {
+      "subject": "subject"
+    },
+    "game-record.text_df1d8641e0": {
+      "subject": "subject"
+    },
+    "game-record.text_99b53fb45b": {
+      "subject": "subject"
+    },
+    "game-record.text_a00ef87f25": {
+      "value1": "subject.replace(/查询$/u, \"\")"
+    },
+    "game-record.text_7c6d31e82d": {
+      "label": "label"
+    },
+    "game-record.text_b28f638e75": {
+      "label": "label"
+    },
+    "game-record.text_e03f7c80cf": {
+      "subject": "subject"
+    },
+    "game-record.text_9a2fe7ac88": {
+      "label": "label"
+    },
+    "game-record.text_20c322406a": {
+      "label": "label"
+    },
+    "game-record.text_e081ffda7d": {
+      "subject": "subject"
+    },
+    "game-record.text_c0f09da0e9": {
+      "subject": "subject"
+    },
+    "game-record.text_7a715ff587": {
+      "label": "label"
+    },
+    "game-record.text_656c331127": {
+      "label": "label"
+    },
+    "game-record.text_7dbba95ad1": {
+      "label": "label"
+    },
+    "genshin-backpack.text_0418cc4709": {
+      "kind": "kind"
+    },
+    "genshin-backpack.text_3fcddb2f58": {
+      "kind": "kind"
+    },
+    "genshin-backpack.text_a38207a01f": {
+      "kind": "kind"
+    },
+    "genshin-backpack.text_af8d452502": {
+      "kind": "kind"
+    },
+    "genshin-backpack.text_5a46ba7be9": {
+      "kind": "kind"
+    },
+    "genshin-backpack.text_79836ab0b2": {
+      "kind": "kind"
+    },
+    "genshin-panel.text_45f231eb2d": {
+      "label": "label"
+    },
+    "genshin-panel.text_41b1813f8f": {
+      "label": "label"
+    },
+    "genshin-pay-log.text_fa4962f757": {
+      "value1": "Number(month.slice(-2))"
+    },
+    "hoyolab-checkin-transport.text_691992adbc": {
+      "subject": "subject"
+    },
+    "hoyolab-checkin-transport.text_be525019c4": {
+      "subject": "subject"
+    },
+    "hoyolab-checkin-transport.text_cbe06a21d0": {
+      "subject": "subject"
+    },
+    "hoyolab-checkin-transport.text_c8da6cdd22": {
+      "subject": "subject"
+    },
+    "hoyolab-checkin-transport.text_3d0f75c29c": {
+      "subject": "subject"
+    },
+    "hoyolab-checkin-transport.text_e9d7dda1a2": {
+      "subject": "subject"
+    },
+    "hoyolab-default-checkin.text_691992adbc": {
+      "subject": "subject"
+    },
+    "hoyolab-default-checkin.text_3661f1e5e0": {
+      "name": "game.name"
+    },
+    "hoyolab-default-checkin.text_34486d64ee": {
+      "name": "game.name"
+    },
+    "hoyolab-default-checkin.text_dc6c3b9e24": {
+      "name": "game.name"
+    },
+    "hoyolab-default-checkin.text_85e5969f7c": {
+      "name": "game.name"
+    },
+    "hoyolab-default-checkin.text_2de6071f91": {
+      "name": "game.name"
+    },
+    "hoyolab-role-checkin.text_691992adbc": {
+      "subject": "subject"
+    },
+    "hoyolab-role-checkin.text_7eb2cbbb20": {
+      "name": "name"
+    },
+    "hoyolab-role-checkin.text_3661f1e5e0": {
+      "name": "name"
+    },
+    "hoyolab-role-checkin.text_34486d64ee": {
+      "name": "name"
+    },
+    "hoyolab-role-checkin.text_2de6071f91": {
+      "name": "name"
+    },
+    "redeem-preview.http.text_a7934a720b": {
+      "statusCode": "response.statusCode"
+    },
+    "redeem-preview.official.text_1cf0e42297": {
+      "status": "response.status"
+    },
+    "redeem-preview.official.text_03eaaa1efb": {
+      "endpoint": "endpoint",
+      "detail": "detail",
+      "value3": "lastError?.code || lastError?.message || \"超时\""
+    },
+    "redeem-preview.official.text_1c9cc227ad": {
+      "value1": "code ?? \"返回格式异常\""
+    },
+    "redeem-preview.official.text_08d0d3b14d": {
+      "version": "version"
+    },
+    "redeem-preview.official.text_b1978d89b1": {
+      "value1": "errors.join(\"；\")"
+    },
+    "redeem-preview.service.text_d9da937f01": {
+      "start": "start"
+    },
+    "redeem-preview.service.text_521a32bc59": {
+      "name": "game.name",
+      "newestVersion": "newestVersion"
+    },
+    "redeem-preview.service.text_63da29d5f7": {
+      "end": "end",
+      "reason": "reason"
+    },
+    "redeem-preview.service.text_a9a43c79eb": {
+      "gameName": "result.gameName"
+    },
+    "redeem-preview.service.text_68077b9caf": {
+      "title": "title",
+      "reason": "result.reason"
+    },
+    "redeem-preview.service.text_4827648c81": {
+      "title": "title",
+      "reason": "result.reason"
+    },
+    "redeem-preview.service.text_8ffe9af59e": {
+      "text": "result.expiry.text"
+    },
+    "redeem-preview.service.text_9f92adbb68": {
+      "source": "result.source"
+    },
+    "redeem-preview.service.text_3298b9735c": {
+      "expirySource": "result.expirySource"
+    },
+    "starrail-gacha.text_e37f4a45c0": {
+      "label": "label"
+    },
+    "starrail-ledger.text_4464b90e26": {
+      "action": "action"
+    },
+    "starrail-ledger.text_7a164fbe8a": {
+      "action": "action"
+    },
+    "starrail-ledger.text_81cb6e5539": {
+      "action": "action"
+    },
+    "starrail-ledger.text_d51a86f9d0": {
+      "action": "action"
+    },
+    "starrail-ledger.text_d668038810": {
+      "action": "action"
+    },
+    "starrail-ledger.text_2a6a4c6138": {
+      "action": "action"
+    },
+    "starrail-ledger.text_920750a297": {
+      "action": "action"
+    },
+    "starrail-ledger.text_c480639c27": {
+      "action": "action"
+    },
+    "starrail-ledger.text_6e235a3e27": {
+      "maxLedgerPages": "maxLedgerPages"
+    },
+    "zzz-climbing-tower.text_53aaa87438": {
+      "field": "field"
+    },
+    "zzz-climbing-tower.text_7494b08fdb": {
+      "number": "number"
+    },
+    "zzz-exploration.text_d056810820": {
+      "field": "field"
+    },
+    "zzz-game-record.text_725c93487b": {
+      "id": "id"
+    },
+    "zzz-game-record.text_0c382eb58a": {
+      "id": "id"
+    },
+    "zzz-hollow-zero.text_432a4cfcd8": {
+      "field": "field"
+    },
+    "zzz-holo-boss.text_08256966ea": {
+      "field": "field"
+    },
+    "zzz-monthly.text_7310cf1d4e": {
+      "field": "field"
+    },
+    "zzz-tuning.text_44d1a27a4a": {
+      "name": "name"
+    },
+    "zzz-void-front.text_669109f62a": {
+      "field": "field"
+    },
+    "zzz-zenkov.text_cc17f034d7": {
+      "field": "field"
+    }
+  }
+}

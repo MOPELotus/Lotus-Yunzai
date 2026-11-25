@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export type HandlerCallback = (event: unknown, args: unknown, next: (reason?: string) => void) => unknown;
@@ -24,7 +27,7 @@ const handlers = new Map<string, Entry[]>();
 
 export class UnsupportedLegacyHandlerError extends Error {
   constructor() {
-    super("旧接口 mys.req.err 不受支持，插件需要适配 Lotus Yunzai 才能使用。");
+    super($t("lib.plugins.handler.text_3453ba1353"));
     this.name = "UnsupportedLegacyHandlerError";
   }
 }
@@ -129,7 +132,7 @@ export class HandlerScope {
 const Handler = {
   add(config: Registration): void {
     const scope = scopes.getStore();
-    if (!scope) throw new Error("Handler.add 须在插件执行期间调用。");
+    if (!scope) throw new Error($t("lib.plugins.handler.text_bb3c433ce4"));
     scope.add(config);
   },
   del(ns?: string, key?: string): void {

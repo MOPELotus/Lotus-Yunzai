@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { createHash } from "node:crypto";
@@ -16,7 +19,7 @@ export interface CheckinReceiptCardModel {
     readonly community: string;
   }[];
   readonly detail?: {
-    readonly title: "米游币" | "失败" | "云原神" | "云游戏";
+    readonly title: string;
     readonly message: string;
   };
   readonly generatedAt?: string;
@@ -48,7 +51,7 @@ async function loadTheme(directory: string) {
     [miSans, "fonts/MiSans-VF.ttf"],
   ] as const) {
     const filename = join(directory, file);
-    if (!await Bun.file(filename).exists()) throw new Error(`签到回执原字体不可用：${file}`);
+    if (!await Bun.file(filename).exists()) throw new Error($t("checkin-receipt-card.text_458830452d", { "file": file }));
     FontLibrary.use(font, [filename]);
   }
   const background = await loadImage(join(directory, "miao-theme/bg/bg-hydro.webp"));
@@ -92,7 +95,7 @@ function wrapText(ctx: Context, value: string, available: number) {
 }
 
 function text(ctx: Context, lines: readonly string[], x: number, y: number, font: string, leading: number,
-  color: string, { center = false, shadow = false } = {}) {
+  color: string, { center = false, shadow = false, footer = false } = {}) {
   ctx.save();
   ctx.font = font;
   ctx.textBaseline = "top";
@@ -105,7 +108,7 @@ function text(ctx: Context, lines: readonly string[], x: number, y: number, font
     ctx.shadowOffsetY = 1;
   }
   for (const [index, line] of lines.entries()) {
-    ctx.fillStyle = line.includes("Lotus-Yunzai") ? brandTextColor(ctx, line, x, y + index * leading) : color;
+    ctx.fillStyle = footer ? brandTextColor(ctx, line, x, y + index * leading) : color;
     ctx.fillText(line, x, y + index * leading);
   }
   ctx.restore();
@@ -127,7 +130,7 @@ function clipPanel(ctx: Context, top: number, height: number) {
 
 export async function renderCheckinReceiptCard(model: CheckinReceiptCardModel,
   { mode = "auto", scale = 4, resourceDirectory = Bun.env.LOTUS_PASSPORT_QR_RESOURCES?.trim() || defaultResources }: CheckinReceiptCardOptions = {}): Promise<PngRender> {
-  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("签到回执缩放比例须在 1 至 4 之间。");
+  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError($t("checkin-receipt-card.text_beade28661"));
 
   const { background, textFont, titleFont } = await themeAt(await realpath(resourceDirectory));
   const large = `36px ${titleFont}`;
@@ -137,14 +140,14 @@ export async function renderCheckinReceiptCard(model: CheckinReceiptCardModel,
   const small = `12px ${textFont}`;
   const metrics = new Canvas(1, 1).getContext("2d");
   metrics.font = subtitleFont;
-  const subtitle = [model.displayName, `profile ${model.profileId}`].filter(Boolean).join(" · ");
+  const subtitle = [model.displayName, $t("checkin-receipt-card.profile_label", { profileId: model.profileId })].filter(Boolean).join(" · ");
   const subtitleLines = wrapText(metrics, subtitle, width - 70);
   const tableTop = 30 + 42 + subtitleLines.length * 24 + 6 + 14;
   let nextRow = tableTop;
   metrics.font = body;
   const values = [
-    ["游戏 / 社区", "游戏签到", "社区签到"],
-    ...model.rows.map(row => [row.label, row.game || "未执行", row.community || "未执行"]),
+    [$t("checkin-receipt-card.text_f75cf8f3c7"), $t("checkin-receipt-card.text_0f0f41f0a7"), $t("checkin-receipt-card.text_8997e1e17e")],
+    ...model.rows.map(row => [row.label, row.game || $t("checkin-receipt-card.text_231fe22042"), row.community || $t("checkin-receipt-card.text_231fe22042")]),
   ] as const;
   const rows = values.map(([name, game, community]) => {
     const cells = [
@@ -164,7 +167,7 @@ export async function renderCheckinReceiptCard(model: CheckinReceiptCardModel,
   const detailHeight = message ? detailHeader + message.length * 22 + 8 + 20 : 0;
   const footerTop = detailTop + (message ? detailHeight + 10 : 0);
   metrics.font = small;
-  const footer = wrapText(metrics, `Lotus-Yunzai${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, width - 30);
+  const footer = wrapText(metrics, $t("checkin-receipt-card.text_33d658749e", { "value1": model.generatedAt ? ` · ${model.generatedAt}` : "" }), width - 30);
   const height = Math.max(240, footerTop + 50 + (footer.length - 1) * 18);
   const zoom = (720 / width) * scale;
   const pixelWidth = Math.round(width * zoom);
@@ -176,7 +179,7 @@ export async function renderCheckinReceiptCard(model: CheckinReceiptCardModel,
     ctx.imageSmoothingQuality = "high";
     fill(ctx, 0, 0, width, Math.ceil(pixelHeight / zoom), "#243344");
     ctx.drawImage(background, 0, 0, width, height);
-    text(ctx, ["签到结果"], 35, 30, large, 42, white, { shadow: true });
+    text(ctx, [$t("checkin-receipt-card.text_0207473a6d")], 35, 30, large, 42, white, { shadow: true });
     text(ctx, subtitleLines, 35, 75, subtitleFont, 24, white, { shadow: true });
 
     clipPanel(ctx, tableTop, tableHeight);
@@ -202,6 +205,6 @@ export async function renderCheckinReceiptCard(model: CheckinReceiptCardModel,
       text(ctx, message, 50, detailTop + detailHeader + 10, body, 22, white);
       ctx.restore();
     }
-    text(ctx, footer, width / 2, footerTop + 15, small, 18, white, { center: true, shadow: true });
+    text(ctx, footer, width / 2, footerTop + 15, small, 18, white, { center: true, shadow: true, footer: true });
   }, mode, { renderScale: scale, allowHalfScale: scale === 4 });
 }

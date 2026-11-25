@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { openHoYoLabCheckinTransport, type HoYoLabCheckinAccount, type HoYoLabCheckinOptions } from "./hoyolab-checkin-transport.ts";
@@ -42,7 +45,7 @@ function decimal(value: unknown, pattern: RegExp): string | undefined {
 }
 
 function invalidResponse(subject: string): never {
-  throw new HoyoRequestError("response", `官方${subject}响应无效。`);
+  throw new HoyoRequestError("response", $t("hoyolab-default-checkin.text_691992adbc", { "subject": subject }));
 }
 
 function checkinRole<Biz extends string, Region extends string>(
@@ -79,7 +82,7 @@ export async function openHoYoLabDefaultCheckin<Biz extends string, Region exten
   const { gameBiz, activity, endpoint } = game;
   const { language, deviceId, request, roleList } = openHoYoLabCheckinTransport(source, transport, options, game.credential);
   const checkinHeaders = { "x-rpc-signgame": game.signgame };
-  const catalogueSubject = `${game.name}国际服角色目录`;
+  const catalogueSubject = $t("hoyolab-default-checkin.text_3661f1e5e0", { "name": game.name });
   const data = await roleList(gameBiz, catalogueSubject);
   const catalogue = new Map<string, Role>();
   for (const entry of data) {
@@ -102,7 +105,7 @@ export async function openHoYoLabDefaultCheckin<Biz extends string, Region exten
     async readInfo(): Promise<HoYoLabDefaultCheckinInfo<Role>> {
       const read = ++infoRead;
       canSubmit = false;
-      const subject = `${game.name}国际服签到状态`;
+      const subject = $t("hoyolab-default-checkin.text_34486d64ee", { "name": game.name });
       const infoUrl = new URL(`${endpoint}/info`);
       infoUrl.search = new URLSearchParams({ lang: language, act_id: activity }).toString();
       const state = await request(infoUrl, checkinHeaders, subject);
@@ -120,15 +123,15 @@ export async function openHoYoLabDefaultCheckin<Biz extends string, Region exten
     },
     async submit({ blockedUids }: { readonly blockedUids: readonly string[] }): Promise<"accepted"> {
       if (submitted || !canSubmit || roles.length === 0) {
-        throw new HoyoRequestError("invalid-input", `${game.name}国际服当前账号状态无法发起签到。`);
+        throw new HoyoRequestError("invalid-input", $t("hoyolab-default-checkin.text_dc6c3b9e24", { "name": game.name }));
       }
       // This endpoint selects the account default role. Any matching exclusion blocks the write.
       if (!Array.isArray(blockedUids) || blockedUids.some(uid => typeof uid !== "string" || !/^[1-9]\d{0,19}$/u.test(uid)) ||
           blockedUids.some(uid => roles.some(role => role.uid === uid))) {
-        throw new HoyoRequestError("invalid-input", `${game.name}国际服默认角色无法安全满足签到黑名单。`);
+        throw new HoyoRequestError("invalid-input", $t("hoyolab-default-checkin.text_85e5969f7c", { "name": game.name }));
       }
       submitted = true;
-      const subject = `${game.name}国际服签到提交`;
+      const subject = $t("hoyolab-default-checkin.text_2de6071f91", { "name": game.name });
       const signUrl = new URL(`${endpoint}/sign`);
       signUrl.searchParams.set("lang", language);
       const result = await request(signUrl, {

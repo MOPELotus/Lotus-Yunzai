@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,17 +13,17 @@ import { recoverUpdateActivation } from "../lib/update-activation.ts";
 const [root, readyFile, attempt] = process.argv.slice(2);
 await managedProcess(async ready => {
   // This entry and its working directory must survive replacement of the checkout.
-  if (!root || !readyFile) throw new Error("PM2 宿主启动参数缺失。");
+  if (!root || !readyFile) throw new Error($t("scripts.managed-entry.text_43184a21ab"));
   const attemptFile = join(dirname(readyFile), "host-start-attempt");
   function checkAttempt() {
     if (attempt === undefined) return;
     let current: string | undefined;
     try { current = readFileSync(attemptFile, "utf8"); } catch {}
-    if (attempt !== current) throw new Error("本次后台启动已取消或被替换。");
+    if (attempt !== current) throw new Error($t("scripts.managed-entry.text_9a37bc1321"));
   }
   checkAttempt();
   const lock = await lockFile(managedHostLockPath(root),
-    "托管宿主", 0, "当前目录已有托管宿主运行。");
+    $t("scripts.managed-entry.text_e533bb7ee6"), 0, $t("scripts.managed-entry.text_b7751da923"));
   try {
     await recoverUpdateActivation(root);
   } finally {
@@ -33,7 +37,7 @@ await managedProcess(async ready => {
   let announced = false;
   const status = await runManaged(root, ready && (async () => {
     checkAttempt();
-    if (available === false) throw new Error("后台工作进程尚未就绪。");
+    if (available === false) throw new Error($t("scripts.managed-entry.text_4393811e31"));
     announced = true;
     await ready();
   }), (workerReady) => {

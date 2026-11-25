@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -17,17 +20,17 @@ function object(value: unknown): StarRailRoguePayload | undefined {
 export async function readStarRailRogue(source: ProfileRequestContext, transport: HoyoTransport,
   options: StarRailRogueOptions, verifyProfile?: () => Promise<void>): Promise<{ data: StarRailRoguePayload }> {
   if (!["starrail-rogue", "starrail-rogue-locust", "starrail-rogue-tourn"].includes(options.kind)) {
-    throw new HoyoRequestError("invalid-input", "星铁宇宙战绩类型无效。");
+    throw new HoyoRequestError("invalid-input", $t("starrail-rogue.text_3192ab412a"));
   }
   const { data, region } = await readCnGameRecord(source, transport, options, verifyProfile);
   const role = object(data.role);
-  const invalidShape = () => new HoyoRequestError("response", "官方星铁宇宙战绩响应格式无效。");
+  const invalidShape = () => new HoyoRequestError("response", $t("starrail-rogue.text_435ac71733"));
   if (data.role != null && !role) throw invalidShape();
   for (const identity of role ? [data, role] : [data]) {
     if (["uid", "role_id", "game_uid"].some(key => Object.hasOwn(identity, key) && String(identity[key]) !== source.role.uid) ||
         ["region", "server"].some(key => Object.hasOwn(identity, key) && identity[key] !== region) ||
         (Object.hasOwn(identity, "game_biz") && identity.game_biz !== source.role.gameBiz)) {
-      throw new HoyoRequestError("response", "官方星铁宇宙战绩的角色或区服与当前档案不一致。");
+      throw new HoyoRequestError("response", $t("starrail-rogue.text_433ceb1e94"));
     }
   }
   const sections = options.kind === "starrail-rogue" ? ["current_record", "last_record"] :

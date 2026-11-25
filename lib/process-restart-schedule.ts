@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { HandlerScope } from "./plugins/handler.ts";
 import { legacyHostCronTimeZone, LegacyTasks } from "./plugins/tasks.ts";
 
@@ -24,7 +27,7 @@ export function scheduleProcessRestart(
     running = Promise.resolve().then(() => {
       if (!stopped) return restart();
     }).catch(() => {
-      console.warn("[任务] 定时重启执行失败。");
+      console.warn($t("lib.process-restart-schedule.text_ec99551038"));
     }).finally(() => {
       running = undefined;
     });
@@ -46,16 +49,16 @@ export function scheduleProcessRestart(
     const minutes = typeof time === "number" || typeof time === "string" ? Number(time) : NaN;
     const milliseconds = Math.ceil(minutes * 60_000);
     if (Number.isSafeInteger(milliseconds) && minutes > 0) waitForDelay(milliseconds);
-    else if (minutes !== 0) console.warn("[任务] 跳过 bot.yaml 中无效的 restart_time。");
+    else if (minutes !== 0) console.warn($t("lib.process-restart-schedule.text_6b923403b1"));
   }
 
   const cron = config.restart_cron;
   for (const expression of Array.isArray(cron) ? cron : [cron]) {
     if (!expression) continue;
     try {
-      tasks.register(owner, { name: "定时重启", task: { cron: expression, fnc: trigger } });
+      tasks.register(owner, { name: $t("lib.process-restart-schedule.text_562788fd33"), task: { cron: expression, fnc: trigger } });
     } catch {
-      console.warn("[任务] 跳过 bot.yaml 中无效的 restart_cron。");
+      console.warn($t("lib.process-restart-schedule.text_f23ea4f247"));
     }
   }
 

@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -153,7 +154,7 @@ test("星铁独立旧配置按受信角色决定权限，添加使用现代存�
       await cp(starRail, starRailTarget, { recursive: true, dereference: true,
         filter: path => ![".git", "node_modules", "test"].includes(basename(path)) });
       await symlink(join(starRail, "node_modules"), join(starRailTarget, "node_modules"), "dir");
-      await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+      await linkHostPackages(root);
       for (const folder of [archive + "/config", archive + "/defSet", "backup/plugins/genshin/config"]) {
         await mkdir(join(root, folder), { recursive: true });
       }

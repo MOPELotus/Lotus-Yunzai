@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import type { WarpSettings } from "../plugins/starrail/simulation/settings.ts";
@@ -8,27 +11,27 @@ const allowanceKeys = ["special", "regular", "recallSeconds"] as const;
 const rateKeys = ["characterFive", "characterFour", "coneFive", "coneFour", "featuredFive"] as const;
 const poolKeys = ["characterFive", "characterFour", "coneFive", "coneFour"] as const;
 const fields = [
-  { key: "enabled", label: "启用星铁模拟跃迁", type: "boolean" },
-  { key: "multiple", label: "允许单次超过十连", type: "boolean" },
-  { key: "weeklyBonus", label: "启用每周双黄", type: "boolean",
-    hint: "本周在当前会话恰好抽到一个五星后，五星基础概率翻倍。联动池不参与。" },
-  { key: "automaticPools", label: "使用自动轮换卡池", type: "boolean",
-    hint: "开启时手工卡池名单仍会保存，关闭自动轮换后生效。" },
-  { key: "reincarnationMinutes", label: "转生冷却（分钟）", type: "number", min: 1, max: 1440 },
-  { key: "special", label: "每日专票数", type: "number", min: 0, max: 10_000, hint: "填 0 时当日首次领取不发这一种票。" },
-  { key: "regular", label: "每日通票数", type: "number", min: 0, max: 10_000, hint: "填 0 时当日首次领取不发这一种票。" },
-  { key: "recallSeconds", label: "结果图撤回延时（秒）", type: "number", min: 0, max: 120, hint: "填 0 不撤回。" },
-  { key: "groups", label: "按群覆盖", type: "json" },
-  { key: "characterFive", label: "角色池五星基础概率（万分比）", type: "number", min: 0, max: 10_000 },
-  { key: "characterFour", label: "角色池四星基础概率（万分比）", type: "number", min: 0, max: 10_000 },
-  { key: "coneFive", label: "光锥池五星基础概率（万分比）", type: "number", min: 0, max: 10_000 },
-  { key: "coneFour", label: "光锥池四星基础概率（万分比）", type: "number", min: 0, max: 10_000 },
-  { key: "featuredFive", label: "五星小保底命中率（百分比）", type: "number", min: 0, max: 100, nullable: true,
-    hint: "留空时角色池为 50%，光锥池为 75%。" },
-  { key: "poolCharacterFive", label: "手工五星角色名单", type: "list", separator: "line", hint: "每行一名，最多 4 名。" },
-  { key: "poolCharacterFour", label: "手工四星角色名单", type: "list", separator: "line", hint: "每行一名，最多 20 名。" },
-  { key: "poolConeFive", label: "手工五星光锥名单", type: "list", separator: "line", hint: "每行一项，最多 4 项。" },
-  { key: "poolConeFour", label: "手工四星光锥名单", type: "list", separator: "line", hint: "每行一项，最多 20 项。" },
+  { key: "enabled", label: $t("lib.panel-starrail-warp-settings.text_bb3ab28000"), type: "boolean" },
+  { key: "multiple", label: $t("lib.panel-starrail-warp-settings.text_83dc2a0959"), type: "boolean" },
+  { key: "weeklyBonus", label: $t("lib.panel-starrail-warp-settings.text_c9d822251f"), type: "boolean",
+    hint: $t("lib.panel-starrail-warp-settings.text_248f5f9571") },
+  { key: "automaticPools", label: $t("lib.panel-starrail-warp-settings.text_d18fab6b6a"), type: "boolean",
+    hint: $t("lib.panel-starrail-warp-settings.text_08fe9a48b5") },
+  { key: "reincarnationMinutes", label: $t("lib.panel-starrail-warp-settings.text_b405fb5cc3"), type: "number", min: 1, max: 1440 },
+  { key: "special", label: $t("lib.panel-starrail-warp-settings.text_e01bc9dbf8"), type: "number", min: 0, max: 10_000, hint: $t("lib.panel-starrail-warp-settings.text_8eabbe13fc") },
+  { key: "regular", label: $t("lib.panel-starrail-warp-settings.text_b520619b36"), type: "number", min: 0, max: 10_000, hint: $t("lib.panel-starrail-warp-settings.text_8eabbe13fc") },
+  { key: "recallSeconds", label: $t("lib.panel-starrail-warp-settings.text_36db990b5b"), type: "number", min: 0, max: 120, hint: $t("lib.panel-starrail-warp-settings.text_88a82045f8") },
+  { key: "groups", label: $t("lib.panel-starrail-warp-settings.text_0d7583d991"), type: "json" },
+  { key: "characterFive", label: $t("lib.panel-starrail-warp-settings.text_035406f55a"), type: "number", min: 0, max: 10_000 },
+  { key: "characterFour", label: $t("lib.panel-starrail-warp-settings.text_bcff292549"), type: "number", min: 0, max: 10_000 },
+  { key: "coneFive", label: $t("lib.panel-starrail-warp-settings.text_0b22ca9669"), type: "number", min: 0, max: 10_000 },
+  { key: "coneFour", label: $t("lib.panel-starrail-warp-settings.text_8d5074055f"), type: "number", min: 0, max: 10_000 },
+  { key: "featuredFive", label: $t("lib.panel-starrail-warp-settings.text_b7a73bc6f6"), type: "number", min: 0, max: 100, nullable: true,
+    hint: $t("lib.panel-starrail-warp-settings.text_f934a1179a") },
+  { key: "poolCharacterFive", label: $t("lib.panel-starrail-warp-settings.text_43dbf00106"), type: "list", separator: "line", hint: $t("lib.panel-starrail-warp-settings.text_3f9f77f05d") },
+  { key: "poolCharacterFour", label: $t("lib.panel-starrail-warp-settings.text_7bc5ceb3a5"), type: "list", separator: "line", hint: $t("lib.panel-starrail-warp-settings.text_140a992481") },
+  { key: "poolConeFive", label: $t("lib.panel-starrail-warp-settings.text_0feb25abd1"), type: "list", separator: "line", hint: $t("lib.panel-starrail-warp-settings.text_ccca00e786") },
+  { key: "poolConeFour", label: $t("lib.panel-starrail-warp-settings.text_b73e12d051"), type: "list", separator: "line", hint: $t("lib.panel-starrail-warp-settings.text_ff9e4d8e0f") },
 ] as const;
 
 type Config = Record<string, unknown>;
@@ -74,7 +77,7 @@ export function panelStarRailWarpSettings(root: URL) {
   return async (request: Request, stillAuthorized: () => boolean): Promise<Response> => {
     const active = () => !request.signal.aborted && stillAuthorized();
     const verify = async () => {
-      if (!active()) throw new WarpPanelError(401, "管理会话已失效。");
+      if (!active()) throw new WarpPanelError(401, $t("lib.panel-starrail-warp-settings.text_9af41270d6"));
     };
     if (request.method !== "GET" && request.method !== "PUT") {
       return new Response(null, { status: 405, headers: { Allow: "GET, PUT" } });
@@ -91,15 +94,15 @@ export function panelStarRailWarpSettings(root: URL) {
       }
       let body: Config | undefined;
       try { body = record(await readPanelJson(request, 1_048_576)); }
-      catch { throw new WarpPanelError(400, "模拟跃迁设置格式有误。"); }
+      catch { throw new WarpPanelError(400, $t("lib.panel-starrail-warp-settings.text_b075117bf7")); }
       const previous = record(body?.previous), values = record(body?.values);
       if (!body || Object.keys(body).length !== 2 || !previous || !values || Object.keys(values).length !== fields.length ||
-          !fields.every(({ key }) => Object.hasOwn(values, key))) throw new WarpPanelError(400, "模拟跃迁设置格式有误。");
+          !fields.every(({ key }) => Object.hasOwn(values, key))) throw new WarpPanelError(400, $t("lib.panel-starrail-warp-settings.text_b075117bf7"));
       let next: WarpSettings;
       try { next = parseWarpSettings(settingsFrom(values)); }
-      catch { throw new WarpPanelError(400, "请检查模拟跃迁数值、群号或卡池名单。"); }
+      catch { throw new WarpPanelError(400, $t("lib.panel-starrail-warp-settings.text_cbb7b0c33e")); }
       const saved = await store.update(current => {
-        if (!isDeepStrictEqual(fieldsFrom(current), previous)) throw new WarpPanelError(409, "模拟跃迁设置已更改。");
+        if (!isDeepStrictEqual(fieldsFrom(current), previous)) throw new WarpPanelError(409, $t("lib.panel-starrail-warp-settings.text_9b81579673"));
         return next;
       }, verify);
       return Response.json(snapshot(saved));

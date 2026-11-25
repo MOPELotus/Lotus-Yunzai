@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -194,7 +195,7 @@ globalThis.fetch = (input, options) => {
       const installed = join(host, "plugins/genshin");
       await cp(plugin, installed, { recursive: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });
       await symlink(join(plugin, "node_modules"), join(installed, "node_modules"), "dir");
-      await symlink(join(import.meta.dir, "../packages"), join(host, "packages"), "dir");
+      await linkHostPackages(host);
       await cp(join(target, "config/genshin-wish.yaml"), join(host, "config/genshin-wish.yaml"));
       await mkdir(join(host, archive), { recursive: true });
       await cp(join(target, archive), join(host, archive), { recursive: true });

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback } from "./builtin-fonts.ts";
 import { constants } from "node:fs";
@@ -25,16 +28,16 @@ const white = "#fff";
 const muted = "#aaa";
 const fontFamilies = new WeakMap<Context, string>();
 const bannerStats = [
-  ["totalNum", "抽卡总数"], ["star5Num", "金卡"], ["c5UpNum", "UP角色"], ["w5UpNum", "UP武器"],
-  ["star4Num", "紫卡"], ["avgUpNum", "平均UP抽"],
+  ["totalNum", $t("gacha-version-card.text_fe61382ff1")], ["star5Num", $t("gacha-version-card.text_90d84ceb1d")], ["c5UpNum", $t("gacha-version-card.text_4c69a80f18")], ["w5UpNum", $t("gacha-version-card.text_a4a1d95560")],
+  ["star4Num", $t("gacha-version-card.text_07a28178b3")], ["avgUpNum", $t("gacha-version-card.text_94f7b3e1d4")],
 ] as const;
 const groupStats = [
-  ["totalNum", "总抽卡"], ["star5Num", "金卡"], ["upNum", "UP金卡"], ["c4Num", "紫角色"], ["w4Num", "紫武器"],
+  ["totalNum", $t("gacha-version-card.text_55d4a18530")], ["star5Num", $t("gacha-version-card.text_90d84ceb1d")], ["upNum", $t("gacha-version-card.text_aa4a459a6b")], ["c4Num", $t("gacha-version-card.text_6b407943c9")], ["w4Num", $t("gacha-version-card.text_9a455954b1")],
 ] as const;
 
 const games = {
-  sr: { label: "星铁", background: "sr", face: "卡芙卡", columns: 7, cardWidth: 90, groupsTop: 146, prefix: "*" },
-  gs: { label: "原神", background: "hydro", face: "芭芭拉", columns: 9, cardWidth: 69, groupsTop: 162, prefix: "#" },
+  sr: { label: $t("gacha-version-card.text_a2927891f0"), background: "sr", face: $t("gacha-version-card.text_6cc5e43b1b"), columns: 7, cardWidth: 90, groupsTop: 146, prefix: "*" },
+  gs: { label: $t("gacha-version-card.text_d1597c51ed"), background: "hydro", face: $t("gacha-version-card.text_ef09301bf5"), columns: 9, cardWidth: 69, groupsTop: 162, prefix: "#" },
 } as const;
 type Game = keyof typeof games;
 
@@ -106,11 +109,11 @@ async function readTheme(root: string, game: Game, qFace: boolean) {
   const aliases: string[] = [];
   for (const [name, file] of fonts) {
     const path = await assetPath(root, `common/font/${file}`);
-    if (!path) throw new Error(`${config.label}版本统计的原主题字体不可用。`);
+    if (!path) throw new Error($t("gacha-version-card.text_0b72e021d2", { "label": config.label }));
     try {
       aliases.push(registerGachaThemeFont(name, path));
     } catch {
-      throw new Error(`${config.label}版本统计的原主题字体不可用。`);
+      throw new Error($t("gacha-version-card.text_0b72e021d2", { "label": config.label }));
     }
   }
 
@@ -121,7 +124,7 @@ async function readTheme(root: string, game: Game, qFace: boolean) {
   const preferred = qFace ? await readImage(root, `meta-${game}/character/${config.face}/imgs/face-q.webp`) : undefined;
   const face = preferred ?? regularFace ?? await readImage(root, "gacha/imgs/no-avatar.webp");
   if (!background || !banner || !face || !five || (game === "gs" && !four)) {
-    throw new Error(`${config.label}版本统计的原主题图片不可用。`);
+    throw new Error($t("gacha-version-card.text_965472f277", { "label": config.label }));
   }
   return { background, banner, face, four, five, family: aliases.join(", ") + ", " + builtinFontFallback };
 }
@@ -155,11 +158,11 @@ function rect(ctx: Context, x: number, y: number, w: number, h: number, corners:
 }
 
 function text(ctx: Context, value: string | number, x: number, y: number, size = 16, color = white,
-  align: CanvasTextAlign = "left", maxWidth?: number, weight = false) {
+  align: CanvasTextAlign = "left", maxWidth?: number, weight = false, footer = false) {
   ctx.font = `${weight ? "700 " : ""}${size}px ${fontFamilies.get(ctx)!}`;
   ctx.textBaseline = "middle";
   ctx.textAlign = align;
-  ctx.fillStyle = value === "Lotus-Yunzai" ? brandTextColor(ctx, value, x, y, maxWidth) : color;
+  ctx.fillStyle = footer ? brandTextColor(ctx, String(value), x, y, maxWidth) : color;
   if (weight) {
     ctx.strokeStyle = ctx.fillStyle;
     ctx.lineWidth = size * 0.022;
@@ -184,12 +187,12 @@ function drawNickname(ctx: Context, nickname: string, x: number, y: number, size
   text(ctx, nickname, x, y, size, color, "left", maxWidth, true);
 }
 
-function richLine(ctx: Context, parts: readonly (readonly [string, string])[], x: number, y: number, size: number, weight = false) {
+function richLine(ctx: Context, parts: readonly (readonly [string, string])[], x: number, y: number, size: number, weight = false, footer = false) {
   ctx.font = `${weight ? "700 " : ""}${size}px ${fontFamilies.get(ctx)!}`;
   const widths = parts.map(([value]) => ctx.measureText(value).width);
   let left = x - widths.reduce((sum, value) => sum + value, 0) / 2;
   for (const [index, [value, color]] of parts.entries()) {
-    text(ctx, value, left, y, size, color, "left", undefined, weight);
+    text(ctx, value, left, y, size, color, "left", undefined, weight, footer);
     left += widths[index]!;
   }
 }
@@ -253,8 +256,8 @@ function drawBanner(ctx: Context, model: GachaVersionModel, theme: Theme,
 
 function drawPageHead(ctx: Context, model: GachaVersionModel, page: NonNullable<GachaVersionModel["pageInfo"]>, game: Game) {
   rect(ctx, margin, 25, panelWidth, 45, 30, "rgba(0,0,0,.50)");
-  const mid = `#${model.uid} · ${model.poolName}统计`;
-  const marker = `第 ${page.page}/${page.total} 张`;
+  const mid = $t("gacha-version-card.text_bdb4b2fc9d", { "uid": model.uid, "poolName": model.poolName });
+  const marker = $t("gacha-version-card.text_dc8941f893", { "page": page.page, "total": page.total });
   ctx.font = `700 20px ${fontFamilies.get(ctx)!}`;
   const nameWidth = Math.min(ctx.measureText(model.face.name).width, 235);
   ctx.font = `16px ${fontFamilies.get(ctx)!}`;
@@ -267,7 +270,7 @@ function drawPageHead(ctx: Context, model: GachaVersionModel, page: NonNullable<
 
 function cardName(model: GachaVersionModel, { id }: ItemCount) {
   const item = model.gacha.itemMap[id];
-  const name = item?.name || "未知";
+  const name = item?.name || $t("gacha-version-card.text_4d8c1c5b42");
   return name.length > 4 ? item?.abbr || name : name;
 }
 
@@ -344,8 +347,8 @@ function drawGroup(ctx: Context, group: Group, model: GachaVersionModel, theme: 
     const value = group.stats[name];
     if (!value) return [];
     if (name !== "totalNum") return [{ value, label }];
-    if (group.unassigned) return [{ value, label: "收录抽数" }];
-    return [{ value, label: dated && model.gacha.totalStat.unassignedDraws ? "可确认抽数" : label }];
+    if (group.unassigned) return [{ value, label: $t("gacha-version-card.text_c82087af4d") }];
+    return [{ value, label: dated && model.gacha.totalStat.unassignedDraws ? $t("gacha-version-card.text_dba78395fa") : label }];
   });
   let left = margin + titleWidth + 20;
   for (const [index, { label, value }] of values.entries()) {
@@ -408,48 +411,48 @@ function drawNotice(ctx: Context, game: Game, recordArchive?: true, poolName?: s
   if (recordArchive) {
     if (poolName === "全部") {
       richLine(ctx, [
-        ["本地逐抽档案 · 统计角色、光锥与常驻池，", light], ["*逐抽全部记录", gold], [" 查看六池", light],
+        [$t("gacha-version-card.text_7978eaa374"), light], [$t("gacha-version-card.text_8167384877"), gold], [$t("gacha-version-card.text_9bad52ad6f"), light],
       ], width / 2, 128, 13);
       return;
     }
     richLine(ctx, [
-      ["本地逐抽档案 · ", light], ["*逐抽角色统计", gold], ["  ", light], ["*逐抽光锥统计", gold],
-      ["  ", light], ["*逐抽常驻统计", gold], ["  ", light], ["*逐抽全部统计", gold],
+      [$t("gacha-version-card.text_2a53e47907"), light], [$t("gacha-version-card.text_a74acdd089"), gold], ["  ", light], [$t("gacha-version-card.text_a5e40e2d62"), gold],
+      ["  ", light], [$t("gacha-version-card.text_44316c25aa"), gold], ["  ", light], [$t("gacha-version-card.text_e9555fcf84"), gold],
     ], width / 2, 128, 13);
     return;
   }
   if (game === "gs") {
     richLine(ctx, [
-      ["#角色统计/#武器统计", gold], [" 角色/武器池统计，  ", light],
-      ["#常驻统计/#集录统计", gold], [" 常驻/集录池统计", light],
+      ["#角色统计/#武器统计", gold], [$t("gacha-version-card.text_b557a2e1db"), light],
+      ["#常驻统计/#集录统计", gold], [$t("gacha-version-card.text_f8193439ad"), light],
     ], width / 2, 128, 13);
     richLine(ctx, [
-      ["#全部统计", gold], [" 全部抽卡统计，  ", light],
-      ["#抽卡帮助", gold], [" 获取帮助", light],
+      ["#全部统计", gold], [$t("gacha-version-card.text_3397e42ea1"), light],
+      ["#抽卡帮助", gold], [$t("gacha-version-card.text_7ccceb76c3"), light],
     ], width / 2, 144, 13);
     return;
   }
   richLine(ctx, [
-    ["*角色统计/*武器统计", gold], [" 角色/武器池统计，  ", light],
-    ["*常驻统计", gold], [" 常驻池统计，  ", light],
-    ["*全部统计", gold], [" 全部抽卡统计，  ", light],
-    ["*抽卡帮助", gold], [" 获取帮助", light],
+    [$t("gacha-version-card.text_0eb5dc0d75"), gold], [$t("gacha-version-card.text_b557a2e1db"), light],
+    [$t("gacha-version-card.text_f93b41cd84"), gold], [$t("gacha-version-card.text_1bff9db816"), light],
+    [$t("gacha-version-card.text_ea0fa7c627"), gold], [$t("gacha-version-card.text_3397e42ea1"), light],
+    [$t("gacha-version-card.text_da78aac178"), gold], [$t("gacha-version-card.text_7ccceb76c3"), light],
   ], width / 2, 128, 13);
 }
 
 function unassignedNotice(model: GachaVersionModel) {
   const { unassignedDraws, unclassifiedDraws, totalNum } = model.gacha.totalStat;
   const notes = [];
-  if (unassignedDraws > 0) notes.push(`累计 ${totalNum} 抽 · 分期可确认 ${totalNum - unassignedDraws} 抽 · ${unassignedDraws} 抽未能归至期次`);
-  if (unclassifiedDraws) notes.push(`${unclassifiedDraws} 抽星级未辨认`);
+  if (unassignedDraws > 0) notes.push($t("gacha-version-card.text_1a6ad19554", { "totalNum": totalNum, "value2": totalNum - unassignedDraws, "unassignedDraws": unassignedDraws }));
+  if (unclassifiedDraws) notes.push($t("gacha-version-card.text_e1a9a10145", { "unclassifiedDraws": unclassifiedDraws }));
   return notes.join(" · ");
 }
 
 function pagingNote(model: GachaVersionModel, game: Game) {
   const { pageInfo, gacha, poolName } = model;
-  if (pageInfo) return `第 ${pageInfo.page}/${pageInfo.total} 张 · 第 ${pageInfo.from}~${pageInfo.to} 期，共 ${pageInfo.count} 期卡池`;
+  if (pageInfo) return $t("gacha-version-card.text_84c666ec41", { "page": pageInfo.page, "total": pageInfo.total, "from": pageInfo.from, "to": pageInfo.to, "count": pageInfo.count });
   return gacha.hiddenNum
-    ? `仅显示最近 ${gacha.shownNum} 期卡池，更早的 ${gacha.hiddenNum} 期未显示（顶部统计包含全部数据），发送 ${games[game].prefix}${model.recordArchive ? "逐抽" : ""}${poolName}全部统计 查看全部`
+    ? $t("gacha-version-card.text_83a8704549", { "shownNum": gacha.shownNum, "hiddenNum": gacha.hiddenNum, "prefix": games[game].prefix, "value4": model.recordArchive ? $t("gacha-version-card.text_4dbd45ce46") : "", "poolName": poolName })
     : "";
 }
 
@@ -457,7 +460,7 @@ export async function renderGachaVersion(
   game: Game, model: GachaVersionModel,
   { mode = "auto", scale = 4, themeDirectory, avatar, qFace = true }: GachaVersionOptions,
 ) {
-  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("版本统计缩放比例须在 1 至 4 之间。");
+  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError($t("gacha-version-card.text_3ac360ee98"));
   const config = games[game];
   const laterPage = model.pageInfo && model.pageInfo.page > 1 ? model.pageInfo : undefined;
   const note = laterPage ? "" : unassignedNotice(model);
@@ -468,13 +471,13 @@ export async function renderGachaVersion(
     const bottom = top + layouts.reduce((sum, layout) => sum + layout.height + 10, 0);
     const footer = bottom + (paging ? 38 : 0);
     const height = footer + 37;
-    if (height > 24_000) throw new RangeError(`${config.label}版本统计超出可渲染高度。`);
+    if (height > 24_000) throw new RangeError($t("gacha-version-card.text_ee0ed776e0", { "label": config.label }));
     return { bottom, footer, height };
   }
   let layouts = groups.map((group) => layoutGroup(group, model, game, undefined));
   let { bottom, footer, height } = dimensions(layouts);
   const root = await realpath(themeDirectory).catch(() => undefined);
-  if (!root) throw new Error(`${config.label}版本统计的原主题目录不可用。`);
+  if (!root) throw new Error($t("gacha-version-card.text_10ab28c5db", { "label": config.label }));
   const theme = await themeAt(root, game, qFace);
   if (game === "gs") {
     // The scratch canvas measures text only. All visible graphics go through renderPng below.
@@ -521,8 +524,8 @@ export async function renderGachaVersion(
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
     richLine(ctx, [
-      ["Lotus-Yunzai", "#fff"],
-    ], 375, footer + 8.5, 14, true);
+      [$t("gacha-version-card.text_3867834e77"), "#fff"],
+    ], 375, footer + 8.5, 14, true, true);
     ctx.restore();
   }, mode, { renderScale: scale, allowHalfScale: scale === 4 });
 }

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { parseArtifactListLimit, parsePanelCommaGroup } from "./group-panel-rank-settings.ts";
@@ -66,7 +69,7 @@ export async function stageLegacyPanelRankConfig(archive: string | undefined, st
     const destination = join(stage, "config");
     await mkdir(destination, { mode: 0o700, recursive: true });
     if (!(await lstat(destination)).isDirectory() || await realpath(destination) !== destination) {
-      throw new Error("群榜配置暂存路径须为实体目录。");
+      throw new Error($t("lib.migration-panel-rank.text_554e709574"));
     }
     signal?.throwIfAborted();
     await writeFile(join(stage, rankConfig), Bun.YAML.stringify(settings.config), { flag: "wx", mode: 0o600 });

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { basename, isAbsolute, relative, sep } from "node:path";
@@ -61,13 +64,13 @@ function remoteLink(value: string): boolean {
 function decodeFile(value: string): { bytes: Uint8Array; mime?: string } {
   const dataUrl = /^data:([^;,]*);base64,/iu.exec(value);
   const prefix = dataUrl?.[0] ?? (value.startsWith("base64://") ? "base64://" : undefined);
-  if (prefix === undefined) throw new TypeError("请传入文件内容、Base64 或 HTTP(S) 链接。");
+  if (prefix === undefined) throw new TypeError($t("lib.file-to-url.text_b192d7bffc"));
   const length = value.length - prefix.length;
-  if (length > maxEncodedLength) throw new RangeError("需分享的文件过大。");
+  if (length > maxEncodedLength) throw new RangeError($t("lib.file-to-url.text_26eff17567"));
   const encoded = value.slice(prefix.length);
   if (!/^[A-Za-z0-9+/]*={0,2}$/u.test(encoded) ||
       (encoded.includes("=") ? length % 4 !== 0 : length % 4 === 1)) {
-    throw new TypeError("文件 Base64 格式无效。");
+    throw new TypeError($t("lib.file-to-url.text_2dbdfcd975"));
   }
   return { bytes: Buffer.from(encoded, "base64"), mime: dataUrl?.[1] };
 }
@@ -123,10 +126,10 @@ export function createFileToUrl(
     if (data instanceof URL && remoteLink(data.href)) return data.href;
 
     const base = baseUrl();
-    if (!base) throw new Error("公共 HTTP 地址未就绪，请配置 server.url 或在启动后分享文件。");
+    if (!base) throw new Error($t("lib.file-to-url.text_dddf4bf970"));
     const duration = options.time === undefined ? timeMs : options.time === null || options.time === false ? 0 : options.time;
     if (!Number.isFinite(duration) || duration < 0 || !Number.isSafeInteger(Math.ceil(duration))) {
-      throw new RangeError("文件有效期须为有效的非负毫秒数。");
+      throw new RangeError($t("lib.file-to-url.text_ee029150db"));
     }
 
     let bytes: Uint8Array;
@@ -136,13 +139,13 @@ export function createFileToUrl(
     } else if (data instanceof ArrayBuffer) {
       bytes = new Uint8Array(data);
     } else if (data instanceof Blob) {
-      if (data.size > maxPublicFileBytes) throw new RangeError("需分享的文件过大。");
+      if (data.size > maxPublicFileBytes) throw new RangeError($t("lib.file-to-url.text_26eff17567"));
       bytes = new Uint8Array(await data.arrayBuffer());
       mime = data.type;
     } else if (typeof data === "string") {
       ({ bytes, mime } = decodeFile(data));
     } else {
-      throw new TypeError("请传入文件内容、Base64 或 HTTP(S) 链接。");
+      throw new TypeError($t("lib.file-to-url.text_b192d7bffc"));
     }
 
     const raster = rasterFile(bytes);
@@ -161,29 +164,29 @@ export type FileToUrl = ReturnType<typeof createFileToUrl>;
 
 export function createImageToUrl(fileToUrl: FileToUrl, directory: string | undefined) {
   return async (input: string, options: Pick<FileOptions, "name"> = {}): Promise<URL | string> => {
-    if (!directory) throw new Error("未设置允许分享的本地图像目录。");
-    if (typeof input !== "string" || !input.trim() || input.includes("\0")) throw new TypeError("本地图像路径无效。");
+    if (!directory) throw new Error($t("lib.file-to-url.text_b769f1a5c5"));
+    if (typeof input !== "string" || !input.trim() || input.includes("\0")) throw new TypeError($t("lib.file-to-url.text_c8b966741b"));
     const [root, file] = await Promise.all([realpath(directory), realpath(input)]).catch(() => []);
-    if (!root || !file) throw new Error("本地图像不可读取。");
+    if (!root || !file) throw new Error($t("lib.file-to-url.text_e0f9fd923e"));
     const path = relative(root, file);
-    if (!path || path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path)) throw new Error("本地图像不在允许分享的目录。");
+    if (!path || path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path)) throw new Error($t("lib.file-to-url.text_2ca97c39b4"));
 
     const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
       .catch(() => undefined);
-    if (!handle) throw new Error("本地图像不可读取。");
+    if (!handle) throw new Error($t("lib.file-to-url.text_e0f9fd923e"));
     try {
       const before = await handle.stat();
-      if (!before.isFile() || before.size < 1 || before.size > maxPublicFileBytes) throw new Error("本地图像大小或类型无效。");
+      if (!before.isFile() || before.size < 1 || before.size > maxPublicFileBytes) throw new Error($t("lib.file-to-url.text_1ca4d5d092"));
       const bytes = Buffer.alloc(before.size);
       for (let offset = 0; offset < bytes.length;) {
         const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
-        if (!bytesRead) throw new Error("本地图像在读取时发生变化。");
+        if (!bytesRead) throw new Error($t("lib.file-to-url.text_0dc1cdafdf"));
         offset += bytesRead;
       }
       const after = await handle.stat();
-      if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) throw new Error("本地图像在读取时发生变化。");
+      if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) throw new Error($t("lib.file-to-url.text_0dc1cdafdf"));
       const raster = rasterFile(bytes);
-      if (!raster || !await verifyLocalRaster(bytes, raster.mime)) throw new Error("本地图像格式无效或不受支持。");
+      if (!raster || !await verifyLocalRaster(bytes, raster.mime)) throw new Error($t("lib.file-to-url.text_4c00b2f317"));
       return fileToUrl(bytes, { name: options.name ?? basename(input), mime: raster.mime });
     } finally {
       await handle.close();

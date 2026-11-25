@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { parseDocument } from "yaml";
@@ -21,7 +24,7 @@ export async function stageLegacyStarRailIndependentWarp(archive: string | undef
         const file = await readMigrationSourceFile(archive, join(base, subfolder, "gccfg.yaml"), maxBytes, signal);
         if (!file) return;
         const yaml = parseDocument(new TextDecoder("utf-8", { fatal: true }).decode(file.bytes), { strict: true, uniqueKeys: true });
-        if (yaml.errors.length || yaml.warnings.length) throw new TypeError("旧独立星铁模拟设置 YAML 无效。");
+        if (yaml.errors.length || yaml.warnings.length) throw new TypeError($t("lib.migration-starrail-independent-warp.text_4c521aaf5d"));
         return yaml.toJS({ maxAliasCount: 0 }) as unknown;
       }));
       if (defaults === undefined && overrides === undefined) continue;
@@ -34,7 +37,7 @@ export async function stageLegacyStarRailIndependentWarp(archive: string | undef
     }
     const output = join(stage, "data/starrail/simulation/independent-settings/1");
     await mkdir(output, { recursive: true, mode: 0o700 });
-    if (!(await lstat(output)).isDirectory() || await realpath(output) !== output) throw new Error("独立星铁模拟设置暂存路径须为实体目录。");
+    if (!(await lstat(output)).isDirectory() || await realpath(output) !== output) throw new Error($t("lib.migration-starrail-independent-warp.text_d9028b930f"));
     signal?.throwIfAborted();
     await writeFile(join(output, "1.json"), JSON.stringify(settings), { flag: "wx", mode: 0o600 });
     return { active: true, deferred: false };

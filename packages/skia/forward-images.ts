@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 export type InlineImage = { readonly type: "image"; readonly file: Uint8Array };
 type ImageForwardNode = string | InlineImage;
 type ImageForwardBatch = readonly ImageForwardNode[];
@@ -36,18 +39,18 @@ export function batchInlineImagePages<T>(pages: readonly T[], byteLimit: number 
 
 export async function sendBatchedImageForward({ batches, beforeSend }: BatchedImageForward | StreamedImageForward,
   forward?: (nodes: readonly ImageForwardNode[]) => Promise<boolean>) {
-  if (!forward) return "当前会话无法分段合并转发图片。";
+  if (!forward) return $t("forward-images.text_c7d417d962");
   let index = 0;
   for await (const nodes of batches) {
     index++;
     if (beforeSend) {
       try { await beforeSend(); }
-      catch { return "会话或档案已变更，余下图片已停止发送。"; }
+      catch { return $t("forward-images.text_f079e2df40"); }
     }
     try {
-      if (!await forward(nodes)) return `第 ${index} 段合并转发未发送，其余段落已停止。`;
+      if (!await forward(nodes)) return $t("forward-images.text_2922d95437", { "index": index });
     } catch {
-      return `第 ${index} 段合并转发结果未确认，请在聊天中核对。`;
+      return $t("forward-images.text_822ee89ef3", { "index": index });
     }
   }
 }

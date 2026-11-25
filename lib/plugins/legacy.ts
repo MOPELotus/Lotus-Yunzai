@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { LegacyExitHooks } from "./exit-hooks.ts";
 import { createHash } from "node:crypto";
 import { addAbortListener } from "node:events";
@@ -45,7 +48,7 @@ function legacyMessage(event: MessageEvent, legacyMessages: WeakMap<MessageEvent
     group_id: event.group_id,
     async getMemberMap() {
       const roster = await readRoster();
-      if (roster === undefined) throw new Error("当前群成员名单不可用。");
+      if (roster === undefined) throw new Error($t("lib.plugins.legacy.text_79b4126cd7"));
       return new Map(roster.map(({ id, card, nickname }) => [id, { user_id: id, card: card ?? "", nickname: nickname ?? "" }]));
     },
   }) : undefined;
@@ -171,7 +174,7 @@ function rulesFor(app: PluginInstance, rules: readonly unknown[], unscopedCalend
         typeof rule.fnc !== "string" || typeof app[rule.fnc] !== "function" ||
         (rule.event !== undefined && typeof rule.event !== "string") ||
         (rule.permission !== undefined && typeof rule.permission !== "string")) {
-      throw new Error(`插件 ${app.name} 有无效的消息规则。`);
+      throw new Error($t("lib.plugins.legacy.text_ea97ec44a7", { "name": app.name }));
     }
     return { reg: new RegExp(rule.reg ?? ""), fnc: rule.fnc, event: rule.event, permission: rule.permission,
       ...(unscopedCalendar && unscopedCalendarHandlers.has(rule.fnc) && { requiresAdaptation: true }),
@@ -199,18 +202,18 @@ function registerHandlers(app: App, label: string): void {
   const { initializer, scope } = app;
   const configured = initializer.handler;
   if (configured === undefined || configured === null) return;
-  if (typeof configured !== "object") throw new Error(`插件 ${initializer.name} 的 Handler 格式无效。`);
+  if (typeof configured !== "object") throw new Error($t("lib.plugins.legacy.text_413b04098f", { "name": initializer.name }));
 
   const ns = typeof initializer.namespace === "string" && initializer.namespace ? initializer.namespace : label;
   for (const value of Object.values(configured)) {
     if (typeof value !== "object" || value === null) {
-      throw new Error(`插件 ${initializer.name} 的 Handler 格式无效。`);
+      throw new Error($t("lib.plugins.legacy.text_413b04098f", { "name": initializer.name }));
     }
     const { key, fn, priority } = value as Record<string, unknown>;
     const method = typeof fn === "string" ? initializer[fn] : undefined;
     if (typeof key !== "string" || !key.trim() || typeof method !== "function" ||
         (priority !== undefined && (typeof priority !== "number" || !Number.isFinite(priority)))) {
-      throw new Error(`插件 ${initializer.name} 的 Handler 键、方法或优先级无效。`);
+      throw new Error($t("lib.plugins.legacy.text_e765b7f4f3", { "name": initializer.name }));
     }
     scope.add({ key, ns, fn: method as HandlerCallback,
       self: initializer, priority: priority ?? app.priority });
@@ -223,7 +226,7 @@ async function dispose(app: PluginInstance, scope: HandlerScope): Promise<void> 
     try {
       await scope.run(cleanup);
     } catch (error) {
-      console.warn(`[插件] 清理 ${app.name} 失败：`, error);
+      console.warn($t("lib.plugins.legacy.text_0f62c601f8", { "name": app.name }), error);
     }
   }
 }
@@ -264,7 +267,7 @@ export class LegacyPlugins {
     const order = this.#nextOrder++;
     const apps = events.map(native => {
       if (typeof native.name !== "string" || typeof native.event !== "string" || !Number.isFinite(native.priority)) {
-        throw new Error("原生事件名称、种类或优先级无效。");
+        throw new Error($t("lib.plugins.legacy.text_e8501a6d90"));
       }
       return {
         order, native, event: native.event, priority: native.priority, names: [native.name, label, packageName],
@@ -290,13 +293,13 @@ export class LegacyPlugins {
     externalSignal?: AbortSignal, validate?: () => Promise<boolean>, directory?: string,
   ): Promise<Registration> {
     externalSignal?.throwIfAborted();
-    if (this.#disposal) throw new Error("插件加载器已关闭。");
+    if (this.#disposal) throw new Error($t("lib.plugins.legacy.text_70e4c2d6e2"));
 
     const transaction = new AbortController();
     const previous = replace ? this.#initializers.filter((app) => app.label === label) : [];
     const oldScopes = new Set(previous.map(({ scope }) => scope));
     const order = previous[0]?.order ?? this.#nextOrder++;
-    this.#preparing.get(label)?.abort(new Error("插件入口有更新的加载请求。"));
+    this.#preparing.get(label)?.abort(new Error($t("lib.plugins.legacy.text_9ccba4cdef")));
     this.#preparing.set(label, transaction);
     const signal = externalSignal ? AbortSignal.any([externalSignal, transaction.signal]) : transaction.signal;
 
@@ -322,7 +325,7 @@ export class LegacyPlugins {
         scope.dispose();
       }
       abortCleanup = Promise.resolve().then(rollback).catch((error: unknown) => {
-        console.warn(`[插件] 清理 ${label} 失败：`, error);
+        console.warn($t("lib.plugins.legacy.text_160a19c1f5", { "label": label }), error);
       });
     };
 
@@ -351,7 +354,7 @@ export class LegacyPlugins {
         const { rule, event, priority, name } = initializer;
         if (!Array.isArray(rule) || typeof event !== "string" ||
             typeof priority !== "number" || !Number.isFinite(priority)) {
-          throw new Error(`插件 ${initializer.name} 的事件、优先级或规则无效。`);
+          throw new Error($t("lib.plugins.legacy.text_2b6ba9283a", { "name": initializer.name }));
         }
         staged.push({
           label, order, create, initializer, scope, contexts: new PluginContexts(),
@@ -443,12 +446,12 @@ export class LegacyPlugins {
     this.#retiring.add(cleanup);
     void cleanup.then(() => this.#retiring.delete(cleanup), (error: unknown) => {
       this.#retiring.delete(cleanup);
-      console.warn("[插件] 清理已撤销的入口失败：", error);
+      console.warn($t("lib.plugins.legacy.text_a00c10e206"), error);
     });
   }
 
   async remove(label: string): Promise<void> {
-    this.#preparing.get(label)?.abort(new Error("插件入口已撤销。"));
+    this.#preparing.get(label)?.abort(new Error($t("lib.plugins.legacy.text_11b52b8a8c")));
     const previous = this.#initializers.filter((app) => app.label === label);
     if (!previous.length) return;
     this.#initializers = this.#initializers.filter((app) => app.label !== label);
@@ -506,7 +509,7 @@ export class LegacyPlugins {
 
   dispose(): Promise<void> {
     if (this.#disposal) return this.#disposal;
-    for (const transaction of this.#preparing.values()) transaction.abort(new Error("插件加载器已关闭。"));
+    for (const transaction of this.#preparing.values()) transaction.abort(new Error($t("lib.plugins.legacy.text_70e4c2d6e2")));
     const apps = this.#initializers;
     for (const app of apps) {
       app.published = false;
@@ -577,7 +580,7 @@ export class LegacyPlugins {
         if (!rule.pattern.test(native.msg)) continue;
         if (!canRun(rule.permission, native)) {
           if (native.isDelegated) onDenied?.();
-          else native.reply("暂无权限执行此指令。");
+          else native.reply($t("lib.plugins.legacy.text_6a2d6ecb5e"));
           return true;
         }
         if (await app.scope.invoke(() => rule.run(native, app.contexts)) !== false) return true;
@@ -591,12 +594,12 @@ export class LegacyPlugins {
         if (!rule.reg.test(event.post_type === "message" ? event.msg : "")) continue;
         if (rule.requiresAdaptation) {
           if (event.post_type === "message" && event.isDelegated) onDenied?.();
-          else if (event.post_type === "message") await event.reply("此旧日历查询需要适配 Lotus-Yunzai 才能使用。");
+          else if (event.post_type === "message") await event.reply($t("lib.plugins.legacy.text_d5ffbb709c"));
           return true;
         }
         if (!canRun(rule.permission, event)) {
           if (event.post_type === "message" && event.isDelegated) onDenied?.();
-          else event.reply("暂无权限执行此指令。");
+          else event.reply($t("lib.plugins.legacy.text_6a2d6ecb5e"));
           return true;
         }
         const result = await app.scope.invoke(() => {

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { withDefaultUpdateSchedule } from "./update-schedule-settings.ts";
 import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
@@ -6,24 +9,24 @@ import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global
 import { readPanelJson } from "./panel.ts";
 import { normalizedUpdateNoticeCron, readUpdateNoticeSettings, type UpdateNoticeSettings } from "./update-notice.ts";
 
-const cronHint = "北京时间。每行一条五段或六段 Cron，留空停用。保存后重启宿主生效。";
-const updateHint = "仅托管启动（bun run start 或 start:bg）生效。";
-const restartHint = "宿主运行环境须支持重启。";
+const cronHint = $t("lib.panel-process-schedule-settings.text_6099192357");
+const updateHint = $t("lib.panel-process-schedule-settings.text_2a919b9185");
+const restartHint = $t("lib.panel-process-schedule-settings.text_77fbc7f13e");
 const cronKeys = ["update_cron", "restart_cron", "stop_cron", "start_cron"] as const;
 const timerKeys = ["update_time", "restart_time"] as const;
 const fields = [
-  { key: "update_time", label: "自动更新间隔（分钟）", type: "number", min: 0,
-    hint: "填 0 停用间隔更新。间隔与定时表达式可以同时启用。保存后重启宿主生效。" + updateHint },
-  { key: "update_cron", label: "定时自动更新", type: "list", separator: "line", hint: cronHint + updateHint },
-  { key: "update_notice", label: "推送宿主更新通知", type: "boolean",
-    hint: "定时检查宿主上游，有新提交时给主人发送通知。保存后生效。" },
-  { key: "update_notice_cron", label: "定时检查并通知", type: "text",
-    hint: "北京时间。使用五段或六段 Cron，保存后生效。" },
-  { key: "restart_time", label: "启动后自动重启延时（分钟）", type: "number", min: 0,
-    hint: "填 0 停用延时重启。延时与定时表达式可以同时启用。保存后重启宿主生效。" + restartHint },
-  { key: "restart_cron", label: "定时重启", type: "list", separator: "line", hint: cronHint + restartHint },
-  { key: "stop_cron", label: "定时暂停消息派发", type: "list", separator: "line", hint: cronHint },
-  { key: "start_cron", label: "定时恢复消息派发", type: "list", separator: "line", hint: cronHint },
+  { key: "update_time", label: $t("lib.panel-process-schedule-settings.text_0cc4dc309d"), type: "number", min: 0,
+    hint: $t("lib.panel-process-schedule-settings.text_858327e51b") + updateHint },
+  { key: "update_cron", label: $t("lib.panel-process-schedule-settings.text_2cfde8b8be"), type: "list", separator: "line", hint: cronHint + updateHint },
+  { key: "update_notice", label: $t("lib.panel-process-schedule-settings.text_fc76528d42"), type: "boolean",
+    hint: $t("lib.panel-process-schedule-settings.text_f3e672dd2d") },
+  { key: "update_notice_cron", label: $t("lib.panel-process-schedule-settings.text_045555a570"), type: "text",
+    hint: $t("lib.panel-process-schedule-settings.text_3de8f1f30d") },
+  { key: "restart_time", label: $t("lib.panel-process-schedule-settings.text_b3835c01a2"), type: "number", min: 0,
+    hint: $t("lib.panel-process-schedule-settings.text_c72935d64a") + restartHint },
+  { key: "restart_cron", label: $t("lib.panel-process-schedule-settings.text_562788fd33"), type: "list", separator: "line", hint: cronHint + restartHint },
+  { key: "stop_cron", label: $t("lib.panel-process-schedule-settings.text_59e9cd3477"), type: "list", separator: "line", hint: cronHint },
+  { key: "start_cron", label: $t("lib.panel-process-schedule-settings.text_98be512b03"), type: "list", separator: "line", hint: cronHint },
 ] as const;
 
 type Values = Record<typeof timerKeys[number], number> & Record<typeof cronKeys[number], string[]> & UpdateNoticeSettings;

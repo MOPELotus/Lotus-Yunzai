@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants } from "node:fs";
 import { lstat, open, opendir, realpath } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
@@ -33,7 +36,7 @@ async function collectGallery(
 
   async function scan(base: string, path: string, depth: number): Promise<void> {
     signal.throwIfAborted();
-    if (depth > maxDepth) throw new Error("图鉴图库目录超出扫描深度。");
+    if (depth > maxDepth) throw new Error($t("lib.panel-atlas-gallery.text_5e5fc3efd5"));
     const directory = join(base, path);
     const canonical = await realpath(directory).catch(error => {
       if (!missing(error)) throw error;
@@ -42,7 +45,7 @@ async function collectGallery(
 
     for await (const entry of await opendir(directory)) {
       signal.throwIfAborted();
-      if (++visited > maxEntriesPerGame) throw new Error("图鉴图库条目超出扫描上限。");
+      if (++visited > maxEntriesPerGame) throw new Error($t("lib.panel-atlas-gallery.text_5f5f381863"));
       const name = `${path}/${entry.name}`;
       if (entry.isDirectory() && matches(`${name}/sample.png`, game)) {
         await scan(base, name, depth + 1);
@@ -147,7 +150,7 @@ export function panelAtlasGallery(root: URL) {
       const override = Bun.env.LOTUS_ATLAS_DATA_DIR;
       const data = override ? { root: await realpath(override), version: null } :
         await discoverRuntimeAtlasDataDirectory(fileURLToPath(new URL("data/atlas/", root)));
-      if (!(await lstat(data.root)).isDirectory()) throw new Error("图鉴数据目录不可用。");
+      if (!(await lstat(data.root)).isDirectory()) throw new Error($t("lib.panel-atlas-gallery.text_bb3c755cf3"));
       let response: Response;
       if (view === "browse" && game) {
         const images = await collectGallery(data.root, game, isAtlasGalleryPath, signal);

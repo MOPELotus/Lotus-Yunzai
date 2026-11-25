@@ -1,0 +1,73 @@
+{
+  "language": "zh-CN",
+  "name": "简体中文",
+  "namespace": "storage",
+  "description": "存储",
+  "sections": {
+    "index": {
+      "description": "存储",
+      "source": "packages/storage/index.ts"
+    },
+    "role-json-archive": {
+      "description": "存储",
+      "source": "packages/storage/role-json-archive.ts"
+    }
+  },
+  "messages": {
+    "index.text_4e3278238c": "存储键不能为空。",
+    "index.text_5a06284717": "只读存储探测仅支持 INFO 或 PING。",
+    "index.text_61fea6f3ed": "存储模块名须由小写字母、数字和连字符组成。",
+    "index.text_64c85d0fd0": "存储未配置，请设置 LOTUS_VALKEY_URL 或 redis.yaml。",
+    "index.text_7b511db9f0": "Valkey 关闭超时，仍有在途命令或服务未响应。",
+    "index.text_96ddf52dec": "Valkey 已配置或正在关闭。",
+    "index.text_9b762f9623": "Valkey 正在关闭。",
+    "index.text_9cc662eb3b": "存储过期时间须为有效的正整数秒数。",
+    "index.text_c0aa39e7ee": "Valkey 连接失败，请检查服务状态和连接配置。",
+    "index.text_c2a67d60e9": "LOTUS_VALKEY_URL 须为有效的 redis:// 或 rediss:// 地址。",
+    "index.text_ef485ac630": "[存储] Valkey 连接异常。",
+    "index.text_f85a63af87": "Valkey 连接失败，请检查服务状态和 LOTUS_VALKEY_URL。",
+    "role-json-archive.text_1d920f74f1": "{subject}已变更，请重新更新。",
+    "role-json-archive.text_22772dbab6": "{subject}缺少可保存的 JSON。",
+    "role-json-archive.text_401ef51e73": "{subject}缺少可保存的数据。",
+    "role-json-archive.text_432e4d576e": "{subject}须为普通 JSON 文件。",
+    "role-json-archive.text_471376bc28": "缺少存档数据。",
+    "role-json-archive.text_56fd35ae8d": "{subject}的 QQ 或 UID 无效。",
+    "role-json-archive.text_7d4b274ac1": "{subject}的 JSON 文件过大。",
+    "role-json-archive.text_8e5f924492": "{subject}已变更，请重新读取。",
+    "role-json-archive.text_9762775415": "{subject}的 JSON 格式无效。",
+    "role-json-archive.text_b8c99f0a49": "{subject}的 JSON 文件大小上限无效。",
+    "role-json-archive.text_e33b804f96": "{subject}的 QQ 目录须为实际目录。"
+  },
+  "parameters": {
+    "role-json-archive.text_56fd35ae8d": {
+      "subject": "subject"
+    },
+    "role-json-archive.text_432e4d576e": {
+      "subject": "subject"
+    },
+    "role-json-archive.text_7d4b274ac1": {
+      "subject": "subject"
+    },
+    "role-json-archive.text_8e5f924492": {
+      "subject": "subject"
+    },
+    "role-json-archive.text_9762775415": {
+      "subject": "subject"
+    },
+    "role-json-archive.text_22772dbab6": {
+      "subject": "subject"
+    },
+    "role-json-archive.text_1d920f74f1": {
+      "subject": "subject"
+    },
+    "role-json-archive.text_b8c99f0a49": {
+      "subject": "subject"
+    },
+    "role-json-archive.text_e33b804f96": {
+      "subject": "subject"
+    },
+    "role-json-archive.text_401ef51e73": {
+      "subject": "subject"
+    }
+  }
+}

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createRequestClaim, type RequestClaimStorage, type RequestDecisionOutcome, type RequestScope } from "./request-claim.ts";
 
 type Adapter = "onebot" | "milky";
@@ -148,6 +151,6 @@ export async function confirmJoinReview(review: ReturnType<typeof createGroupJoi
   submit: () => Promise<boolean>): Promise<boolean> {
   if (!review) return submit();
   const outcome = await review.once(scope, async () => await submit() ? "confirmed" : "rejected");
-  if (outcome === "unknown") throw new Error("群请求审批结果未确认。");
+  if (outcome === "unknown") throw new Error($t("lib.group-join-review.text_a5397faf3e"));
   return outcome === "confirmed";
 }

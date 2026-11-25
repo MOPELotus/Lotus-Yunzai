@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { nativeImageRasterScale } from "@lotus-yunzai/skia";
 import { renderStatusCard } from "@lotus-yunzai/skia/status-card";
 import type { CommandModule } from "./commands.ts";
@@ -12,8 +15,8 @@ interface GroupMemberExportOptions {
   readonly render?: (...args: Parameters<typeof renderStatusCard>) => Promise<{ readonly png: Uint8Array }>;
 }
 
-const denied = "当前会话没有群成员导出权限。";
-const unavailable = "无法读取完整的群成员列表。请确认机器人仍在目标群内。";
+const denied = $t("lib.group-member-export-command.text_5a79b5551b");
+const unavailable = $t("lib.group-member-export-command.text_6e477cf38a");
 
 export function groupMemberExportCommands({ readConfig, isMaster, activeSignal, render = renderStatusCard }: GroupMemberExportOptions): CommandModule {
   return {
@@ -29,8 +32,8 @@ export function groupMemberExportCommands({ readConfig, isMaster, activeSignal, 
       const signal = activeSignal(connection);
       if (signal.aborted) return [];
       const group = match[1] === undefined ? origin : Number(match[1]);
-      if (group === undefined || !Number.isSafeInteger(group) || group < 1) return "请使用 #群成员 <群号>，或在目标群直接发送 #群成员。";
-      if (groupMessage && origin !== group) return "请在目标群发送 #群成员，或在好友私聊中指定群号。";
+      if (group === undefined || !Number.isSafeInteger(group) || group < 1) return $t("lib.group-member-export-command.text_846a40616b");
+      if (groupMessage && origin !== group) return $t("lib.group-member-export-command.text_2d1f53bc01");
 
       async function permitted() {
         if (signal.aborted) return false;
@@ -41,7 +44,7 @@ export function groupMemberExportCommands({ readConfig, isMaster, activeSignal, 
       }
 
       if (!await permitted()) return signal.aborted ? [] : denied;
-      if (!uploadFile) return "当前协议端不支持发送群成员 CSV。";
+      if (!uploadFile) return $t("lib.group-member-export-command.text_1321c429c7");
       const members = await read(group, signal).catch(() => undefined);
       if (signal.aborted) return [];
       if (!members?.some(row => row.id === bot) ||
@@ -52,12 +55,12 @@ export function groupMemberExportCommands({ readConfig, isMaster, activeSignal, 
       const sent = await uploadFile(file).catch(() => "unknown");
       if (signal.aborted) return [];
       if (sent !== "confirmed") return sent === "rejected"
-        ? "群成员 CSV 未发送，请检查文件上传权限。"
-        : "群成员 CSV 发送结果未确认，请在当前会话核对。";
+        ? $t("lib.group-member-export-command.text_dc1e64841f")
+        : $t("lib.group-member-export-command.text_1a580baa39");
 
-      const title = "群成员导出";
-      const note = "CSV 已发送。";
-      const rows = [`群号　${group}`, `成员数　${members.length}`];
+      const title = $t("lib.group-member-export-command.text_6f95e2fc92");
+      const note = $t("lib.group-member-export-command.text_15950fc552");
+      const rows = [$t("lib.group-member-export-command.text_17f18095f3", { "group": group }), $t("lib.group-member-export-command.text_2fa4d4ffc0", { "length": members.length })];
       try {
         const at = new Date();
         const scale = nativeImageRasterScale();

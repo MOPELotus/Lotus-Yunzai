@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { setTimeout as wait } from "node:timers/promises";
 import { createProfileStore, parseAndroidDeviceInfo, ProfileError } from "@lotus-yunzai/account";
 import { requestDeviceFingerprint, type HoyoTransport } from "@lotus-yunzai/hoyo-client";
@@ -34,7 +37,7 @@ export function createGeneratedDeviceRefresh(profiles: ReturnType<typeof createP
     const verify = () => profiles.verifyDeviceBindingTarget(qq, profileId, source);
     try {
       const info = parseAndroidDeviceInfo(JSON.stringify(source.device.raw));
-      if (!info || !instanceId) throw new TypeError("自动设备参数无效。");
+      if (!info || !instanceId) throw new TypeError($t("lib.generated-device-runtime.text_26d1c56803"));
       const binding = await requestDeviceFingerprint(info, { transport, signal, verify,
         identity: { deviceId: source.device.id, deviceGuid } });
       await verify();
@@ -47,7 +50,7 @@ export function createGeneratedDeviceRefresh(profiles: ReturnType<typeof createP
       const failures = Math.min((previous?.failures ?? 0) + 1, 10);
       retries.set(key, { failures, nextAt: now() + Math.min(6 * 3_600_000, 60_000 * 2 ** (failures - 1)) });
       if (retries.size > 2048) retries.delete(retries.keys().next().value!);
-      report("[设备] 自动设备指纹申请失败，保留设备信息，稍后重试。");
+      report($t("lib.generated-device-runtime.text_890aa3293f"));
       return { ok: false };
     }
   }
@@ -66,7 +69,7 @@ export function createGeneratedDeviceRefresh(profiles: ReturnType<typeof createP
       if (!target.loggedIn) continue;
       let skipped = false;
       try { skipped = Boolean((await refresh(target.qq, target.profileId)).skipped); }
-      catch { signal.throwIfAborted(); report("[设备] 自动设备检查失败，稍后重试。"); }
+      catch { signal.throwIfAborted(); report($t("lib.generated-device-runtime.text_49e805b40f")); }
       if (!skipped) await wait(1000, undefined, { signal });
     }
   }
@@ -78,7 +81,7 @@ export function createGeneratedDeviceRefresh(profiles: ReturnType<typeof createP
     const schedule = (delay: number) => {
       timer = setTimeout(async () => {
         try { await sweep(); }
-        catch { if (!signal.aborted) report("[设备] 自动设备检查失败，稍后重试。"); }
+        catch { if (!signal.aborted) report($t("lib.generated-device-runtime.text_49e805b40f")); }
         if (!signal.aborted) schedule(60_000);
       }, delay);
       timer.unref();

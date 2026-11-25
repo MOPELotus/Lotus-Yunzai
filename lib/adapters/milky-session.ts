@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { OwnerRequestBatchResult } from "../../plugins/group/owner-request-batch.ts";
 import type { CheckinNotifyDelivery, CheckinNotifyTransport } from "../checkin-notify.ts";
 import { chatFileRelaySource, isChatFileName, type ChatFile, type ChatFileRelaySource, type ChatFileResult } from "../chat-files.ts";
@@ -113,9 +116,9 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   const recallReply = createMilkyRecallReply(signal, call.confirmed, isMaster);
 
   async function likeProfile(user_id: number, count: number) {
-    if (!Number.isInteger(count) || count < 1 || count > 10 || signal.aborted) throw new Error("当前会话无法提交点赞。");
+    if (!Number.isInteger(count) || count < 1 || count > 10 || signal.aborted) throw new Error($t("lib.adapters.milky-session.text_14c226fd93"));
     const result = await call.confirmed("send_profile_like", { user_id, count });
-    if (result.status === "unknown") throw new Error("Milky 点赞结果未确认。");
+    if (result.status === "unknown") throw new Error($t("lib.adapters.milky-session.text_b49d026c14"));
     return result.status === "confirmed" ? count : 0;
   }
 
@@ -181,7 +184,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
   }
 
   function deliver(event: BotEvent) {
-    void dispatchEvent(event).catch(() => console.warn("[Milky] 处理事件失败。"));
+    void dispatchEvent(event).catch(() => console.warn($t("lib.adapters.milky-session.text_161a1a3fad")));
   }
   function fileOrigin(event: MessageEvent): ChatFileRelaySource | undefined {
     if (event.file && typeof event.file.file === "string" && event.attachment) {
@@ -207,7 +210,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (signal.aborted) return;
     const timer = setTimeout(async () => {
       recalls.delete(timer);
-      if (!await call(action, params) && !signal.aborted) console.warn("[Milky] 消息撤回未获确认。");
+      if (!await call(action, params) && !signal.aborted) console.warn($t("lib.adapters.milky-session.text_b02d22540e"));
     }, seconds * 1_000);
     timer.unref();
     recalls.add(timer);
@@ -220,7 +223,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     if (reviewedFriendRequests.size > 4096) reviewedFriendRequests.delete(reviewedFriendRequests.values().next().value!);
     const status = await friendReview({ adapter: "milky", botId: account, flag: uid }, async () =>
       (await call.confirmed(action, params)).status);
-    if (status === "unknown") throw new Error("Milky 好友审批结果未确认。");
+    if (status === "unknown") throw new Error($t("lib.adapters.milky-session.text_fb7ba1be9e"));
     return status === "confirmed";
   }
 
@@ -294,7 +297,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
           (action, params) => call.confirmed(action, params, scope)) : Promise.resolve(false));
     }
     const result = await submitGroupInvitation(flag, approve, scope, active);
-    if (result === "unknown") throw new Error("Milky 群邀请审核结果未确认。");
+    if (result === "unknown") throw new Error($t("lib.adapters.milky-session.text_a631afb922"));
     return result === "confirmed";
   }
 
@@ -735,30 +738,30 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     async listGroups(active = signal) {
       const result = await call.confirmed("get_group_list", { no_cache: true }, active);
       const groups = result.status === "confirmed" ? result.data.groups : undefined;
-      if (signal.aborted || active.aborted || !Array.isArray(groups)) throw new Error("公告群列表未确认。");
+      if (signal.aborted || active.aborted || !Array.isArray(groups)) throw new Error($t("lib.adapters.milky-session.text_684f33f524"));
       return groups.map(group => {
-        if (!record(group) || !positiveId(group.group_id)) throw new Error("公告群列表无效。");
+        if (!record(group) || !positiveId(group.group_id)) throw new Error($t("lib.adapters.milky-session.text_a817971fa4"));
         return { id: group.group_id, name: typeof group.group_name === "string" ? group.group_name : undefined };
       });
     },
     async sendGroup(group_id, message, active = signal) {
-      if (active.aborted || signal.aborted || options.accepting?.() === false) throw new NoticeNotSentError("原公告会话已关闭。");
+      if (active.aborted || signal.aborted || options.accepting?.() === false) throw new NoticeNotSentError($t("lib.adapters.milky-session.text_9acbcc8dc4"));
       let messageId: number | undefined;
       const attempt = sendConfirmed({ group_id }, message, undefined, signal, id => { messageId = id; });
       options.onNoticeAttempt?.(attempt);
       const status = await attempt;
-      if (status === "rejected") throw new NoticeNotSentError("公告未发出。");
-      if (messageId === undefined) throw new Error("公告发送结果未确认。");
+      if (status === "rejected") throw new NoticeNotSentError($t("lib.adapters.milky-session.text_c3ee1c1dec"));
+      if (messageId === undefined) throw new Error($t("lib.adapters.milky-session.text_2b9d68f771"));
       return messageId;
     },
     async recall(group_id, message_seq, active = signal) {
       if (!positiveId(group_id) || !hasMessageSequence(message_seq) || active.aborted || signal.aborted ||
-          options.accepting?.() === false) throw new NoticeNotSentError("公告撤回参数或会话无效。");
+          options.accepting?.() === false) throw new NoticeNotSentError($t("lib.adapters.milky-session.text_dfe0779d39"));
       const attempt = call.confirmed("recall_group_message", { group_id, message_seq });
       options.onNoticeAttempt?.(attempt);
       const result = await attempt;
-      if (result.status === "rejected") throw new NoticeNotSentError("公告撤回未执行。");
-      if (result.status !== "confirmed") throw new Error("公告撤回结果未确认。");
+      if (result.status === "rejected") throw new NoticeNotSentError($t("lib.adapters.milky-session.text_39712068e9"));
+      if (result.status !== "confirmed") throw new Error($t("lib.adapters.milky-session.text_7018210e4f"));
     },
   };
 
@@ -906,7 +909,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
               const result = await call.confirmed("send_private_message", { ...target, message }, active);
               if (result.status === "confirmed") confirmSent(target, result.data, message);
               if (result.status === "rejected" && !active.aborted && isMaster(owner)) {
-                await sendConfirmed(target, typeof original === "string" ? `撤回消息：${original}` : ["撤回消息：", ...original], undefined, active);
+                await sendConfirmed(target, typeof original === "string" ? $t("lib.adapters.milky-session.text_aa0c2669b6", { "original": original }) : [$t("lib.adapters.milky-session.text_f45b01a9e9"), ...original], undefined, active);
               }
             }));
           },
@@ -934,7 +937,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       return confirmSent(message, await call(action, params), params.message);
     }, scheduleRecall, async (action, params) => {
       const result = await call.confirmed(action, params);
-      if (result.status === "unknown") throw new Error("Milky 转发回执未确认。");
+      if (result.status === "unknown") throw new Error($t("lib.adapters.milky-session.text_bf03b9203b"));
       if (result.status === "confirmed") return confirmSent(message, result.data, params.message);
     }, call.confirmed);
     if (message?.message_type === "group" && positiveId(message.group_id) && positiveId(message.user_id) && hasMessageSequence(message.message_id)) {
@@ -954,7 +957,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
       const result = await call.confirmed(action, { ...target, message: content }, active);
       if (result.status === "rejected") return false;
       if (result.status === "unknown" || !hasMessageSequence(result.data.message_seq)) {
-        throw new Error("Milky 通知回复未确认。");
+        throw new Error($t("lib.adapters.milky-session.text_b9ed3532a0"));
       }
       confirmSent(target, result.data, content);
       await notifyReplyDelivery(onDelivered, result.data.message_seq);
@@ -1020,7 +1023,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
             signal,
             joinRequestOrigin,
             canModerate: () => canModerateGroupSubject(id => delegation.memberRole(request.group_id, id), account),
-            async act(active, reason = "主动退群被拉黑") {
+            async act(active, reason = $t("lib.adapters.milky-session.text_73c30fd793")) {
               if (active.aborted || signal.aborted) return "rejected";
               try {
                 return await confirmJoinReview(joinReview, { adapter: "milky", botId: account, flag: request.flag },
@@ -1353,7 +1356,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     }
     const event = scopedMessage ?? friendRequest ?? groupRequest ?? milkyNotice(body, account, call, sendReply, async (group_id) => {
       const status = await leaveGroup(group_id);
-      if (status === "unknown") throw new Error("Milky 退群回执未确认。");
+      if (status === "unknown") throw new Error($t("lib.adapters.milky-session.text_7d125c1a9d"));
       return status === "confirmed";
     });
     if (event?.post_type === "notice" && event.notice_type === "group" && event.sub_type !== "poke") {

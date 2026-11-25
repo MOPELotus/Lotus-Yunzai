@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
@@ -12,6 +15,8 @@ type TextValue = string | number | null;
 
 export interface DailyNoteCardDetail {
   readonly label: string;
+  /** An asset key, independent from the editable label. */
+  readonly icon?: keyof typeof dailyNoteIcons;
   readonly value?: TextValue;
   readonly note?: string;
 }
@@ -31,7 +36,8 @@ export interface DailyNoteCardItem {
   readonly detail?: string;
   readonly recovery?: string;
   readonly details?: readonly DailyNoteCardDetail[];
-  readonly checkin?: "已签到" | "未签到" | "暂时无法核验";
+  readonly checkin?: string;
+  readonly checkinStatus?: "signed" | "unsigned" | "unavailable";
   readonly expeditions?: readonly DailyNoteCardExpedition[];
   readonly error?: string;
   readonly data?: {
@@ -92,7 +98,7 @@ async function loadTheme(directory: string) {
     [miSans, dailyNoteFonts.miSans[0]],
   ] as const) {
     const fontPath = join(directory, file);
-    if (!await Bun.file(fontPath).exists()) throw new Error(`体力卡原字体不可用：${file}`);
+    if (!await Bun.file(fontPath).exists()) throw new Error($t("daily-note-card.text_24a88328e5", { "file": file }));
     FontLibrary.use(name, [fontPath]);
   }
 
@@ -121,32 +127,32 @@ function themeAt(directory: string) {
 
 function primary(item: DailyNoteCardItem): Row {
   const data = item.data;
-  const pair = (current?: TextValue, max?: TextValue) => current !== undefined ? `${current}/${max ?? "未记录"}` : "";
+  const pair = (current?: TextValue, max?: TextValue) => current !== undefined ? `${current}/${max ?? $t("daily-note-card.text_7450cc5b16")}` : "";
   switch (item.game) {
-    case "gs": return { label: "原粹树脂", value: pair(data?.current_resin, data?.max_resin), icon: "树脂" };
-    case "sr": return { label: "开拓力", value: pair(data?.current_stamina, data?.max_stamina) };
+    case "gs": return { label: $t("daily-note-card.text_b3bfdadd9a"), value: pair(data?.current_resin, data?.max_resin), icon: "树脂" };
+    case "sr": return { label: $t("daily-note-card.text_de78a76579"), value: pair(data?.current_stamina, data?.max_stamina) };
     case "zzz": {
       const energy = data?.energy?.progress ?? data?.energy;
-      return { label: "电量", value: pair(energy?.current, energy?.max) };
+      return { label: $t("daily-note-card.text_1c69b1aa72"), value: pair(energy?.current, energy?.max) };
     }
-    default: return { label: item.gameName || "体力", value: "" };
+    default: return { label: item.gameName || $t("daily-note-card.text_d6d2aa99fd"), value: "" };
   }
 }
 
 function makeRows(item: DailyNoteCardItem): Row[] {
-  if (!item.ok) return [{ label: "查询失败", value: "失败", note: item.error || item.detail }];
+  if (!item.ok) return [{ label: $t("daily-note-card.text_bf4cedf76a"), value: $t("daily-note-card.text_28384d7afd"), note: item.error || item.detail }];
   const first = primary(item);
   const recovery = item.recovery ?? item.detail?.split(" · ").find((part) => /^(回满|已回满)/u.test(part));
   const rows: Row[] = [{
-    ...first, value: first.value || "查询成功", note: first.value ? recovery : item.detail,
+    ...first, value: first.value || $t("daily-note-card.text_9d03b22813"), note: first.value ? recovery : item.detail,
   }];
   if (item.game === "gs" && item.data?.current_home_coin !== undefined) {
     rows.push({
-      label: "洞天宝钱", icon: "洞天宝钱",
+      label: $t("daily-note-card.text_2740613721"), icon: "洞天宝钱",
       value: `${item.data.current_home_coin}/${item.data.max_home_coin}`,
     });
   }
-  for (const row of item.details ?? []) rows.push({ ...row, icon: detailIcons.get(row.label) });
+  for (const row of item.details ?? []) rows.push({ ...row, icon: row.icon ?? detailIcons.get(row.label) });
   return rows;
 }
 
@@ -223,9 +229,9 @@ function paintExpeditions(ctx: Context, y: number, rows: readonly DailyNoteCardE
   numberFont: string, avatars: ReadonlyMap<string, Image>) {
   const height = expeditionHeading + Math.max(1, rows.length) * (expeditionHeight + 5) + 4;
   rect(ctx, inset, y, panelWidth, height, "#e8e7e7", 5);
-  textAt(ctx, ["委托状态"], inset + 10, y + 8, font, "#504c49", 16, 22);
+  textAt(ctx, [$t("daily-note-card.text_b6efd1dff8")], inset + 10, y + 8, font, "#504c49", 16, 22);
   y += expeditionHeading;
-  if (!rows.length) textAt(ctx, ["委托明细暂未返回"], width / 2, y + 5, font, "#5f5f5d", 14, 22, "center");
+  if (!rows.length) textAt(ctx, [$t("daily-note-card.text_30fe63cf43")], width / 2, y + 5, font, "#5f5f5d", 14, 22, "center");
   for (const row of rows) {
     const x = inset + 7;
     const rowWidth = panelWidth - 14;
@@ -271,7 +277,7 @@ function paintExpeditions(ctx: Context, y: number, rows: readonly DailyNoteCardE
 
 export async function renderDailyNoteCard(model: DailyNoteCardModel,
   { mode = "auto", scale = 4, resourceDirectory = defaultResources, avatarArtwork, inlineImageByteLimit, signal }: DailyNoteCardOptions = {}): Promise<PngRender> {
-  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError("体力卡缩放比例须在 1 至 4 之间。");
+  if (!Number.isFinite(scale) || scale < 1 || scale > 4) throw new RangeError($t("daily-note-card.text_c0bf846944"));
 
   const { images, textFont, numberFont } = await themeAt(await realpath(resourceDirectory));
   const avatars = new Map<string, Image>();
@@ -284,8 +290,9 @@ export async function renderDailyNoteCard(model: DailyNoteCardModel,
   let bottom = 12;
   const sections = model.groups.flatMap(({ name, items }) => items.map((item) => {
     const game = item.gameName || item.game;
-    const heading = game ? `${name} · ${game} · UID ${item.uid || "未同步"}` : name;
+    const heading = game ? `${name} · ${game} · UID ${item.uid || $t("daily-note-card.text_9a964fbc3d")}` : name;
     const checkin = item.game === "sr" ? item.checkin : undefined;
+    const checkinSigned = item.checkinStatus ? item.checkinStatus === "signed" : checkin === "已签到";
     const expeditions = item.game === "sr" ? item.expeditions : undefined;
     const title = singleLine(ctx, heading, width - (checkin ? 196 : 42), numberFont, 16, 12);
     const headingY = bottom;
@@ -304,24 +311,24 @@ export async function renderDailyNoteCard(model: DailyNoteCardModel,
     const panelHeight = rows.reduce((sum, row) => sum + row.height, 0);
     bottom += panelHeight + 21;
     if (expeditions) bottom += expeditionHeading + Math.max(1, expeditions.length) * (expeditionHeight + 5) + 11;
-    return { title, headingY, panelY, panelHeight, rows, checkin, expeditions };
+    return { title, headingY, panelY, panelHeight, rows, checkin, checkinSigned, expeditions };
   }));
-  const footer = lines(ctx, `Lotus-Yunzai${model.generatedAt ? ` · ${model.generatedAt}` : ""}`, width - 30, 12, textFont);
+  const footer = lines(ctx, $t("daily-note-card.text_33d658749e", { "value1": model.generatedAt ? ` · ${model.generatedAt}` : "" }), width - 30, 12, textFont);
   const height = Math.max(240, bottom + 50);
   function paint(drawing: Context, zoom: number) {
     drawing.scale(zoom, zoom);
     drawing.imageSmoothingEnabled = true;
     drawing.imageSmoothingQuality = "high";
     rect(drawing, 0, 0, width, 100000, "#f0eae3");
-    for (const { title, headingY, panelY, panelHeight, rows, checkin, expeditions } of sections) {
+    for (const { title, headingY, panelY, panelHeight, rows, checkin, checkinSigned, expeditions } of sections) {
       rect(drawing, inset, headingY - 3, 5, 24, "#d3bc8d", 1);
       textAt(drawing, [title.text], 26, headingY, numberFont, "#504c49", title.size, title.size * 1.5);
       if (checkin) {
-        const color = checkin === "已签到" ? "#9c8d5c" : "#767676";
+        const color = checkinSigned ? "#9c8d5c" : "#767676";
         shape(drawing, width - 146, headingY, 130, 21, 3);
         drawing.strokeStyle = color;
         drawing.stroke();
-        const badge = singleLine(drawing, `今日米游社 ${checkin}`, 118, textFont, 12, 10);
+        const badge = singleLine(drawing, $t("daily-note-card.text_86cb4427a0", { "checkin": checkin }), 118, textFont, 12, 10);
         textAt(drawing, [badge.text], width - 81, headingY + 3, textFont, color, badge.size, 20, "center");
       }
       rect(drawing, inset, panelY, panelWidth, panelHeight, "#dfd8d1", 9);
@@ -362,5 +369,5 @@ export async function renderDailyNoteCard(model: DailyNoteCardModel,
     signal?.throwIfAborted();
     if (fits(half)) return half;
   }
-  throw new RangeError("体力卡超过当前会话的单图大小上限。");
+  throw new RangeError($t("daily-note-card.text_414b0e609f"));
 }

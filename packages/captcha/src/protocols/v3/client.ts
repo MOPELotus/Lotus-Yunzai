@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../../../i18n/index.ts";
+import messageCatalog from "../../../i18n/zh-CN.json";
+const $t = createTextTranslator("captcha", messageCatalog.messages);
 // Wire-level V3 port; recognition and scheduling live outside this module.
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
@@ -164,7 +167,7 @@ export class GeetestChallenge {
     options: { fetch?: typeof fetch; signal?: AbortSignal } = {},
   ) {
     if (!/^[\w-]{1,128}$/.test(gt || '') || !/^[\w-]{1,256}$/.test(challenge || ''))
-      throw new Error('无效的极验 challenge')
+      throw new Error($t("src.protocols.v3.client.text_88c6b202b4"))
     this.gt = gt
     this.challenge = challenge
     this.fetch = options.fetch || globalThis.fetch
@@ -206,23 +209,23 @@ export class GeetestChallenge {
       },
       signal: this.signal || AbortSignal.timeout(20000),
     })
-    if (!result.ok) throw new Error(`极验接口 HTTP ${result.status}`)
+    if (!result.ok) throw new Error($t("src.protocols.v3.client.text_2139bea0dc", { "status": result.status }))
     return parseGeetestResponse(await result.text())
   }
   mergeConfig(data: Record<string, any> = {}) {
     if (data.challenge !== undefined) {
       if (typeof data.challenge !== 'string' || !/^[\w-]{1,256}$/.test(data.challenge))
-        throw new Error('极验返回无效 challenge')
+        throw new Error($t("src.protocols.v3.client.text_5ae2e847f2"))
       this.challenge = data.challenge
     }
     if (data.c !== undefined) {
       if (!Array.isArray(data.c) || data.c.length < 5 || !data.c.every(Number.isFinite))
-        throw new Error('极验返回无效 c')
+        throw new Error($t("src.protocols.v3.client.text_d9da348fc2"))
       this.c = data.c
     }
     if (data.s !== undefined) {
       if (typeof data.s !== 'string' || !/^(?:[a-f\d]{2})+$/i.test(data.s))
-        throw new Error('极验返回无效 s')
+        throw new Error($t("src.protocols.v3.client.text_a14e227981"))
       this.s = data.s
     }
   }
@@ -230,16 +233,16 @@ export class GeetestChallenge {
     if (!resource) return {}
     const url = geetestAssetUrl(resource, origin),
       key = url.href
-    if (!knownGctScript(url)) throw new Error('本地尚未支持该极验动态协议，请使用后续过码方案')
+    if (!knownGctScript(url)) throw new Error($t("src.protocols.v3.client.text_5d6e6dc70b"))
     if (!gctCache.has(key)) {
       const pending = (async () => {
         const response = await this.fetch(url, {
           signal: this.signal || AbortSignal.timeout(20000),
         })
-        if (!response.ok) throw new Error(`极验动态协议 HTTP ${response.status}`)
+        if (!response.ok) throw new Error($t("src.protocols.v3.client.text_c09671368e", { "status": response.status }))
         if (response.url) geetestAssetUrl(response.url)
         const source = Buffer.from(await response.arrayBuffer())
-        if (source.length > 256 * 1024) throw new Error('极验动态协议体积无效')
+        if (source.length > 256 * 1024) throw new Error($t("src.protocols.v3.client.text_848fee00b1"))
         return gctFields(url, source)
       })()
       gctCache.set(key, pending)
@@ -293,7 +296,7 @@ export class GeetestChallenge {
       ),
     })
     this.mergeConfig(initial.data)
-    if (!this.c || !this.s) throw new Error('极验初始化缺少 c/s')
+    if (!this.c || !this.s) throw new Error($t("src.protocols.v3.client.text_bb7a134042"))
     this.mouse = JSON.parse(
       await fs.readFile(
         new URL('../../../resources/captcha/mousepath.json', import.meta.url),
@@ -360,7 +363,7 @@ export class GeetestChallenge {
       width: '100%',
     })
     const data = picture.data
-    if (!data?.pic || !data.resource_servers?.[0]) throw new Error('极验未返回验证码图片')
+    if (!data?.pic || !data.resource_servers?.[0]) throw new Error($t("src.protocols.v3.client.text_3b5a0f0414"))
     this.mergeConfig(data)
     this.picture = data.pic
     this.timing = timing
@@ -368,13 +371,13 @@ export class GeetestChallenge {
       url = geetestAssetUrl(data.pic, origin)
     this.gct = await this.loadGct(data.gct_path, origin)
     const response = await this.fetch(url, { signal: this.signal || AbortSignal.timeout(20000) })
-    if (!response.ok) throw new Error(`验证码图片 HTTP ${response.status}`)
+    if (!response.ok) throw new Error($t("src.protocols.v3.client.text_946fa7616c", { "status": response.status }))
     const image = Buffer.from(await response.arrayBuffer())
-    if (!image.length || image.length > 8 * 1024 * 1024) throw new Error('验证码图片体积无效')
+    if (!image.length || image.length > 8 * 1024 * 1024) throw new Error($t("src.protocols.v3.client.text_4e2ea83a80"))
     return { image, type: data.pic.includes('80/2023-12-04T12/icon') ? 'icon1' : data.pic_type }
   }
   async verify(points: string[]) {
-    if (!points.length) throw new Error('没有识别到验证码坐标')
+    if (!points.length) throw new Error($t("src.protocols.v3.client.text_41724b43f0"))
     const payload = {
       lang: 'zh-cn',
       passtime: 1600,

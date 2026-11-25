@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash, randomBytes } from "node:crypto";
 import { chmod, copyFile, lstat, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
@@ -19,17 +22,17 @@ function location(root: URL) { return join(fileURLToPath(root), "data/valkey"); 
 async function privateDirectory(path: string) {
   await mkdir(path, { recursive: true, mode: 0o700 });
   const info = await lstat(path);
-  if (!info.isDirectory() || info.uid !== process.getuid?.() || await realpath(path) !== path) throw new Error("Valkey 目录必须为本机用户拥有的实体目录。");
+  if (!info.isDirectory() || info.uid !== process.getuid?.() || await realpath(path) !== path) throw new Error($t("lib.managed-valkey.text_bc652bcea1"));
   await chmod(path, 0o700);
 }
 async function record(root: URL, allowRelocate = false): Promise<RecordFile | undefined> {
   const filename = join(location(root), "managed.json");
   const info = await lstat(filename).catch(error => { if (error.code !== "ENOENT") throw error; });
   if (!info) return;
-  if (!info.isFile() || info.uid !== process.getuid?.() || info.mode & 0o077) throw new Error("托管 Valkey 配置权限必须为 0600。");
+  if (!info.isFile() || info.uid !== process.getuid?.() || info.mode & 0o077) throw new Error($t("lib.managed-valkey.text_56b3321a1f"));
   const value = JSON.parse(await readFile(filename, "utf8")) as RecordFile;
   if (value.format !== 1 || !/^[a-f0-9]{64}$/u.test(value.password) || typeof value.binary !== "string" ||
-      (!allowRelocate && value.socketPath !== socketPath(root))) throw new Error("托管 Valkey 配置无效或目录已迁移，请运行 bun run bootstrap 重新绑定本机实例。");
+      (!allowRelocate && value.socketPath !== socketPath(root))) throw new Error($t("lib.managed-valkey.text_a59888432f"));
   return value;
 }
 function socketPath(root: URL) {
@@ -54,65 +57,65 @@ export async function verifyStorageConnection(connection: string | StorageConnec
 }
 async function command(argv: string[], cwd?: string, signal?: AbortSignal) {
   const child = Bun.spawn(argv, { cwd, stdin: "ignore", stdout: "ignore", stderr: "ignore", signal });
-  if (await child.exited !== 0) throw new Error(`Valkey 工具执行失败：${argv[0]?.split("/").at(-1)}`);
+  if (await child.exited !== 0) throw new Error($t("lib.managed-valkey.text_960468f862", { "value1": argv[0]?.split("/").at(-1) }));
 }
 async function usable(binary: string) {
   try { await command([binary, "--version"]); return true; } catch { return false; }
 }
 async function compileOfficial(directory: string, signal?: AbortSignal, progress?: (message: string) => void) {
   const make = Bun.which("make"), cc = Bun.which("cc"), tar = Bun.which("tar");
-  if (!make || !cc || !tar) throw new Error("本机没有可兼容的 Valkey 二进制；编译需要 make、cc 和 tar，请安装后重新初始化。");
-  progress?.("下载并校验官方 Valkey 8.1.12 源码，在项目目录编译");
+  if (!make || !cc || !tar) throw new Error($t("lib.managed-valkey.text_21d33979c2"));
+  progress?.($t("lib.managed-valkey.text_c917308c00"));
   const response = await fetch("https://github.com/valkey-io/valkey/archive/refs/tags/8.1.12.tar.gz", { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000) });
-  if (!response.ok) throw new Error("Valkey 官方源码下载失败。");
+  if (!response.ok) throw new Error($t("lib.managed-valkey.text_07bc6697ae"));
   const bytes = Buffer.from(await response.arrayBuffer());
-  if (createHash("sha256").update(bytes).digest("hex") !== "675bd143a4c42022f7ce10fb012a7a61e0a70b139ff166e3e63fca2bdf05027b") throw new Error("Valkey 源码 SHA256 校验失败。");
+  if (createHash("sha256").update(bytes).digest("hex") !== "675bd143a4c42022f7ce10fb012a7a61e0a70b139ff166e3e63fca2bdf05027b") throw new Error($t("lib.managed-valkey.text_27f52677ec"));
   const source = join(directory, "source-build"), archive = join(directory, "source.tar");
   await privateDirectory(source); await writeFile(archive, Bun.gunzipSync(new Uint8Array(bytes)), { mode: 0o600 });
   await command([tar, "-xf", archive, "--strip-components=1", "-C", source], undefined, signal);
   await command([make, "-j2", "MALLOC=libc", "BUILD_TLS=no", "valkey-server"], source, signal);
   const binary = join(directory, "valkey-server");
   await copyFile(join(source, "src/valkey-server"), binary); await chmod(binary, 0o700);
-  if (!await usable(binary)) throw new Error("Valkey 编译结果无法运行。");
+  if (!await usable(binary)) throw new Error($t("lib.managed-valkey.text_154dd63891"));
   await rm(source, { recursive: true, force: true }); await rm(archive, { force: true });
   return binary;
 }
 async function prepareBinary(root: URL, install: boolean, signal?: AbortSignal, progress?: (message: string) => void) {
   const system = Bun.which("valkey-server");
-  if (system && await usable(system)) { progress?.("使用系统 Valkey 可执行文件，启动本项目独立实例"); return system; }
+  if (system && await usable(system)) { progress?.($t("lib.managed-valkey.text_83f01e7eac")); return system; }
   const directory = join(fileURLToPath(root), "data/tools/valkey");
   const binary = join(directory, "valkey-server");
   if (await usable(binary)) return binary;
-  if (!install) throw new Error("Valkey 尚未初始化，请运行 bun run bootstrap。");
-  if (process.platform === "win32") throw new Error("托管 Valkey 需要 Linux 或 macOS；Windows 请配置独立 Redis/Valkey 端点。");
+  if (!install) throw new Error($t("lib.managed-valkey.text_fd31eb1387"));
+  if (process.platform === "win32") throw new Error($t("lib.managed-valkey.text_d5094e1b50"));
   if (process.platform !== "linux" || !(process.arch in release)) { await privateDirectory(directory); return compileOfficial(directory, signal, progress); }
   const tar = Bun.which("tar");
-  if (!tar) throw new Error("解包官方 Valkey 需要 tar，请安装后重新初始化。");
+  if (!tar) throw new Error($t("lib.managed-valkey.text_dba9129502"));
   await privateDirectory(directory);
   const [arch, digest] = release[process.arch as keyof typeof release];
   const url = `https://download.valkey.io/releases/valkey-8.1.12-jammy-${arch}.tar.gz`;
   const archive = join(directory, "release.tar");
-  progress?.("下载并校验官方 Valkey 8.1.12");
+  progress?.($t("lib.managed-valkey.text_9edfb88e6b"));
   let bytes: Buffer | undefined;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000) });
-      if (!response.ok) throw new Error("下载失败");
+      if (!response.ok) throw new Error($t("lib.managed-valkey.text_8a03e35ad3"));
       const candidate = Buffer.from(await response.arrayBuffer());
-      if (candidate.length > 128 * 1024 ** 2 || createHash("sha256").update(candidate).digest("hex") !== digest) throw new Error("校验失败");
+      if (candidate.length > 128 * 1024 ** 2 || createHash("sha256").update(candidate).digest("hex") !== digest) throw new Error($t("lib.managed-valkey.text_a096c11769"));
       bytes = candidate; break;
     } catch { signal?.throwIfAborted(); }
   }
-  if (!bytes) throw new Error("官方 Valkey 下载或 SHA256 校验失败。");
+  if (!bytes) throw new Error($t("lib.managed-valkey.text_c35054dbde"));
   await writeFile(archive, Bun.gunzipSync(new Uint8Array(bytes)), { mode: 0o600 });
   const entries = await new Response(Bun.spawn([tar, "-tf", archive], { stdout: "pipe", stderr: "ignore" }).stdout).text();
-  if (entries.split("\n").some(path => path.startsWith("/") || path.split("/").includes(".."))) throw new Error("Valkey 发布包路径无效。");
+  if (entries.split("\n").some(path => path.startsWith("/") || path.split("/").includes(".."))) throw new Error($t("lib.managed-valkey.text_a6fc681913"));
   // Only the executable is installed, not arbitrary archive contents or shell scripts.
   const member = entries.split("\n").find(path => path.endsWith("/bin/valkey-server") || path === "bin/valkey-server");
-  if (!member) throw new Error("官方 Valkey 发布包缺少 valkey-server。");
+  if (!member) throw new Error($t("lib.managed-valkey.text_e32cbe63d9"));
   const extracted = Bun.spawn([tar, "-xOf", archive, member], { stdout: "pipe", stderr: "ignore" });
   const executable = await new Response(extracted.stdout).arrayBuffer();
-  if (await extracted.exited !== 0) throw new Error("Valkey 解包失败。");
+  if (await extracted.exited !== 0) throw new Error($t("lib.managed-valkey.text_decfa80b8d"));
   await writeFile(binary, Buffer.from(executable), { mode: 0o700 });
   await rm(archive, { force: true });
   if (!await usable(binary)) return compileOfficial(directory, signal, progress);
@@ -133,7 +136,7 @@ async function assertRelocationHasNoWriter(directory: string) {
   if (!Number.isSafeInteger(pid) || pid <= 0) return;
   try { process.kill(pid, 0); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return; }
-  const refuse = () => new Error("旧 Valkey 实例仍可能使用迁移后的数据目录，请先停止原实例，再运行 bun run bootstrap。");
+  const refuse = () => new Error($t("lib.managed-valkey.text_51e481ac2d"));
   if (process.platform !== "linux") throw refuse();
   const [current, working] = await Promise.all([stat(directory), stat(`/proc/${pid}/cwd`).catch(() => undefined)]);
   if (!working) {
@@ -159,7 +162,7 @@ export async function ensureManagedValkey(root: URL, { initialize = false, signa
     signal?.throwIfAborted();
     try { await mkdir(lock, { mode: 0o700 }); await writeFile(join(lock, "owner.json"), JSON.stringify({ pid: process.pid }), { mode: 0o600 }); break; }
     catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST" || Date.now() >= until) throw new Error("Valkey 初始化锁被占用，请检查另一个启动进程。");
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST" || Date.now() >= until) throw new Error($t("lib.managed-valkey.text_ec2be902f0"));
       try {
         const owner = JSON.parse(await readFile(join(lock, "owner.json"), "utf8"));
         if (Number.isSafeInteger(owner.pid) && owner.pid > 0) {
@@ -187,12 +190,12 @@ export async function ensureManagedValkey(root: URL, { initialize = false, signa
     }
     const connection = (await managedValkeyConnection(root))!;
     try { await verifyStorageConnection(connection); return { managed: true, connection }; } catch { signal?.throwIfAborted(); }
-    if (await socketListening(saved.socketPath)) throw new Error("本项目 Valkey Socket 已有服务，但认证或健康检查失败；不会接管该实例，请检查托管配置。");
+    if (await socketListening(saved.socketPath)) throw new Error($t("lib.managed-valkey.text_8d21a82fc0"));
     const pid = Number(await readFile(join(directory, "valkey.pid"), "utf8").catch(() => ""));
     if (Number.isSafeInteger(pid) && pid > 0) {
       let alive = true;
       try { process.kill(pid, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") alive = false; }
-      if (alive) throw new Error("项目 Valkey 进程仍在运行但 Socket 不可用，拒绝重复启动，请检查本项目服务状态。");
+      if (alive) throw new Error($t("lib.managed-valkey.text_55ed1e46aa"));
     }
     if (!await usable(saved.binary)) {
       saved.binary = await prepareBinary(root, initialize, signal, progress);
@@ -204,14 +207,14 @@ export async function ensureManagedValkey(root: URL, { initialize = false, signa
       `requirepass ${quote(saved.password)}`, `dir ${quote(directory)}`, 'dbfilename "dump.rdb"', "appendonly yes", 'appendfsync everysec',
       'save 60 1', "daemonize yes", `pidfile ${quote(join(directory, "valkey.pid"))}`, `logfile ${quote(join(directory, "valkey.log"))}`].join("\n") + "\n", { mode: 0o600 });
     await (await import("node:fs/promises")).rename(config + ".next", config);
-    progress?.("启动本项目 Valkey，检查本机独立 Socket 与持久化目录");
+    progress?.($t("lib.managed-valkey.text_bfe43bf7a6"));
     await command([saved.binary, config], undefined, signal);
     let ready = false;
     for (let attempt = 0; attempt < 50; attempt++) {
       signal?.throwIfAborted();
       try { await verifyStorageConnection(connection); ready = true; break; } catch { await Bun.sleep(100); }
     }
-    if (!ready) throw new Error("项目 Valkey 启动失败，请检查 data/valkey/valkey.log。");
+    if (!ready) throw new Error($t("lib.managed-valkey.text_e08f0df9c2"));
     return { managed: true, connection };
   } finally { await rm(lock, { recursive: true, force: true }); }
 }
@@ -222,7 +225,7 @@ async function managedWriterAlive(root: URL): Promise<boolean> {
   });
   if (text === undefined) return false;
   const pid = Number(text.trim());
-  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("项目 Valkey PID 记录无效，无法确认停止状态。");
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error($t("lib.managed-valkey.text_af321a992c"));
   try { process.kill(pid, 0); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return false; throw error; }
   if (process.platform !== "linux") return true;
@@ -233,7 +236,7 @@ async function managedWriterAlive(root: URL): Promise<boolean> {
       if (failure.code !== "ENOENT") throw failure;
     });
     if (!state || /\) Z /u.test(state)) return;
-    throw new Error("无法确认项目 Valkey 进程的数据目录。");
+    throw new Error($t("lib.managed-valkey.text_fe1ba5a0c0"));
   });
   return Boolean(working && current.dev === working.dev && current.ino === working.ino);
 }
@@ -243,9 +246,9 @@ export async function stopManagedValkey(root: URL): Promise<void> {
   if (!connection) return;
   const socket = connection.socketPath!;
   const entry = await lstat(socket).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
-  if (entry && (!entry.isSocket() || entry.uid !== process.getuid?.())) throw new Error("项目 Valkey Socket 类型或所有者无效。");
+  if (entry && (!entry.isSocket() || entry.uid !== process.getuid?.())) throw new Error($t("lib.managed-valkey.text_cf572410ca"));
   if (!entry || !await socketListening(socket)) {
-    if (await managedWriterAlive(root)) throw new Error("项目 Valkey 进程仍在运行，但 Socket 不可用，请检查服务状态。");
+    if (await managedWriterAlive(root)) throw new Error($t("lib.managed-valkey.text_82ebade3ce"));
     return; // Missing/refused socket plus no owned writer is an already-stopped service.
   }
   const client = createStorageClient(connection); client.on("error", () => {});
@@ -266,7 +269,7 @@ export async function stopManagedValkey(root: URL): Promise<void> {
       if (!await socketListening(socket) && !await managedWriterAlive(root)) return;
       await Bun.sleep(40);
     }
-    throw new Error("项目 Valkey 尚未确认停止，请检查 data/valkey/valkey.log。");
+    throw new Error($t("lib.managed-valkey.text_cc9d990064"));
   } finally { if (client.isOpen) await client.disconnect(); }
 }
 export async function initializeValkey(root: URL, signal: AbortSignal, progress?: (message: string) => void) {

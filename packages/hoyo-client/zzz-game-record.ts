@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { normalizeGameRoles, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -37,7 +40,7 @@ const elements: Readonly<Record<number, string>> = {
 };
 const subElements: Readonly<Record<string, string>> = { "200:4": "HonedEdge", "202:1": "Frost", "205:2": "AuricInk" };
 
-function invalid(message = "官方绝区零战绩响应格式无效。"): never {
+function invalid(message = $t("zzz-game-record.text_82d9a22b81")): never {
   throw new HoyoRequestError("response", message);
 }
 
@@ -61,13 +64,13 @@ function verifyIdentity(data: Json, uid: string, region: string, gameBiz: string
   for (const key of ["uid", "role_id", "game_uid"]) {
     const value = data[key];
     if (value !== undefined && value !== uid && !(typeof value === "number" && String(value) === uid)) {
-      invalid("官方绝区零战绩的 UID 与当前档案不一致。");
+      invalid($t("zzz-game-record.text_76560c2f3d"));
     }
   }
   for (const key of ["server", "region"]) {
-    if (data[key] !== undefined && data[key] !== region) invalid("官方绝区零战绩的区服与当前档案不一致。");
+    if (data[key] !== undefined && data[key] !== region) invalid($t("zzz-game-record.text_9bc390a796"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== gameBiz) invalid("官方绝区零战绩的游戏与当前档案不一致。");
+  if (data.game_biz !== undefined && data.game_biz !== gameBiz) invalid($t("zzz-game-record.text_62c41035d3"));
 }
 
 function entries(value: unknown, kind: "avatar" | "buddy") {
@@ -80,11 +83,11 @@ function entries(value: unknown, kind: "avatar" | "buddy") {
     const rank = whole(kind === "avatar" ? item.rank : item.star);
     const rarity = item.rarity;
     if (!id || seen.has(id) || level === undefined || level > 999 || rank === undefined || rank > 99 ||
-        (rarity !== "S" && rarity !== "A" && rarity !== "B")) invalid("官方绝区零战绩的代理人或邦布记录无效。");
+        (rarity !== "S" && rarity !== "A" && rarity !== "B")) invalid($t("zzz-game-record.text_7ed2e4e53e"));
     seen.add(id);
     const base: ZzzGameRecordItem = {
       itemId: String(id),
-      name: cleanText(item.name_mi18n ?? item.name, 160) ?? (kind === "avatar" ? `代理人 ${id}` : `邦布 ${id}`),
+      name: cleanText(item.name_mi18n ?? item.name, 160) ?? (kind === "avatar" ? $t("zzz-game-record.text_725c93487b", { "id": id }) : $t("zzz-game-record.text_0c382eb58a", { "id": id })),
       level, rank, rarity,
     };
     if (kind === "buddy") return {
@@ -130,7 +133,7 @@ export interface HoYoLabZzzRecordAccount extends HoYoLabCheckinAccount {
 export async function openHoYoLabZzzOwnedRecord(
   source: HoYoLabZzzRecordAccount, transport: HoyoTransport, options: HoYoLabCheckinOptions,
 ) {
-  const selectionError = () => new HoyoRequestError("invalid-input", "请在此档案选中已绑定到 HoYoLAB 账号的绝区零国际服角色。");
+  const selectionError = () => new HoyoRequestError("invalid-input", $t("zzz-game-record.text_0520c692fd"));
   if (source.selectedUid && !/^[1-9]\d{9}$/u.test(source.selectedUid)) throw selectionError();
   const client = openHoYoLabZzzRecordTransport(source, transport, options);
   const catalogue = (await client.roleList()).map(record);

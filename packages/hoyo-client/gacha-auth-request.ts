@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { createHash, randomInt } from "node:crypto";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import { HoyoRequestError } from "./errors.ts";
@@ -28,21 +31,21 @@ function verifiedStoken({ account }: ProfileRequestContext, subject: string, all
   if ((!allowStored && !stokenCookie.trim()) || /[\u0000-\u001f\u007f]/u.test(stokenCookie) || ids.size !== 1 ||
       !accountId || !/^[1-9]\d*$/u.test(accountId) || mids.size > 1 || tokens.size !== 1 || !token ||
       (stoken && stoken !== token) || (token.startsWith("v2_") && !mids.size)) {
-    throw new HoyoRequestError("invalid-input", `${subject}需要归属一致的档案登录凭据。`);
+    throw new HoyoRequestError("invalid-input", $t("gacha-auth-request.text_d3a55d02ae", { "subject": subject }));
   }
   return { accountId, token, mid: [...mids][0] ?? "" };
 }
 
-export function gachaStokenCookie(source: ProfileRequestContext, game: "原神" | "绝区零") {
-  verifiedStoken(source, `${game}抽卡`, false);
+export function gachaStokenCookie(source: ProfileRequestContext, game: string) {
+  verifiedStoken(source, $t("gacha-auth-request.text_7ee4355f5c", { "game": game }), false);
   return source.account.stokenCookie;
 }
 
 export function starRailLedgerStokenCookie(source: ProfileRequestContext) {
-  const { accountId, token, mid } = verifiedStoken(source, "星铁流水", true);
+  const { accountId, token, mid } = verifiedStoken(source, $t("gacha-auth-request.text_19d060bfda"), true);
   const valid = /^[\x21-\x3a\x3c-\x7e]{1,4096}$/u;
   if (!/^[1-9]\d{0,19}$/u.test(accountId) || !valid.test(token) || (mid && !valid.test(mid))) {
-    throw new HoyoRequestError("invalid-input", "星铁流水需要有效的档案登录凭据。");
+    throw new HoyoRequestError("invalid-input", $t("gacha-auth-request.text_8d23d552a3"));
   }
   return `stuid=${accountId};stoken=${token};mid=${mid};`;
 }

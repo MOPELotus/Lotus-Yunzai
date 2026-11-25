@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants } from "node:os";
 import { isGitRevision } from "./local-git.ts";
 import type { ManagedEndpoints } from "./managed-handoff.ts";
@@ -41,10 +44,10 @@ function reportedPort(value: unknown): number | undefined {
 export function spawnManagedWorker(root: string, options: ManagedWorkerOptions = {}) {
   const { expectedRevision, expectedPlugins = [], expectedScripts = [], expectedEndpoints = {}, held, onRestart, onUpdate } = options;
   if (expectedRevision !== undefined && (!isGitRevision(expectedRevision) || expectedRevision.trim() !== expectedRevision)) {
-    throw new Error("宿主启动检查需要完整的 Git 提交号。");
+    throw new Error($t("lib.managed-worker.text_b1c86e9d37"));
   }
   if (expectedPlugins.length > managedUpdateDirectoryLimit || !expectedPlugins.every(isManagedPluginDirectory)) {
-    throw new Error("候选插件目录无效。");
+    throw new Error($t("lib.managed-worker.text_e7aa5dafcd"));
   }
 
   const token = crypto.randomUUID();
@@ -111,13 +114,13 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
       } else if (message.type === "lotus-ready" && !ready) {
         const revision = "revision" in message ? message.revision : undefined;
         if (expectedRevision !== undefined && revision !== expectedRevision) {
-          startupError = new Error("宿主报告的 Git 提交与预期不符。");
+          startupError = new Error($t("lib.managed-worker.text_2d82000b2d"));
           void stop();
         } else if (revision === undefined || (typeof revision === "string" && isGitRevision(revision) && revision.trim() === revision)) {
           const plugins = "plugins" in message ? message.plugins : undefined;
           if (expectedPlugins.length !== 0 && (!Array.isArray(plugins) || plugins.length > managedUpdateDirectoryLimit ||
               !plugins.every(isManagedPluginDirectory) || !expectedPlugins.every((plugin) => plugins.includes(plugin)))) {
-            startupError = new Error("宿主未加载预期的候选插件。");
+            startupError = new Error($t("lib.managed-worker.text_ae01a3251e"));
             void stop();
             return;
           }
@@ -125,7 +128,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
             const scripts = "scripts" in message ? parseManagedLegacyScripts(message.scripts) : undefined;
             const activeScripts = new Set(scripts);
             if (expectedScripts.some(script => !activeScripts.has(script))) {
-              startupError = new ManagedEndpointUnavailableError("候选宿主未加载保留的 V3 脚本入口。");
+              startupError = new ManagedEndpointUnavailableError($t("lib.managed-worker.text_bafe7db6a8"));
               void stop();
               return;
             }
@@ -141,31 +144,31 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
             valkey: "valkey" in message && message.valkey === true ? true : undefined,
           };
           if (expectedEndpoints.tls && (!endpoints.tls || (expectedEndpoints.tls === "wss" && endpoints.tls !== "wss"))) {
-            startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 HTTPS 或 WSS 监听。");
+            startupError = new ManagedEndpointUnavailableError($t("lib.managed-worker.text_c3f8f5e174"));
             void stop();
             return;
           }
-          for (const [key, label] of [["httpPort", "公共 HTTP"], ["oneBotPort", "OneBot"], ["tlsPort", "HTTPS 或 WSS"]] as const) {
+          for (const [key, label] of [["httpPort", $t("lib.managed-worker.text_ce373b8a04")], ["oneBotPort", "OneBot"], ["tlsPort", $t("lib.managed-worker.text_d3620e5f2f")]] as const) {
             if (expectedEndpoints[key] !== undefined && endpoints[key] !== expectedEndpoints[key]) {
-              startupError = new ManagedEndpointUnavailableError(`候选宿主未能接回原版本的 ${label} 端口。`);
+              startupError = new ManagedEndpointUnavailableError($t("lib.managed-worker.text_6a65ab39da", { "label": label }));
               void stop();
               return;
             }
           }
           if (expectedEndpoints.milky && endpoints.milky !== expectedEndpoints.milky) {
-            startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 Milky 入口。");
+            startupError = new ManagedEndpointUnavailableError($t("lib.managed-worker.text_8a31a3656c"));
             void stop();
             return;
           }
           if (expectedEndpoints.valkey && !endpoints.valkey) {
-            startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 Valkey 存储。");
+            startupError = new ManagedEndpointUnavailableError($t("lib.managed-worker.text_12344cd5f2"));
             void stop();
             return;
           }
           storage = "storage" in message ? parseStorageSnapshot(message.storage) : undefined;
           if (expectedStorageRevision !== undefined &&
               (storage === undefined || storageRevision(storage) !== expectedStorageRevision)) {
-            startupError = new ManagedEndpointUnavailableError("候选宿主未能接回原版本的 Valkey 配置。");
+            startupError = new ManagedEndpointUnavailableError($t("lib.managed-worker.text_777a0dcf68"));
             void stop();
             return;
           }
@@ -247,7 +250,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
   function watchStartup(wait: number) {
     clearTimeout(startupTimer);
     startupTimer = setTimeout(() => {
-      startupError = new Error("等待宿主就绪超时。");
+      startupError = new Error($t("lib.managed-worker.text_82f623f416"));
       void stop();
     }, wait + pluginStartupGraceMs);
   }
@@ -261,7 +264,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     signalGroup("SIGKILL");
     // Power state may be the worker's last IPC message during cleanup.
     await disconnected.promise;
-    if (!ready) readiness.reject(startupError ?? new Error("宿主在就绪前退出。"));
+    if (!ready) readiness.reject(startupError ?? new Error($t("lib.managed-worker.text_6fd9782a44")));
     const signal = child.signalCode;
     return signal === null ? code : 128 + (typeof signal === "number" ? signal : constants.signals[signal]);
   });
@@ -273,7 +276,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     if (!stopping && child.exitCode === null && child.signalCode === null) {
       stopping = true;
       clearTimeout(startupTimer);
-      startupError ??= new Error("宿主在就绪前被停止。");
+      startupError ??= new Error($t("lib.managed-worker.text_b440a28bba"));
       const timeout = !ready ? startupStopTimeout : replacementNotice ? legacyCleanupStopTimeout : gracefulStopTimeout;
       stopTimer = setTimeout(() => signalGroup("SIGKILL"), timeout);
       if (replacing && replacementNotice && active && ready) {
@@ -297,7 +300,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
     get storage() { return storage; },
     get serving() { return active && ready && !stopping && child.exitCode === null && child.signalCode === null; },
     activate() {
-      if (!ready || stopping || child.exitCode !== null || child.signalCode !== null) throw new Error("宿主尚未就绪或已退出。");
+      if (!ready || stopping || child.exitCode !== null || child.signalCode !== null) throw new Error($t("lib.managed-worker.text_5504851c97"));
       if (active) return;
       if (activating) return activating;
       const message = { type: "lotus-activate", token };
@@ -311,7 +314,7 @@ export function spawnManagedWorker(root: string, options: ManagedWorkerOptions =
       const timeout = setTimeout(() => confirmation.resolve(false), activationTimeout);
       void disconnected.promise.then(() => confirmation.resolve(false));
       activating = confirmation.promise.then((confirmed) => {
-        if (!confirmed) throw new ManagedEndpointUnavailableError("候选宿主未确认激活。");
+        if (!confirmed) throw new ManagedEndpointUnavailableError($t("lib.managed-worker.text_516eb923b4"));
       }).finally(() => {
         clearTimeout(timeout);
         confirmActivation = undefined;

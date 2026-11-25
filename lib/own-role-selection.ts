@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { PublicRoleReferenceCatalogue } from "./public-role-references.ts";
 import { gameRegionDisplayName, MAX_PROFILE_ID, ProfileError, type createProfileStore, type Game, type GameRole } from "@lotus-yunzai/account";
 import type { createOwnRoleLegacyArtwork } from "./own-role-legacy-artwork.ts";
@@ -8,11 +11,11 @@ import type { ProfileCardRole } from "@lotus-yunzai/skia/profile";
 const command = /^#(原神|星铁|绝区零)?(?:我的)?uid([0-9]{1,3})?(?:[ \t]+档案[ \t]*([1-9][0-9]{0,2}))?$/iu;
 const directUidCommand = /^#(?:(?:设置|切换)(原神|星铁|崩铁|绝区零|绝)|绑定(绝区零|绝))(?:uid|UID)(?:([1-9]\d{0,2})?\s+)?([1-9]\d{7,9})$/u;
 const gameCodes = { 原神: "gs", 星铁: "sr", 崩铁: "sr", 绝区零: "zzz", 绝: "zzz" } as const;
-const gameLabels = { gs: "原神", sr: "星铁", zzz: "绝区零" } as const;
+const gameLabels = { gs: $t("lib.own-role-selection.text_d1597c51ed"), sr: $t("lib.own-role-selection.text_a2927891f0"), zzz: $t("lib.own-role-selection.text_b1110352c9") } as const;
 const prefixes = { gs: "#", sr: "*", zzz: "%" } as const;
 const games = ["gs", "sr", "zzz"] as const;
 const maxSlot = 99;
-export const ownRoleSelectionFeatures = ["[account] 本人角色", "account", "@lotus-yunzai/account"] as const;
+export const ownRoleSelectionFeatures = [$t("lib.own-role-selection.text_04f9bd14ca"), "account", "@lotus-yunzai/account"] as const;
 
 type Selection = { readonly game: Game; readonly slot?: number; readonly profileId?: number; readonly uid?: string };
 
@@ -60,8 +63,8 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId, ui
   legacyArtwork?: ReturnType<typeof createOwnRoleLegacyArtwork>) {
   const { user, signal, isCurrent } = scope;
   if (!isCurrent() || signal.aborted) return;
-  if (profileId !== undefined && profileId > MAX_PROFILE_ID) return `档案编号须在 1 到 ${MAX_PROFILE_ID} 之间。`;
-  if (slot !== undefined && (slot < 1 || slot > maxSlot)) return `角色序号须在 1 到 ${maxSlot} 之间。`;
+  if (profileId !== undefined && profileId > MAX_PROFILE_ID) return $t("lib.own-role-selection.text_b4ba5fed47", { "MAX_PROFILE_ID": MAX_PROFILE_ID });
+  if (slot !== undefined && (slot < 1 || slot > maxSlot)) return $t("lib.own-role-selection.text_849b66fea4", { "maxSlot": maxSlot });
   const qq = String(user);
   try {
     const ids = profileId === undefined ? await profiles.listIds(qq) : [profileId];
@@ -77,18 +80,18 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId, ui
       }
     }
     if (!isCurrent() || signal.aborted) return;
-    if (!catalogs.size && slot !== undefined) return "未找到本人档案。可发送 #登录列表 查看。";
-    if (!catalogs.size && !hasReferences) return "没有本人游戏角色。可发送 #登录列表 查看或 #扫码登录。";
+    if (!catalogs.size && slot !== undefined) return $t("lib.own-role-selection.text_0cd34ccea0");
+    if (!catalogs.size && !hasReferences) return $t("lib.own-role-selection.text_37a995e092");
 
     const all = { gs: collectRoles(catalogs, "gs"), sr: collectRoles(catalogs, "sr"), zzz: collectRoles(catalogs, "zzz") };
-    const suffix = profileId === undefined ? "" : ` 档案${profileId}`;
+    const suffix = profileId === undefined ? "" : $t("lib.own-role-selection.text_31a2142f9f", { "profileId": profileId });
     let confirmation: string | undefined;
     if (slot !== undefined || (uid !== undefined && profileId !== undefined)) {
       const label = gameLabels[game];
       const selected = slot === undefined ? await profiles.requestContext(qq, profileId!, game, uid) : all[game][slot - 1];
-      if (!selected) return `${profileId === undefined ? "本人" : `档案 ${profileId}`}没有第 ${slot} 个${label}角色。请发送 #UID${suffix} 查看。`;
+      if (!selected) return $t("lib.own-role-selection.text_e7571f382e", { "value1": profileId === undefined ? $t("lib.own-role-selection.text_1b13f8bc82") : $t("lib.own-role-selection.text_3f6fdc79bb", { "profileId": profileId }), "slot": slot, "label": label, "suffix": suffix });
       const { role, revision, profileId: id } = selected;
-      if (uid !== undefined && catalogs.get(id)?.revision !== revision) throw new ProfileError("changed", "档案已变更。");
+      if (uid !== undefined && catalogs.get(id)?.revision !== revision) throw new ProfileError("changed", $t("lib.own-role-selection.text_8a1edc5158"));
       if (!isCurrent() || signal.aborted) return;
       const saved = await profiles.selectCatalogRole(qq, id, game, role.uid, revision, signal, isCurrent);
       if (!isCurrent() || signal.aborted) return;
@@ -98,18 +101,18 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId, ui
         item.activeIn.push(id);
         item.activeIn.sort((a, b) => a - b);
       }
-      confirmation = `档案 ${id} · ${label}当前角色已选为 ${[role.uid, roleInfo(game, role)].filter(Boolean).join(" · ")}。`;
+      confirmation = $t("lib.own-role-selection.text_34fe465cfa", { "id": id, "label": label, "value3": [role.uid, roleInfo(game, role)].filter(Boolean).join(" · ") });
       if (profileId === undefined && defaults) {
         const selected = await defaults.select(game, id, role.uid, saved.revision, scope).catch(() => false);
         if (!isCurrent() || signal.aborted) return;
-        confirmation += selected ? `\n${label}默认档案为 ${id}。` : `\n未能保存${label}默认档案，请核对本档登录后重试。`;
+        confirmation += selected ? $t("lib.own-role-selection.text_966da1c2b7", { "label": label, "id": id }) : $t("lib.own-role-selection.text_518808d6b3", { "label": label });
       }
     }
 
     const activeDefaults = catalogs.size ? await defaults?.read(qq) : undefined;
     if (!isCurrent() || signal.aborted) return;
-    const title = catalogs.size ? "本人游戏角色" : "本人公开 UID 引用";
-    const subtitle = catalogs.size ? (profileId === undefined ? "全部档案" : `档案 ${profileId}`) : undefined;
+    const title = catalogs.size ? $t("lib.own-role-selection.text_b844714f31") : $t("lib.own-role-selection.text_644d7384cc");
+    const subtitle = catalogs.size ? (profileId === undefined ? $t("lib.own-role-selection.text_595270cd9a") : $t("lib.own-role-selection.text_3f6fdc79bb", { "profileId": profileId })) : undefined;
     const lines = [[title, subtitle].filter(Boolean).join(" · ")];
     const cardGroups = [];
     for (const key of games) {
@@ -118,37 +121,37 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId, ui
       const label = gameLabels[key];
       const gameDefault = activeDefaults?.[key] ?? 1;
       const defaultLabel = profileId === undefined && roles.length ? (catalogs.get(gameDefault)?.catalog[key].length
-        ? ` · 默认档案 ${gameDefault}` : " · 未选默认档案") : "";
+        ? $t("lib.own-role-selection.text_113f48d452", { "gameDefault": gameDefault }) : $t("lib.own-role-selection.text_7372697e19")) : "";
       lines.push(label + defaultLabel);
-      if (!roles.length) lines.push("  暂无已同步角色");
+      if (!roles.length) lines.push($t("lib.own-role-selection.text_48101791af"));
       const rows: (ProfileCardRole & { readonly avatar?: string; readonly profile?: number })[] = [];
       for (const [index, { profileId: source, role, activeIn }] of roles.entries()) {
         const reference = references?.data.indexOf(role.uid) ?? -1;
-        const marker = reference >= 0 ? `（${references?.uid === role.uid ? "公开当前" : "另有公开引用"} ${reference + 1}）` : "";
-        const current = activeIn.length ? (profileId === undefined ? `（档案 ${activeIn.join("、")} 当前）` : "（当前）") : "";
-        const origin = profileId === undefined ? `档案 ${source}` : "";
+        const marker = reference >= 0 ? `（${references?.uid === role.uid ? $t("lib.own-role-selection.text_c758d2d62e") : $t("lib.own-role-selection.text_21ebc31a63")} ${reference + 1}）` : "";
+        const current = activeIn.length ? (profileId === undefined ? $t("lib.own-role-selection.text_9f62273138", { "value1": activeIn.join("、") }) : $t("lib.own-role-selection.text_58d8cd20d2")) : "";
+        const origin = profileId === undefined ? $t("lib.own-role-selection.text_b369256ccb", { "source": source }) : "";
         const detail = roleInfo(key, role);
         lines.push(`  ${index + 1}. ${[role.uid, detail, origin].filter(Boolean).join(" · ")}${current}${marker}`);
-        const cardOrigin = profileId === undefined && activeIn.includes(source) ? `档案 ${activeIn.join("、")} 当前` :
+        const cardOrigin = profileId === undefined && activeIn.includes(source) ? $t("lib.own-role-selection.text_4476f8250e", { "value1": activeIn.join("、") }) :
           [origin, current].filter(Boolean).join(" ");
         rows.push({ uid: role.uid, name: [cardOrigin, detail, marker].filter(Boolean).join(" · "), active: !!activeIn.length,
-          slot: String(index + 1), badge: "档案角色", avatar: role.avatar, profile: source });
+          slot: String(index + 1), badge: $t("lib.own-role-selection.text_63927b798f"), avatar: role.avatar, profile: source });
       }
       const listedUids = new Set(roles.map(({ role }) => role.uid));
       const uniqueReferences = references?.data.flatMap((uid, index) => {
         if (listedUids.has(uid)) return [];
         const active = uid === references.uid;
-        rows.push({ uid, name: active ? "公开当前" : "独立公开引用", active, slot: `公${index + 1}`, badge: "公开绑定" });
-        return [`  公开 ${index + 1}. ${uid}${active ? "（公开当前）" : ""}`];
+        rows.push({ uid, name: active ? $t("lib.own-role-selection.text_c758d2d62e") : $t("lib.own-role-selection.text_89f8145800"), active, slot: $t("lib.own-role-selection.text_0932f36928", { "value1": index + 1 }), badge: $t("lib.own-role-selection.text_4a8cb47249") });
+        return [$t("lib.own-role-selection.text_dbc62a9fce", { "value1": index + 1, "uid": uid, "value3": active ? $t("lib.own-role-selection.text_d3df839a99") : "" })];
       });
-      if (uniqueReferences?.length) lines.push("  独立公开引用", ...uniqueReferences);
+      if (uniqueReferences?.length) lines.push($t("lib.own-role-selection.text_722538b31b"), ...uniqueReferences);
       cardGroups.push({ label: `${prefixes[key]}${label}${defaultLabel}`, command: `${prefixes[key]}UID1${suffix}`,
         game: key, rows });
     }
     const instructions = [];
-    if (catalogs.size) instructions.push(`切换角色请用 #UID2${suffix}、*UID2${suffix} 或 %UID2${suffix}。`);
-    if (profileId === undefined && catalogs.size > 1) instructions.push("查询指定档案时可在指令末尾加 档案N。");
-    if (hasReferences) instructions.push("公开引用独立编号。查询或切换请用 #、* 或 % 加 查询公开UID2、切换公开UID2。");
+    if (catalogs.size) instructions.push($t("lib.own-role-selection.text_b207f99843", { "suffix": suffix, "value2": suffix, "value3": suffix }));
+    if (profileId === undefined && catalogs.size > 1) instructions.push($t("lib.own-role-selection.text_f94d71da1c"));
+    if (hasReferences) instructions.push($t("lib.own-role-selection.text_53c4ec0e44"));
     const fallback = [confirmation, ...lines, ...instructions].filter(Boolean).join("\n");
     try {
       const [{ loadProfileRoleArtwork }, { openProfileCardTheme, renderProfileCard }] = await Promise.all([
@@ -182,13 +185,13 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId, ui
   } catch (error) {
     if (!isCurrent() || signal.aborted) return;
     if (error instanceof ProfileError) {
-      if (error.code === "missing") return `未找到本人档案 ${profileId}。可发送 #登录列表 查看。`;
-      if (error.code === "changed") return "档案在操作期间已更新，请重新发送 #UID 查看后再选择。";
-      if (error.code === "login-required" && uid !== undefined) return `档案 ${profileId} 尚未登录，请先扫码登录。`;
+      if (error.code === "missing") return $t("lib.own-role-selection.text_21d26e1170", { "profileId": profileId });
+      if (error.code === "changed") return $t("lib.own-role-selection.text_f19cfb39b5");
+      if (error.code === "login-required" && uid !== undefined) return $t("lib.own-role-selection.text_01e4cf1b34", { "profileId": profileId });
       if (error.code === "role-missing" && uid !== undefined) {
-        return `档案 ${profileId} 没有此${gameLabels[game]}角色。可发送 ${prefixes[game]}UID 档案${profileId} 查看。`;
+        return $t("lib.own-role-selection.text_384d21e4ee", { "profileId": profileId, "value2": gameLabels[game], "value3": prefixes[game], "value4": profileId });
       }
     }
-    return "暂时无法读取或切换本人角色，请确认档案后重试。";
+    return $t("lib.own-role-selection.text_403f8b8e2c");
   }
 }

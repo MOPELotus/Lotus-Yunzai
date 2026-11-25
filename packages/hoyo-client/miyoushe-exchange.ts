@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { getDefaultCaptchaSolver, type CaptchaChallenge, type CaptchaProof } from "./captcha.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import { transientReadResponse } from "@lotus-yunzai/http";
@@ -64,7 +67,7 @@ function object(value: unknown): Json | undefined {
 
 function accountCookie({ account }: ProfileAccountContext) {
   const uid = account.stuid || account.ltuid;
-  const invalidCookie = "当前档案缺少有效的商城 Cookie，请重新登录。";
+  const invalidCookie = $t("miyoushe-exchange.text_5a564f3ae0");
   if (!idPattern.test(uid) || (account.stuid && account.ltuid && account.stuid !== account.ltuid)) invalid(invalidCookie);
   const fields = new Map<string, string>();
   for (const item of account.cookie.split(";")) {
@@ -105,7 +108,7 @@ function requestHeaders(profile: ProfileAccountContext, writing: boolean) {
   });
   if (valid(device.id)) headers.set("x-rpc-device_id", device.id);
   if (writing) {
-    if (!valid(device.id) || !valid(device.fp)) invalid("请先核验当前档案绑定的设备。");
+    if (!valid(device.id) || !valid(device.fp)) invalid($t("miyoushe-exchange.text_3516129b71"));
     headers.set("Content-Type", "application/json;charset=utf-8");
     headers.set("x-rpc-app_version", appVersion);
     headers.set("x-rpc-channel", "appstore");
@@ -127,10 +130,10 @@ function classification(retcode: number, status: number, message: unknown): Clas
 
 function readError(reason: Classification = "failed") {
   switch (reason) {
-    case "rate-limited": return new MiyousheExchangeError(429, reason, "商城请求频繁，请稍后再试。");
-    case "verification": return new MiyousheExchangeError(409, reason, "请在米游社官方客户端完成验证后重试。");
-    case "expired": return new MiyousheExchangeError(409, reason, "当前档案的商城 Cookie 已失效，请重新登录。");
-    default: return new MiyousheExchangeError(502, reason, "暂时无法读取兑换所需的账号信息。");
+    case "rate-limited": return new MiyousheExchangeError(429, reason, $t("miyoushe-exchange.text_6a6523693b"));
+    case "verification": return new MiyousheExchangeError(409, reason, $t("miyoushe-exchange.text_810c444061"));
+    case "expired": return new MiyousheExchangeError(409, reason, $t("miyoushe-exchange.text_2d3785b72a"));
+    default: return new MiyousheExchangeError(502, reason, $t("miyoushe-exchange.text_4a30deb8c5"));
   }
 }
 
@@ -200,7 +203,7 @@ async function verifyShopChallenge(transport: HoyoTransport, profile: ProfileAcc
     await verify();
     const data = object(created?.payload?.data);
     if (created?.status !== 200 || retcodeOf(created.payload) !== 0 || !verifiedField(data?.captcha_id, 256)) {
-      throw new Error("商城验证码申请未完成。");
+      throw new Error($t("miyoushe-exchange.text_e5919ff8b4"));
     }
     return { captchaVersion: 4, captchaId: data.captcha_id,
       ...(verifiedField(data.risk_type, 8192) && { riskType: data.risk_type }) };
@@ -221,12 +224,12 @@ async function verifyShopChallenge(transport: HoyoTransport, profile: ProfileAcc
     const retcode = retcodeOf(result?.payload);
     const rpcChallenge = object(result?.payload?.data)?.challenge;
     if (result?.status !== 200 || retcode === undefined || retcode === 10041 ||
-        [-100, 10001, 10101, 10102, 10103].includes(retcode)) throw new Error("商城验证码校验未完成。");
+        [-100, 10001, 10101, 10102, 10103].includes(retcode)) throw new Error($t("miyoushe-exchange.text_3cac3a9428"));
     if (classification(retcode, result.status, result.payload?.message) === "rate-limited" || retcode === -10000) {
-      throw new Error("商城验证码业务账号或频率限制，停止重试。");
+      throw new Error($t("miyoushe-exchange.text_e736eb4674"));
     }
     if (retcode !== 0) return { accepted: false as const };
-    if (!verifiedField(rpcChallenge, 2048)) throw new Error("商城验证码校验响应无效。");
+    if (!verifiedField(rpcChallenge, 2048)) throw new Error($t("miyoushe-exchange.text_b8967756a3"));
     return { accepted: true as const, value: rpcChallenge };
   }
   const solver = getDefaultCaptchaSolver();
@@ -264,7 +267,7 @@ async function read(transport: HoyoTransport, url: URL, profile: ProfileAccountC
 export async function readMiyousheShopAccountQuota(transport: HoyoTransport, profile: ProfileAccountContext, goodsId: string,
   signal?: AbortSignal, verify?: Verify,
 ) {
-  if (!idPattern.test(goodsId)) invalid("商品编号无效。");
+  if (!idPattern.test(goodsId)) invalid($t("miyoushe-exchange.text_71b97b5205"));
   const url = new URL("/mall/v1/web/goods/detail", productOrigin);
   url.search = new URLSearchParams({ app_id: String(app.app_id), point_sn: app.point_sn, goods_id: goodsId }).toString();
   const headers = requestHeaders(profile, false);
@@ -320,7 +323,7 @@ export async function readMiyousheShopAddresses(transport: HoyoTransport, profil
       ? address.connect_name.replace(/[\p{Cc}\p{Cf}*]/gu, "").trim() : "";
     const mobile = typeof address?.connect_mobile === "string" ? address.connect_mobile.trim() : "";
     const lastFour = /^\d{4}$/u.test(mobile.slice(-4)) ? mobile.slice(-4) : "";
-    addresses.set(id, `${Array.from(name)[0] ?? "收"}** ****${lastFour}`);
+    addresses.set(id, `${Array.from(name)[0] ?? $t("miyoushe-exchange.text_339bacf403")}** ****${lastFour}`);
   }
   return Array.from(addresses, ([id, label]) => ({ id, label }));
 }
@@ -328,7 +331,7 @@ export async function readMiyousheShopAddresses(transport: HoyoTransport, profil
 export async function submitMiyousheShopExchange(transport: HoyoTransport, profile: ProfileAccountContext,
   order: MiyousheShopOrder, signal?: AbortSignal, verify?: Verify,
   manual?: ShopManualVerification, firstDispatchAllowed?: () => boolean): Promise<MiyousheShopExchangeResult> {
-  if (!idPattern.test(order.goodsId)) invalid("兑换商品编号无效。");
+  if (!idPattern.test(order.goodsId)) invalid($t("miyoushe-exchange.text_bd9b3017f1"));
   let body;
   if (order.type === 1 && !order.role && idPattern.test(order.addressId) && Number.isSafeInteger(Number(order.addressId))) {
     body = { ...app, goods_id: order.goodsId, exchange_num: 1, address_id: Number(order.addressId) };
@@ -342,7 +345,7 @@ export async function submitMiyousheShopExchange(transport: HoyoTransport, profi
       codePattern.test(order.role.region) && codePattern.test(order.gameBiz) && order.role.gameBiz === order.gameBiz) {
     body = { ...app, goods_id: order.goodsId, exchange_num: 1, address_id: 0,
       uid: order.role.uid, region: order.role.region, game_biz: order.gameBiz };
-  } else invalid("兑换目标与商品类型不匹配。");
+  } else invalid($t("miyoushe-exchange.text_c57427e3c7"));
   const endpoint = new URL("/common/homushop/v1/web/goods/exchange", shopOrigin);
   const payload = JSON.stringify(body);
   const headers = requestHeaders(profile, true);
@@ -350,7 +353,7 @@ export async function submitMiyousheShopExchange(transport: HoyoTransport, profi
   const first: HoyoTransport = async (url, init) => {
     if (firstDispatchAllowed && !firstDispatchAllowed()) {
       missed = true;
-      throw new Error("商城已关窗，未提交。");
+      throw new Error($t("miyoushe-exchange.text_b6acc481f2"));
     }
     return transport(url, init);
   };

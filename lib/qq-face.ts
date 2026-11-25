@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { delegationSession } from "./command-delegation.ts";
 import type { CommandReply } from "./commands.ts";
 import type { MessageEvent, MessageReply, ProtocolSegment } from "./messages.ts";
@@ -28,12 +31,12 @@ export function qqFaceReply(event: MessageEvent): CommandReply | undefined {
     const face: ProtocolSegment = { type: "face", data: { id, ...(isLarge === undefined ? {} : { is_large: isLarge }) } };
     const supplied = typeof part.text === "string" ? part.text.trim() : undefined;
     const description = supplied && supplied.length <= 80 && !/[\u0000-\u001f\u007f-\u009f\u2028-\u202e\u2066-\u2069]/u.test(supplied)
-      ? supplied : "未提供";
-    nodes.push(["表情：", face, `\nid：${id}\n描述：${description}`]);
+      ? supplied : $t("lib.qq-face.text_756762e293");
+    nodes.push([$t("lib.qq-face.text_2fa5ee2b51"), face, $t("lib.qq-face.text_d10c3188ae", { "id": id, "description": description })]);
   }
 
   const [first] = nodes;
-  if (!first) return { type: "quoted", message: "❎ 表情参数不可为空" };
+  if (!first) return { type: "quoted", message: $t("lib.qq-face.text_3ea97fafb1") };
   if (nodes.length === 1) return first;
   return { type: "forward", nodes, batchSize: 25, senderName: "Lotus-Yunzai" };
 }

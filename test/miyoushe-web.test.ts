@@ -93,7 +93,7 @@ test("网页登录票据在重启后保留签发机器人及协议，浏览器�
   }
 });
 
-test("米游社网页按原脚本地址提供 Bun 转译后的浏览器资源，不公开 TypeScript 源文件", async () => {
+test("米游社网页按原脚本地址提供 Bun 打包后的浏览器资源，不公开 TypeScript 源文件", async () => {
   const root = await mkdtemp(join(tmpdir(), "lotus-miyoushe-browser-script-"));
   const account = createProfileStore(root);
   const site = createMiyousheWeb({ publicBase: () => origin, databasePath: join(root, "auth.sqlite"),
@@ -106,13 +106,15 @@ test("米游社网页按原脚本地址提供 Bun 转译后的浏览器资源，
     expect(html?.status).toBe(200);
     expect(html?.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
     expect(await html?.text()).toMatch(/<script\b[^>]*src="app\.js"[^>]*type="module"[^>]*>/u);
+    await writeFile(join(root, "intent-id.ts"), 'export const marker: string = "secure-random-helper";');
     await writeFile(join(root, "app.ts"), 'import { marker } from "./intent-id.js"; const version: number = 42; document.body.dataset.version = String(version) + marker;');
     const response = await site.handle(request("app.js"));
     expect(response?.status).toBe(200);
     expect(response?.headers.get("Content-Type")).toBe("text/javascript; charset=utf-8");
     const text = await response?.text();
     expect(text).toContain("document.body.dataset.version");
-    expect(text).toContain('from "./intent-id.js"');
+    expect(text).toContain("secure-random-helper");
+    expect(text).not.toContain('from "./intent-id.js"');
     expect(text).not.toContain(": number");
     const head = await site.handle(request("app.js", { method: "HEAD" }));
     expect(head?.status).toBe(200);

@@ -1,20 +1,23 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 export const biliResolutions = [
-  [5, "144P 极省流"], [6, "240P 极速"], [16, "360P 流畅"], [32, "480P 清晰"],
-  [48, "720P 兼容档"], [64, "720P 高清"], [74, "720P 60 帧"], [80, "1080P 高清"],
-  [100, "智能修复"], [112, "1080P 高码率"], [116, "1080P 60 帧"], [120, "4K 超清"],
-  [125, "HDR 真彩"], [126, "杜比视界"], [127, "8K 超高清"], [129, "HDR Vivid"],
+  [5, $t("lib.panel-bilibili-schema.text_6e187b33e6")], [6, $t("lib.panel-bilibili-schema.text_f6ed35128a")], [16, $t("lib.panel-bilibili-schema.text_4c9273ccad")], [32, $t("lib.panel-bilibili-schema.text_1fbfc170aa")],
+  [48, $t("lib.panel-bilibili-schema.text_125a8ee553")], [64, $t("lib.panel-bilibili-schema.text_7fba0348eb")], [74, $t("lib.panel-bilibili-schema.text_61c02d26ec")], [80, $t("lib.panel-bilibili-schema.text_414b2a4156")],
+  [100, $t("lib.panel-bilibili-schema.text_bd43abaf3c")], [112, $t("lib.panel-bilibili-schema.text_54ed0b548d")], [116, $t("lib.panel-bilibili-schema.text_d62a32881d")], [120, $t("lib.panel-bilibili-schema.text_ebbe4cb7a8")],
+  [125, $t("lib.panel-bilibili-schema.text_0f2206faaa")], [126, $t("lib.panel-bilibili-schema.text_7963e073e1")], [127, $t("lib.panel-bilibili-schema.text_f39bb31142")], [129, "HDR Vivid"],
 ] as const;
 
 export const biliPagePolicies = [
-  ["zip", "打包发送"], ["all", "全部下载"], ["first", "只下首 P"],
+  ["zip", $t("lib.panel-bilibili-schema.text_f53576eaf9")], ["all", $t("lib.panel-bilibili-schema.text_0e148c6414")], ["first", $t("lib.panel-bilibili-schema.text_8455d25eb4")],
 ] as const;
 
 export const biliDownloadNumbers = [
-  { key: "concurrency", label: "下载并发", min: 1, max: 16 },
-  { key: "duration_limit_seconds", label: "视频时长限制（秒）", min: 1 },
-  { key: "video_size_limit_mb", label: "视频消息体积上限（MiB）", min: 1 },
-  { key: "max_estimated_size_mb", label: "预估和下载体积上限（MiB）", min: 0 },
-  { key: "timeout_ms", label: "下载超时（毫秒）", min: 1 },
+  { key: "concurrency", label: $t("lib.panel-bilibili-schema.text_645a1bede9"), min: 1, max: 16 },
+  { key: "duration_limit_seconds", label: $t("lib.panel-bilibili-schema.text_d08c662b98"), min: 1 },
+  { key: "video_size_limit_mb", label: $t("lib.panel-bilibili-schema.text_69d8e8941e"), min: 1 },
+  { key: "max_estimated_size_mb", label: $t("lib.panel-bilibili-schema.text_0fd7e77134"), min: 0 },
+  { key: "timeout_ms", label: $t("lib.panel-bilibili-schema.text_d724a1074b"), min: 1 },
 ] as const;
 
 export interface BilibiliPanelSettings {

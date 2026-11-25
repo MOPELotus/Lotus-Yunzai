@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { MessageEvent } from "./messages.ts";
 
@@ -21,8 +24,8 @@ const applicationTtlMs = 5 * 60_000;
 const maxApplications = 1024;
 const enroll = "#设置主人";
 const issue = "#设置主人验证码";
-const invalid = "申请或验证码无效，或已过期。请重新申请。";
-const writeFailed = "权限已变化或无法保存，请重新申请。";
+const invalid = $t("lib.master-enrollment.text_b1d1cc256d");
+const writeFailed = $t("lib.master-enrollment.text_02c0ab25a7");
 
 export function matchesMasterEnrollment(message: string): boolean {
   return /^#设置主人(?:验证码)?(?:\s|$)/u.test(message.trimStart());
@@ -56,7 +59,7 @@ export function createMasterEnrollment(permissions: Permissions, now: () => numb
 
   async function grant(bot: number, user: number, approver: number | "stdin", isCurrent?: () => boolean): Promise<string> {
     try {
-      if (await permissions.grant(bot, user, approver, isCurrent)) return "已设置为当前机器人的主人。";
+      if (await permissions.grant(bot, user, approver, isCurrent)) return $t("lib.master-enrollment.text_89042535f5");
     } catch {
       // A storage exception must not expose the enrollment or its credentials.
     }
@@ -66,11 +69,11 @@ export function createMasterEnrollment(permissions: Permissions, now: () => numb
   async function handle(event: MessageEvent): Promise<string> {
     const [command, ...args] = event.msg.trim().split(/\s+/u);
     if (event.message_type === "terminal") {
-      if (!permissions.isTerminalMaster()) return "请先在本机配置 stdin:stdin。";
+      if (!permissions.isTerminalMaster()) return $t("lib.master-enrollment.text_1636694db5");
       const bot = readId(args[0]);
       const user = readId(args[1]);
       if (command !== enroll || args.length !== 2 || !bot || !user || bot === user) {
-        return "用法：#设置主人 <机器人QQ> <申请人QQ>。";
+        return $t("lib.master-enrollment.text_7cec9adb9b");
       }
       return grant(bot, user, "stdin");
     }
@@ -80,7 +83,7 @@ export function createMasterEnrollment(permissions: Permissions, now: () => numb
     const isCurrent = adapter === "milky" ? event.isOwnerEnrollmentSession : undefined;
     const bound = adapter === "milky" ? isLive(isCurrent) : event.boundAccount === true;
     if (event.message_type !== "private" || !bound || !isId(bot) || !isId(user) || bot === user) {
-      return "请在已绑定机器人的私聊中操作。";
+      return $t("lib.master-enrollment.text_8e00429d69");
     }
 
     const time = now();
@@ -91,28 +94,28 @@ export function createMasterEnrollment(permissions: Permissions, now: () => numb
     const ownerKey = `${bot}:${user}`;
     const key = `${adapter}:${ownerKey}`;
     if (command === issue) {
-      if (!permissions.isMaster(bot, user)) return "仅当前机器人的主人可签发验证码。";
+      if (!permissions.isMaster(bot, user)) return $t("lib.master-enrollment.text_69e7e55ac7");
       const id = args[0]?.toLowerCase();
-      if (args.length !== 1 || !id || !/^[a-f0-9]{8}$/u.test(id)) return "用法：#设置主人验证码 <申请编号>。";
+      if (args.length !== 1 || !id || !/^[a-f0-9]{8}$/u.test(id)) return $t("lib.master-enrollment.text_3bc994a50d");
       const application = [...applications.values()].find((entry) => entry.adapter === adapter && entry.bot === bot && entry.id === id);
       if (!application) return invalid;
 
       const code = randomBytes(8).toString("hex");
       application.signing = { approver: user, digest: hash(code) };
-      return `申请人 QQ：${application.user}。验证码：${code}。请交给申请人私聊发送 #设置主人 <验证码>。`;
+      return $t("lib.master-enrollment.text_0dfeed2a33", { "user": application.user, "code": code });
     }
 
-    if (args.length > 1) return "用法：#设置主人，或 #设置主人 <验证码>。";
-    if (permissions.isMaster(bot, user)) return "你已经是当前机器人的主人。";
-    if (!permissions.masterIds(bot).length) return "当前机器人尚未设置主人，请先在本机配置。";
-    if (granting.has(ownerKey)) return "主人设置正在处理。";
+    if (args.length > 1) return $t("lib.master-enrollment.text_ecb35e92f7");
+    if (permissions.isMaster(bot, user)) return $t("lib.master-enrollment.text_29fec4bac2");
+    if (!permissions.masterIds(bot).length) return $t("lib.master-enrollment.text_d697412277");
+    if (granting.has(ownerKey)) return $t("lib.master-enrollment.text_fdfa52d4a4");
 
     const application = applications.get(key);
     const code = args[0];
     if (code === undefined) {
       let pending = application;
       if (!pending) {
-        if (applications.size >= maxApplications) return "当前申请较多，请稍后重试。";
+        if (applications.size >= maxApplications) return $t("lib.master-enrollment.text_ee915188ce");
         let id: string;
         do {
           id = randomBytes(4).toString("hex");
@@ -120,7 +123,7 @@ export function createMasterEnrollment(permissions: Permissions, now: () => numb
         pending = { id, bot, user, adapter, expires: time + applicationTtlMs };
         applications.set(key, pending);
       }
-      return `申请编号：${pending.id}。请让当前机器人的主人在此机器人私聊中发送 #设置主人验证码 <编号>。申请 5 分钟内有效。`;
+      return $t("lib.master-enrollment.text_71686dbcb2", { "id": pending.id });
     }
 
     const signing = application?.signing;

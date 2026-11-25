@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { createHash, randomInt } from "node:crypto";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -67,7 +70,7 @@ function retcodeOf(value: unknown): number | undefined {
 
 function checkedDevice({ id, fp, name, model, androidVersion }: PassportQrDevice): PassportQrDevice {
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/u.test(id)) {
-    throw new PassportQrError("invalid-device", "invalid-input", "扫码登录需要当前档案的有效设备 ID。");
+    throw new PassportQrError("invalid-device", "invalid-input", $t("passport-qr.text_9caf6b7d06"));
   }
   const headerValue = (value: string | undefined) => typeof value === "string" && /^[\x20-\x7E]{1,128}$/u.test(value) ? value : undefined;
   return { id, fp: headerValue(fp), name: headerValue(name), model: headerValue(model), androidVersion: headerValue(androidVersion) };
@@ -95,7 +98,7 @@ async function readPayload(response: Response): Promise<Json | undefined> {
   if (!response.body) return;
   if (Number(response.headers.get("Content-Length")) > maxResponseBytes) {
     await response.body.cancel().catch(() => undefined);
-    responseError("扫码登录的官方响应超过大小上限。");
+    responseError($t("passport-qr.text_a59425274e"));
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -106,7 +109,7 @@ async function readPayload(response: Response): Promise<Json | undefined> {
       const next = await reader.read();
       if (next.done) break;
       size += next.value.byteLength;
-      if (size > maxResponseBytes) responseError("扫码登录的官方响应超过大小上限。");
+      if (size > maxResponseBytes) responseError($t("passport-qr.text_a59425274e"));
       text += decoder.decode(next.value, { stream: true });
     }
     return object(JSON.parse(text + decoder.decode()));
@@ -120,13 +123,13 @@ async function readPayload(response: Response): Promise<Json | undefined> {
 }
 
 function aborted(): never {
-  throw new PassportQrError("aborted", "transport", "扫码登录已停止。");
+  throw new PassportQrError("aborted", "transport", $t("passport-qr.text_b8ee8a6b89"));
 }
 
 function responseFailure(status: number, retcode?: number): never {
-  if (retcode === -3501) throw new PassportQrError("expired", "api", "二维码已过期，请重新发起扫码登录。", status, retcode);
-  if (retcode === -3505) throw new PassportQrError("cancelled", "api", "已取消扫码登录。", status, retcode);
-  throw new PassportQrError("response", status === 200 ? "api" : "http", "官方扫码登录接口未接受本次请求。", status, retcode);
+  if (retcode === -3501) throw new PassportQrError("expired", "api", $t("passport-qr.text_e54134365d"), status, retcode);
+  if (retcode === -3505) throw new PassportQrError("cancelled", "api", $t("passport-qr.text_4fa98861ab"), status, retcode);
+  throw new PassportQrError("response", status === 200 ? "api" : "http", $t("passport-qr.text_64800e273b"), status, retcode);
 }
 
 function loginLink(data: Json): { session: PassportQrSession; ticket: string } {
@@ -134,19 +137,19 @@ function loginLink(data: Json): { session: PassportQrSession; ticket: string } {
   const url = typeof raw === "string" && raw.length <= 2048 && !/[\x00-\x20\x7F]/u.test(raw) ? URL.parse(raw) : null;
   if (!url || url.origin !== "https://user.mihoyo.com" || url.pathname !== "/login-platform/mobile.html" ||
       url.username || url.password || (url.hash && url.hash !== "#/login/qr")) {
-    responseError("扫码登录未返回有效的米哈游通行证二维码地址。");
+    responseError($t("passport-qr.text_2f0d652824"));
   }
   const tickets = [...url.searchParams.getAll("tk"), ...url.searchParams.getAll("ticket")];
   const ticket = data.ticket ?? tickets[0];
   if (typeof ticket !== "string" || !ticketPattern.test(ticket) || tickets.length !== 1 || tickets[0] !== ticket) {
-    responseError("官方扫码登录二维码与会话票据不一致。");
+    responseError($t("passport-qr.text_4abb92c8fb"));
   }
   const tokenTypes = url.searchParams.getAll("token_types");
   if (tokenTypes.length > 1 || (tokenTypes.length === 1 && tokenTypes[0] !== "1")) {
-    responseError("官方扫码二维码未使用可续期的 App 登录流程。");
+    responseError($t("passport-qr.text_682fecd79d"));
   }
   const dates = url.searchParams.getAll("expire");
-  if (dates.length > 1 || (dates.length && !/^\d{10}$/u.test(dates[0]!))) responseError("官方扫码二维码的有效期无效。");
+  if (dates.length > 1 || (dates.length && !/^\d{10}$/u.test(dates[0]!))) responseError($t("passport-qr.text_de9ca97ec8"));
   const expiresAt = dates.length ? Number(dates[0]) * 1000 : undefined;
   if (expiresAt !== undefined && expiresAt <= Date.now()) responseFailure(200, -3501);
   return { session: Object.freeze({ url: url.href, ...(expiresAt === undefined ? {} : { expiresAt }) }), ticket };
@@ -161,8 +164,8 @@ function loginCredentials(data: Json): PassportQrCredentials {
   const user = object(data.user_info);
   const ids = [user?.aid, user?.uid, user?.account_id].filter((value) => value !== undefined && value !== null && value !== "").map(uidOf);
   const stuid = ids[0];
-  if (!stuid || ids.some((id) => id !== stuid)) responseError("扫码确认返回的账号标识缺失或不一致。");
-  if (!Array.isArray(data.tokens)) responseError("扫码确认缺少可续期的登录令牌。");
+  if (!stuid || ids.some((id) => id !== stuid)) responseError($t("passport-qr.text_a729888f25"));
+  if (!Array.isArray(data.tokens)) responseError($t("passport-qr.text_4215c2a56e"));
   const matching = new Set<string>();
   for (const item of data.tokens) {
     const row = object(item);
@@ -173,16 +176,16 @@ function loginCredentials(data: Json): PassportQrCredentials {
     const contradicts = (named && row.token_type !== undefined && !typed) ||
       (typed && typeof row.name === "string" && /^(?:ltoken|cookie_token|game_token)(?:_v2)?$/u.test(row.name));
     if (contradicts || typeof row.token !== "string" || !secretPattern.test(row.token)) {
-      responseError("扫码确认返回的令牌类型或格式不一致。");
+      responseError($t("passport-qr.text_fbec16341d"));
     }
     matching.add(row.token);
   }
   const stoken = matching.values().next().value;
-  if (!stoken || matching.size !== 1) responseError("扫码确认未提供唯一的可续期登录令牌。");
+  if (!stoken || matching.size !== 1) responseError($t("passport-qr.text_5e8371eeda"));
   const mid = user?.mid;
   const checkedMid = typeof mid === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(mid) ? mid : undefined;
   if ((stoken.startsWith("v2_") && !checkedMid) || (mid !== undefined && mid !== null && mid !== "" && !checkedMid)) {
-    responseError("扫码确认缺少有效的账号 MID。");
+    responseError($t("passport-qr.text_92ec519f4a"));
   }
   return { stuid, stoken, ...(checkedMid ? { mid: checkedMid } : {}) };
 }
@@ -207,34 +210,34 @@ export function createPassportQr(transport: HoyoTransport) {
       });
     } catch {
       if (signal?.aborted) aborted();
-      throw new PassportQrError("transport", "transport", "官方扫码登录请求未完成。");
+      throw new PassportQrError("transport", "transport", $t("passport-qr.text_66ff360cb8"));
     }
     if (deadline.aborted || response.status === 429) {
       await response.body?.cancel().catch(() => undefined);
       if (signal?.aborted) aborted();
-      if (timeout.aborted) throw new PassportQrError("transport", "transport", "官方扫码登录请求超时。");
-      throw new PassportQrError("rate-limited", "http", "官方扫码登录请求过于频繁，请稍后重试。", 429);
+      if (timeout.aborted) throw new PassportQrError("transport", "transport", $t("passport-qr.text_60ada1dd3e"));
+      throw new PassportQrError("rate-limited", "http", $t("passport-qr.text_884cb3d5e5"), 429);
     }
     const challenge = response.headers.get("x-rpc-aigis")?.trim();
     if (challenge && challenge !== "{}") {
       await response.body?.cancel().catch(() => undefined);
-      throw new PassportQrError("risk", "api", "官方扫码登录要求额外验证，请在官方客户端处理。", response.status);
+      throw new PassportQrError("risk", "api", $t("passport-qr.text_4cd4557440"), response.status);
     }
     const payload = await readPayload(response);
     if (signal?.aborted) aborted();
-    if (timeout.aborted) throw new PassportQrError("transport", "transport", "官方扫码登录请求超时。");
+    if (timeout.aborted) throw new PassportQrError("transport", "transport", $t("passport-qr.text_60ada1dd3e"));
     const retcode = retcodeOf(payload?.retcode);
     const data = object(payload?.data);
     const message = typeof payload?.message === "string" ? payload.message : "";
     if (passportFlag(data?.need_realperson) || passportFlag(object(data?.realname_info)?.required) ||
         (retcode !== 0 && /实名|real[- ]?name/iu.test(message))) {
-      throw new PassportQrError("realname", "api", "官方扫码登录要求实名验证，请在官方客户端处理。", response.status, retcode);
+      throw new PassportQrError("realname", "api", $t("passport-qr.text_bcc38b2d51"), response.status, retcode);
     }
     if ((retcode !== undefined && riskCodes.has(retcode)) || (retcode !== 0 && /验证码|风控|captcha|challenge/iu.test(message))) {
-      throw new PassportQrError("risk", "api", "官方扫码登录要求额外验证，请在官方客户端处理。", response.status, retcode);
+      throw new PassportQrError("risk", "api", $t("passport-qr.text_4cd4557440"), response.status, retcode);
     }
     if (retcode !== 0 && /频繁|rate limit|too frequent/iu.test(message)) {
-      throw new PassportQrError("rate-limited", "api", "官方扫码登录请求过于频繁，请稍后重试。", response.status, retcode);
+      throw new PassportQrError("rate-limited", "api", $t("passport-qr.text_884cb3d5e5"), response.status, retcode);
     }
     if (!response.ok || (retcode !== 0 && retcode !== -3501 && retcode !== -3505)) responseFailure(response.status, retcode);
     return { data, retcode, status: response.status };
@@ -245,15 +248,15 @@ export function createPassportQr(transport: HoyoTransport) {
       const savedDevice = checkedDevice(device);
       const { data, retcode, status } = await request("createQRLogin", savedDevice, "{}", signal);
       if (retcode !== 0) responseFailure(status, retcode);
-      if (!data) responseError("官方扫码登录响应缺少二维码数据。");
+      if (!data) responseError($t("passport-qr.text_fddde555ea"));
       const { session, ticket } = loginLink(data);
       sessions.set(session, { ticket, device: savedDevice, polling: false });
       return session;
     },
     async poll(session: PassportQrSession, { signal }: PassportQrOptions = {}): Promise<PassportQrStatus> {
       const current = sessions.get(session);
-      if (!current) throw new PassportQrError("invalid-session", "invalid-input", "扫码会话已结束或无效。");
-      if (current.polling) throw new PassportQrError("busy", "invalid-input", "扫码会话正在查询。");
+      if (!current) throw new PassportQrError("invalid-session", "invalid-input", $t("passport-qr.text_57613478ec"));
+      if (current.polling) throw new PassportQrError("busy", "invalid-input", $t("passport-qr.text_fb32829c08"));
       current.polling = true;
       try {
         if (signal?.aborted) aborted();
@@ -264,7 +267,7 @@ export function createPassportQr(transport: HoyoTransport) {
         const result = await request("queryQRLoginStatus", current.device, JSON.stringify({ ticket: current.ticket }), signal);
         const { status: primary, stat: alternate } = result.data ?? {};
         if (primary !== undefined && alternate !== undefined && primary !== alternate) {
-          responseError("官方扫码登录返回了冲突的会话状态。");
+          responseError($t("passport-qr.text_3780a74cd0"));
         }
         const status = primary ?? alternate;
         if (result.retcode === 0 && status === "Created") return { status: "created" };
@@ -275,7 +278,7 @@ export function createPassportQr(transport: HoyoTransport) {
         if (result.retcode === 0 && result.data && status === "Confirmed") {
           return { status: "confirmed", credentials: loginCredentials(result.data) };
         }
-        responseError("官方扫码登录状态无法识别，请重新发起扫码登录。");
+        responseError($t("passport-qr.text_f602a6e540"));
       } catch (error) {
         sessions.delete(session);
         throw error;

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { Job } from "node-schedule";
 import { isDeepStrictEqual } from "node:util";
 import type { CheckinNotifyResult } from "./checkin-notify.ts";
@@ -120,7 +123,7 @@ export function createCheckinScheduleRuntime({
       if (!scheduled && await store.read(tomorrow)) return;
       return prepareTomorrow(await listProfiles(), snapshot, at, scheduled ? "scheduled" : "catch-up");
     })().catch(() => {
-      if (canRun(snapshot)) console.warn("[签到计划] 无法准备明日计划。");
+      if (canRun(snapshot)) console.warn($t("lib.checkin-schedule-runtime.text_d70b331634"));
       return undefined;
     }).finally(() => { preparation = undefined; });
     return preparation;
@@ -144,7 +147,7 @@ export function createCheckinScheduleRuntime({
       const scheduler = createCheckinScheduler({ store, config: snapshot, listProfiles: async () => profiles, runProfile, onComplete, now });
       return scheduler.tick(signal, { communityRetriesOnly });
     })().catch(() => {
-      if (canRun(snapshot)) console.warn("[签到计划] 无法执行本轮自动签到。");
+      if (canRun(snapshot)) console.warn($t("lib.checkin-schedule-runtime.text_53c1cf0701"));
       return { status: "failed" as const };
     }).finally(() => { operation = undefined; });
     return operation;
@@ -154,18 +157,18 @@ export function createCheckinScheduleRuntime({
     const valid = normalizeCron(configured);
     const job = new Job(`lotus-checkin-${name}-${crypto.randomUUID()}`, () => { void callback(); });
     const use = valid ?? fallback;
-    if (configured !== undefined && !valid) console.warn(`[签到计划] ${name} 的 cron 无效，使用默认时间。`);
+    if (configured !== undefined && !valid) console.warn($t("lib.checkin-schedule-runtime.text_3895cd24bb", { "name": name }));
     const install = (rule: string) => {
       try { return job.schedule({ rule, tz: "Asia/Shanghai" }); } catch { return false; }
     };
     if (install(use)) return { job, rule: use };
-    console.warn(`[签到计划] ${name} 的 cron 无效，使用默认时间。`);
+    console.warn($t("lib.checkin-schedule-runtime.text_3895cd24bb", { "name": name }));
     return { job: install(fallback) ? job : undefined, rule: fallback };
   }
 
   function schedulePlan() {
     planJob?.job?.cancel();
-    const scheduled = schedule(config.plan_generate_cron, planCron, "明日计划", () => {
+    const scheduled = schedule(config.plan_generate_cron, planCron, $t("lib.checkin-schedule-runtime.text_9966bc60ca"), () => {
       if (planJob === scheduled) void prepare(config, now(), true);
     });
     planJob = scheduled;
@@ -190,9 +193,9 @@ export function createCheckinScheduleRuntime({
     start() {
       if (!canRun(config) || started) return;
       started = true;
-      const due = schedule(config.run_due_cron, dueCron, "到期任务", trigger);
-      const fallback = schedule(config.catch_up_cron, defaultCheckinCrons.catch_up_cron, "计划补偿", catchUp);
-      const finalRetry = schedule(undefined, "0 50,59 23 * * *", "签到补跑", () =>
+      const due = schedule(config.run_due_cron, dueCron, $t("lib.checkin-schedule-runtime.text_620f78f77a"), trigger);
+      const fallback = schedule(config.catch_up_cron, defaultCheckinCrons.catch_up_cron, $t("lib.checkin-schedule-runtime.text_6484028ed8"), catchUp);
+      const finalRetry = schedule(undefined, "0 50,59 23 * * *", $t("lib.checkin-schedule-runtime.text_078f55f611"), () =>
         operation ? operation.then(() => trigger(true)) : trigger(true));
       if (due.job) jobs.push(due.job);
       if (fallback.job) jobs.push(fallback.job);

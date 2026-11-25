@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -129,7 +130,7 @@ test("实际 OneBot 和 Milky 入口返回本人月历、旧年档和统计，�
       recursive: true, filter: path => !/\/(?:\.git|node_modules|test)(?:\/|$)/u.test(path),
     });
     await symlink(join(import.meta.dir, "../plugins/starrail/node_modules"), join(stars, "node_modules"), "dir");
-    await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+    await linkHostPackages(root);
     await put(root, "config/global.yaml", "scheduler: {enable: false}\ncoin_shop: {enable: false}\n");
     for (const [qq, uid, id] of [["42", "100000126", 2], ["43", "100000127", 1]] as const) {
       await put(root, `data/users/${qq}${id === 1 ? "" : `-${id}`}.yaml`, `version: 1

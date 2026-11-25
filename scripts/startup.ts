@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { assertInitializationComplete } from "../lib/initialization-state.ts";
 import { installTerminalLogging } from "../lib/terminal-log-format.ts";
 import { mkdir } from "node:fs/promises";
@@ -13,28 +17,28 @@ async function askStartupOptions(chooseAtlas: boolean, chooseRender: boolean, si
   Promise<{ channel?: AtlasChannel; renderPreset?: ImageRenderPreset }> {
   if (!chooseAtlas && !chooseRender) return {};
   if (!process.stdin.isTTY) {
-    if (chooseAtlas && !allowDefaultChannel) throw new Error("尚未完成初始化，请先运行 bun run bootstrap。");
+    if (chooseAtlas && !allowDefaultChannel) throw new Error($t("scripts.startup.text_4f3b58cb1a"));
     return { ...(chooseAtlas && { channel: "latest" }), renderPreset: "standard" };
   }
   const input = createInterface({ input: process.stdin, output: process.stderr });
   const interactive = new AbortController();
-  input.once("close", () => interactive.abort(new Error("已取消初始化。")));
+  input.once("close", () => interactive.abort(new Error($t("scripts.startup.text_8fe6a53281"))));
   const questionSignal = AbortSignal.any([signal, interactive.signal]);
   try {
     let channel: AtlasChannel | undefined;
     let renderPreset: ImageRenderPreset | undefined;
     if (chooseAtlas) {
-      console.log("[初始化] 请选择图鉴版本来源。1. 最新版（含预览资料） 2. 正式版");
+      console.log($t("scripts.startup.text_b5976b3874"));
       while (!channel) {
-        const answer = (await input.question("图鉴版本 [1/2，默认 1] ", { signal: questionSignal })).trim().toLowerCase();
+        const answer = (await input.question($t("scripts.startup.text_2a67e19b6c"), { signal: questionSignal })).trim().toLowerCase();
         if (answer === "" || answer === "1" || answer === "latest") channel = "latest";
         if (answer === "2" || answer === "live") channel = "live";
       }
     }
     if (chooseRender) {
-      console.log("[初始化] 请选择图片渲染档位。1. 标准配置（4×，效果更好，较慢） 2. 低配配置（1×，适合低资源或无独显）");
+      console.log($t("scripts.startup.text_e51d8e3853"));
       while (!renderPreset) {
-        const answer = (await input.question("图片渲染档位 [1/2，默认 1] ", { signal: questionSignal })).trim().toLowerCase();
+        const answer = (await input.question($t("scripts.startup.text_9d845edcd7"), { signal: questionSignal })).trim().toLowerCase();
         if (answer === "" || answer === "1" || answer === "standard") renderPreset = "standard";
         if (answer === "2" || answer === "low") renderPreset = "low";
       }
@@ -75,20 +79,20 @@ async function atlasReadiness(directory: string, locale: AtlasLocale): Promise<"
       await Promise.any(others.map(language => createAtlasRuntimeCatalog(directory, data, language).read()));
     }
   } catch (cause) {
-    throw new Error(override ? "LOTUS_ATLAS_DATA_DIR 指定的图鉴索引不可用，请检查该目录的 map.json。"
-      : "图鉴索引不可用，请检查 data/atlas 或旧部署中的 map.json。", { cause });
+    throw new Error(override ? $t("scripts.startup.text_57a3fb750c")
+      : $t("scripts.startup.text_a4972860dd"), { cause });
   }
   return "ready";
 }
 
 async function loadStartupConfig(root: URL) {
   if (!await Bun.file(new URL("plugins/atlas/initialize-atlas.ts", root)).exists()) {
-    throw new Error("图鉴模块尚未安装。请先运行 bun run bootstrap。");
+    throw new Error($t("scripts.startup.text_f501375b62"));
   }
   try {
     return await import("../lib/atlas-channel.ts");
   } catch {
-    throw new Error("启动依赖尚未就绪。请先运行 bun run bootstrap。");
+    throw new Error($t("scripts.startup.text_92e77cd095"));
   }
 }
 
@@ -96,76 +100,76 @@ async function prepareThemes(root: URL, signal: AbortSignal, firstSetup: boolean
   const prepare = <T>(message: string, task: (onProgress: InitializationProgressCallback) => Promise<T>) =>
     firstSetup ? runInitializationStage(message, task, { signal }) : task(() => {});
   const { prepareAtlasTheme } = await import("../plugins/atlas/prepare-theme.ts");
-  const { copied, missing } = await prepare("准备图鉴卡片背景与字体", onProgress => prepareAtlasTheme(root, {
+  const { copied, missing } = await prepare($t("scripts.startup.text_ef9cfcdeee"), onProgress => prepareAtlasTheme(root, {
     override: Bun.env.LOTUS_ATLAS_THEME_DIR, source: Bun.env.LOTUS_ATLAS_THEME_SOURCE_DIR, signal, onProgress, download: firstSetup,
   }));
-  if (copied.length) console.log(`[图鉴] 已准备 ${copied.length} 个图鉴卡片素材文件。`);
+  if (copied.length) console.log($t("scripts.startup.text_6fcf238dd1", { "length": copied.length }));
   if (missing.length) {
-    if (firstSetup) throw new Error(`图鉴内置素材缺失：${missing.join("、")}`);
-    console.warn(`[图鉴] ${missing.length} 个图鉴卡片背景或字体尚未备齐，可能无法完整还原原样式。可重新运行 bun run bootstrap 补齐；自备素材仍可放入 data/atlas/theme/。`);
+    if (firstSetup) throw new Error($t("scripts.startup.text_6cdbc75fa3", { "value1": missing.join("、") }));
+    console.warn($t("scripts.startup.text_0fc81dc230", { "length": missing.length }));
   }
 
   const { prepareDailyNoteTheme } = await import("../lib/daily-note-theme.ts");
-  const dailyNote = await prepare("准备体力便笺素材", onProgress => prepareDailyNoteTheme(root, {
+  const dailyNote = await prepare($t("scripts.startup.text_fc32208434"), onProgress => prepareDailyNoteTheme(root, {
     override: Bun.env.LOTUS_DAILY_NOTE_RESOURCES, signal, download: firstSetup, onProgress,
   })).catch((cause: unknown) => {
     signal.throwIfAborted();
-    if (firstSetup) throw new Error("体力便笺素材准备失败。", { cause });
-    console.warn("[体力] 原便笺主题读取或写入失败。体力查询将使用文字回执，请检查项目下的 data/daily-note/resources。");
+    if (firstSetup) throw new Error($t("scripts.startup.text_89356968ea"), { cause });
+    console.warn($t("scripts.startup.text_af83b5fa5b"));
   });
   signal.throwIfAborted();
-  if (dailyNote === "installed") console.log("[体力] 已准备三游原便笺主题。");
-  if (firstSetup && (dailyNote === "missing" || dailyNote === "incomplete")) throw new Error("体力便笺素材不完整，请恢复内置资源后重试。");
+  if (dailyNote === "installed") console.log($t("scripts.startup.text_a4dfcbc4d2"));
+  if (firstSetup && (dailyNote === "missing" || dailyNote === "incomplete")) throw new Error($t("scripts.startup.text_5fc3f25ebe"));
   if (dailyNote === "incomplete") {
-    console.warn("[体力] 本地原便笺主题不完整。可将原字体和图标补齐到 data/daily-note/resources，或设置 LOTUS_DAILY_NOTE_RESOURCES 指向完整主题。");
+    console.warn($t("scripts.startup.text_1350779414"));
   }
-  if (dailyNote === "missing" && firstSetup) console.warn("[体力] 原便笺主题暂不可用，可重新运行 bun run bootstrap 重试。");
+  if (dailyNote === "missing" && firstSetup) console.warn($t("scripts.startup.text_cdd97b27e8"));
 
   if (await Bun.file(new URL("plugins/zzz/tuning-detail-card.ts", root)).exists()) {
     const { prepareZzzTuningTheme } = await import("../lib/zzz-tuning-theme.ts");
-    const zzzTuning = await prepare("准备绝区零调频素材", onProgress => prepareZzzTuningTheme(root, {
+    const zzzTuning = await prepare($t("scripts.startup.text_1609cc265f"), onProgress => prepareZzzTuningTheme(root, {
       override: Bun.env.LOTUS_ZZZ_GACHA_THEME_DIR?.trim(), signal, download: firstSetup, onProgress,
     })).catch((cause: unknown) => {
       signal.throwIfAborted();
-      if (firstSetup) throw new Error("绝区零调频素材准备失败。", { cause });
-      console.warn("[绝区零] 调频原主题读写失败，请检查 data/zzz/gacha-theme 的文件权限。");
+      if (firstSetup) throw new Error($t("scripts.startup.text_a271099cce"), { cause });
+      console.warn($t("scripts.startup.text_5a3e39206d"));
     });
     signal.throwIfAborted();
-    if (zzzTuning === "installed") console.log("[绝区零] 已准备原调频与逐抽主题。");
-    if (firstSetup && (zzzTuning === "missing" || zzzTuning === "incomplete")) throw new Error("绝区零调频素材不完整，请恢复内置资源后重试。");
+    if (zzzTuning === "installed") console.log($t("scripts.startup.text_147f390599"));
+    if (firstSetup && (zzzTuning === "missing" || zzzTuning === "incomplete")) throw new Error($t("scripts.startup.text_44c47db5e8"));
     if (zzzTuning === "incomplete") {
-      console.warn("[绝区零] 本地调频原主题不完整。可补齐 data/zzz/gacha-theme，或设置 LOTUS_ZZZ_GACHA_THEME_DIR 指向完整主题。");
+      console.warn($t("scripts.startup.text_815d344983"));
     }
-    if (zzzTuning === "missing" && firstSetup) console.warn("[绝区零] 调频原主题暂不可用，可重新运行 bun run bootstrap 重试。");
+    if (zzzTuning === "missing" && firstSetup) console.warn($t("scripts.startup.text_e1e2822694"));
   }
 
   if (await Bun.file(new URL("plugins/genshin/wish-calendar.ts", root)).exists()) {
     const { prepareGenshinWishCalendar } = await import("../plugins/genshin/wish-calendar.ts");
-    const wishCalendar = await prepare("准备原神祈愿日历", onProgress => prepareGenshinWishCalendar(root, { signal, download: firstSetup, onProgress }));
-    if (wishCalendar === "installed") console.log("[原神] 已准备原祈愿日历。");
+    const wishCalendar = await prepare($t("scripts.startup.text_a2c0b96419"), onProgress => prepareGenshinWishCalendar(root, { signal, download: firstSetup, onProgress }));
+    if (wishCalendar === "installed") console.log($t("scripts.startup.text_c539681728"));
     if (wishCalendar === "missing" && firstSetup) {
-      throw new Error("原神祈愿日历准备失败。");
+      throw new Error($t("scripts.startup.text_0547c4b57c"));
     }
   }
 
   if (await Bun.file(new URL("plugins/starrail/challenge-theme.ts", root)).exists()) {
     const { prepareStarRailChallengeTheme } = await import("../plugins/starrail/challenge-theme.ts");
-    const starrail = await prepare("准备星铁挑战素材", onProgress => prepareStarRailChallengeTheme(root, {
+    const starrail = await prepare($t("scripts.startup.text_88b30e8715"), onProgress => prepareStarRailChallengeTheme(root, {
       override: Bun.env.LOTUS_STAR_RAIL_CHALLENGE_THEME_DIR, signal, download: firstSetup, onProgress,
     }));
     if (starrail.templates || starrail.portraits) {
-      console.log(`[星铁] 已恢复 ${starrail.templates} 个原挑战模板文件和 ${starrail.portraits} 张本地原头像。`);
+      console.log($t("scripts.startup.text_01e1e5e258", { "templates": starrail.templates, "portraits": starrail.portraits }));
     }
-    if (firstSetup && starrail.missing.length) throw new Error(`星铁挑战素材缺失：${starrail.missing.join("、")}`);
-    if (starrail.missing.length) console.warn(`[星铁] 缺少 ${starrail.missing.length} 个原挑战模板文件，可重新运行 bun run bootstrap 补齐。`);
+    if (firstSetup && starrail.missing.length) throw new Error($t("scripts.startup.text_14e08f95ef", { "value1": starrail.missing.join("、") }));
+    if (starrail.missing.length) console.warn($t("scripts.startup.text_b99661feab", { "length": starrail.missing.length }));
   }
   if (await Bun.file(new URL("plugins/starrail/simulation/reincarnation-theme.ts", root)).exists()) {
     const { prepareStarRailReincarnationTheme } = await import("../plugins/starrail/simulation/reincarnation-theme.ts");
-    const relife = await prepare("准备星铁转生素材", onProgress => prepareStarRailReincarnationTheme(root, {
+    const relife = await prepare($t("scripts.startup.text_e27bd2c080"), onProgress => prepareStarRailReincarnationTheme(root, {
       override: Bun.env.LOTUS_STAR_RAIL_WARP_THEME_DIR, signal, download: firstSetup, onProgress,
     }));
-    if (relife.installed) console.log(`[星铁] 已恢复 ${relife.installed} 个原转生主题文件。`);
-    if (relife.missing.length && firstSetup) throw new Error(`星铁转生素材缺失：${relife.missing.join("、")}`);
+    if (relife.installed) console.log($t("scripts.startup.text_4f0aebd2e2", { "installed": relife.installed }));
+    if (relife.missing.length && firstSetup) throw new Error($t("scripts.startup.text_fe3863c183", { "value1": relife.missing.join("、") }));
   }
 }
 
@@ -175,7 +179,7 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
   if (await Bun.file(new URL("config/server.yaml", root)).exists()) {
     const { prepareMigratedOneBot } = await import("../lib/migrated-onebot-setup.ts");
     if (await prepareMigratedOneBot(root, Bun.env, initialize, signal)) {
-      console.log("[初始化] 已生成 OneBot 接入令牌。请用 config/server.yaml 的 onebot_token 配置网关连接。");
+      console.log($t("scripts.startup.text_8b1e9a8b55"));
     }
   }
   const previous = await readAtlasChannel(root);
@@ -184,18 +188,18 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
   const { defaultAtlasLocale, parseAtlasLocale } = await import("../plugins/atlas/locale.ts");
   const config = await readLotusGlobalConfig(root);
   const locale = parseAtlasLocale((config.atlas as { locale?: unknown } | undefined)?.locale) ?? defaultAtlasLocale;
-  const atlas = await (initialize ? runInitializationStage("核对现有图鉴", () => atlasReadiness(directory, locale), { signal })
+  const atlas = await (initialize ? runInitializationStage($t("scripts.startup.text_212142057d"), () => atlasReadiness(directory, locale), { signal })
     : atlasReadiness(directory, locale));
   signal.throwIfAborted();
   if (atlas === "reset" && !initialize && requested === undefined) {
-    console.warn("[图鉴] 保持重置状态。可运行 bun run bootstrap 或使用 #全量更新图鉴 恢复。");
+    console.warn($t("scripts.startup.text_1578f61be2"));
     await prepareThemes(root, signal, false);
     return;
   }
   const ready = atlas === "ready";
-  if (!ready && !initialize) throw new Error("尚未完成初始化，请先运行 bun run bootstrap。");
+  if (!ready && !initialize) throw new Error($t("scripts.startup.text_4f3b58cb1a"));
   const { initializeTerminalOwner } = await import("../lib/initialize-terminal-owner.ts");
-  if (await initializeTerminalOwner(root, signal)) console.info("[初始化] 已授予本机 stdin 主人权限。");
+  if (await initializeTerminalOwner(root, signal)) console.info($t("scripts.startup.text_9adf004c60"));
   const { needsInitialRenderPreset, persistInitialRenderPreset } = await import("../lib/startup-render-preset.ts");
   const options = await askStartupOptions(!ready && requested === undefined && previous === null,
     (!ready || initialize) && await needsInitialRenderPreset(root), signal, initialize);
@@ -215,7 +219,7 @@ export async function prepareStartup(root: URL, requested: AtlasChannel | undefi
   }
   if (initialize && await Bun.file(new URL("lib/managed-valkey.ts", root)).exists()) {
     const { initializeValkey } = await import("../lib/managed-valkey.ts");
-    await runInitializationStage("准备项目 Valkey", progress => initializeValkey(root, signal,
+    await runInitializationStage($t("scripts.startup.text_d0a9256265"), progress => initializeValkey(root, signal,
       message => progress({ stage: "valkey", message })), { signal });
   }
   if (initialize) {
@@ -230,16 +234,16 @@ if (import.meta.main) {
   const initialize = args[0] === "--initialize";
   const [channel, ...remaining] = initialize ? args.slice(1) : args;
   const controller = new AbortController();
-  const interrupt = () => controller.abort(new Error("启动操作已中止。"));
+  const interrupt = () => controller.abort(new Error($t("scripts.startup.text_5893b8086e")));
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", interrupt);
   try {
     if (remaining.length || (channel !== undefined && channel !== "live" && channel !== "latest")) {
-      throw new Error("图鉴版本来源须为正式版 live 或最新版 latest。");
+      throw new Error($t("scripts.startup.text_a1a4368363"));
     }
     await prepareStartup(new URL("../", import.meta.url), channel, controller.signal, initialize || channel !== undefined);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : "初始化失败。");
+    console.error(error instanceof Error ? error.message : $t("scripts.startup.text_8e1582eb80"));
     process.exitCode = 1;
   } finally {
     process.off("SIGINT", interrupt);
@@ -252,29 +256,29 @@ async function initializePublicAtlas(root: URL, directory: string, channel: Atla
   const { initializeAtlasFromPublic } = await import("../plugins/atlas/initialize-atlas.ts");
   const { atlasUpdatePublicationOptions } = await import("../plugins/atlas/update-policy.ts");
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  console.log(`[初始化] 正在准备${channel === "live" ? "正式版" : "最新版"}图鉴。`);
+  console.log($t("scripts.startup.text_6ec22d49c0", { "value1": channel === "live" ? $t("scripts.startup.text_93a48223a5") : $t("scripts.startup.text_1f41bacb06") }));
   const workspace = fileURLToPath(new URL("data/atlas-download/", root));
-  const failure = "图鉴初始化失败。下载记录已保留，可重新运行 bun run bootstrap。";
-  const progress = createInitializationProgress("图鉴", { signal });
-  progress.update({ stage: "atlas", message: `准备${channel === "live" ? "正式版" : "最新版"}图鉴` });
+  const failure = $t("scripts.startup.text_16feda2cc7");
+  const progress = createInitializationProgress($t("scripts.startup.text_06169ded8b"), { signal });
+  progress.update({ stage: "atlas", message: $t("scripts.startup.text_0e26e4684f", { "value1": channel === "live" ? $t("scripts.startup.text_93a48223a5") : $t("scripts.startup.text_1f41bacb06") }) });
   try {
     const result = await initializeAtlasFromPublic(directory, workspace, signal, channel, {
       locale, publication: atlasUpdatePublicationOptions(config), onProgress: progress.update,
     }).catch((cause: unknown) => {
       signal.throwIfAborted();
-      if (cause instanceof Error) console.warn(`[图鉴] ${cause.message}`);
+      if (cause instanceof Error) console.warn($t("scripts.startup.text_8f0de28055", { "message": cause.message }));
       throw new Error(failure, { cause });
     });
     signal.throwIfAborted();
     if (result.status === "prepared") {
-      throw new Error(`图鉴候选已保存至第 ${result.version} 版。当前关闭了图鉴同步，启用同步后再运行 bun run bootstrap。`);
+      throw new Error($t("scripts.startup.text_3126ef8174", { "version": result.version }));
     }
-    if (result.status === "invalid" && result.issues[0]) console.warn(`[图鉴] ${result.issues[0]}`);
-    progress.update({ stage: "readiness", message: "核对图鉴发布结果" });
+    if (result.status === "invalid" && result.issues[0]) console.warn($t("scripts.startup.text_0ce96f2ce5", { "value1": result.issues[0] }));
+    progress.update({ stage: "readiness", message: $t("scripts.startup.text_3107dea983") });
     if (await atlasReadiness(directory, locale) !== "ready") throw new Error(failure);
-    progress.complete("图鉴已准备完成");
+    progress.complete($t("scripts.startup.text_4a1b408bb7"));
   } catch (error) {
-    progress.fail(signal.aborted ? "图鉴准备已中止" : "图鉴准备失败，下载记录已保留");
+    progress.fail(signal.aborted ? $t("scripts.startup.text_1d95c3d3c8") : $t("scripts.startup.text_7b8cc5db15"));
     throw error;
   } finally { progress.close(); }
 }

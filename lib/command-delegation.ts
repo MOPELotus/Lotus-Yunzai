@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { ExecuteContext, ExecuteRequest, ExecuteService, ExecuteTarget } from "../plugins/execute/index.ts";
 import { legacyGroupMemberRoster, type MemberRosterEntry } from "./adapters/onebot-member-display.ts";
 import type { ChatFileResult } from "./chat-files.ts";
@@ -57,7 +60,7 @@ export function createCommandDelegation({ signal, mayDelegate, isMaster, run }: 
         if (!current(actor, cancellation)) return [];
         for (const userId of new Set(members)) {
           if (!Number.isSafeInteger(userId) || userId < 1 || userId === origin.self_id) continue;
-          if (result.length >= 10_000) throw new Error("一次最多执行 10000 个目标，请分批执行。");
+          if (result.length >= 10_000) throw new Error($t("lib.command-delegation.text_1f2b5a5b70"));
           result.push({ userId, groupId });
         }
       }

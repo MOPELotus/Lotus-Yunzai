@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -11,10 +14,10 @@ export interface GenshinHardChallengeOptions {
 
 export async function readGenshinHardChallenge(source: ProfileRequestContext, transport: HoyoTransport,
   { signal, scheduleType }: GenshinHardChallengeOptions, verifyProfile?: () => Promise<void>) {
-  if (scheduleType !== 1 && scheduleType !== 2) throw new HoyoRequestError("invalid-input", "幽境危战查询期次无效。");
+  if (scheduleType !== 1 && scheduleType !== 2) throw new HoyoRequestError("invalid-input", $t("genshin-hard-challenge.text_ccd9b77241"));
   const { data, region } = await readCnGameRecord(source, transport, { kind: "genshin-hard-challenge", signal }, verifyProfile);
-  verifyRole(data, source.role.uid, region, "幽境危战");
-  if (!Array.isArray(data.data)) throw new HoyoRequestError("response", "幽境危战响应缺少期次数据。");
+  verifyRole(data, source.role.uid, region, $t("genshin-hard-challenge.text_c3354e0ec8"));
+  if (!Array.isArray(data.data)) throw new HoyoRequestError("response", $t("genshin-hard-challenge.text_8e16b85d6c"));
   let skipEquipment = false;
   const current = data.data[0];
   const hasData = [current?.single?.has_data, current?.mp?.has_data].some(value => [true, 1, "1", "true"].includes(value));
@@ -31,7 +34,7 @@ export async function readGenshinHardChallenge(source: ProfileRequestContext, tr
   const avatarIds: number[] = [];
   if (popularity) {
     const avatars = popularity.data.avatar_list;
-    try { verifyRole(popularity.data, source.role.uid, region, "幽境危战增益"); }
+    try { verifyRole(popularity.data, source.role.uid, region, $t("genshin-hard-challenge.text_a75ac03971")); }
     catch { return { challenge: data, avatarIds, skipEquipment: true }; }
     if (Array.isArray(avatars)) {
       for (const row of avatars.slice(0, 128)) {

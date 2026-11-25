@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, symlink } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -140,7 +141,7 @@ test("OneBot 和 Milky 好友能从旧入口进入原神天赋刷新", async () 
     expect(JSON.stringify(milkyReply.params)).toContain("请先登录档案 2");
     milkyReply.respond({ message_seq: 152 });
   }, 4_000, undefined, async root => {
-    await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+    await linkHostPackages(root);
     const source = join(import.meta.dir, "../plugins/genshin");
     const target = join(root, "plugins", "genshin");
     await cp(source, target, { recursive: true, dereference: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });

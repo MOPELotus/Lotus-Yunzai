@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { createHash, randomInt } from "node:crypto";
 import type { Game, ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
@@ -50,18 +53,18 @@ const randomAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
 const origin = "https://webstatic.mihoyo.com";
 const routes = {
   gs: { endpoint: "https://api-takumi.mihoyo.com/event/luna", activity: "e202311201442471",
-    signgame: "hk4e", biz: "hk4e_cn", name: "原神" },
+    signgame: "hk4e", biz: "hk4e_cn", name: $t("game-checkin.text_d1597c51ed") },
   sr: { endpoint: "https://api-takumi.mihoyo.com/event/luna/hkrpg", activity: "e202304121516551",
-    signgame: "hkrpg", biz: "hkrpg_cn", name: "星铁" },
+    signgame: "hkrpg", biz: "hkrpg_cn", name: $t("game-checkin.text_a2927891f0") },
   zzz: { endpoint: "https://act-nap-api.mihoyo.com/event/luna/zzz", activity: "e202406242138391",
-    signgame: "zzz", biz: "nap_cn", name: "绝区零" },
+    signgame: "zzz", biz: "nap_cn", name: $t("game-checkin.text_b1110352c9") },
   // The previous Lotus client used the shared Luna route for these games.
   nxx: { endpoint: "https://api-takumi.mihoyo.com/event/luna", activity: "e202202251749321",
-    signgame: "", biz: "nxx_cn", name: "未定事件簿" },
+    signgame: "", biz: "nxx_cn", name: $t("game-checkin.text_a6e4fbed57") },
   bh3: { endpoint: "https://api-takumi.mihoyo.com/event/luna", activity: "e202306201626331",
-    signgame: "", biz: "bh3_cn", name: "崩坏3" },
+    signgame: "", biz: "bh3_cn", name: $t("game-checkin.text_6d3d8653d7") },
   bh2: { endpoint: "https://api-takumi.mihoyo.com/event/luna", activity: "e202203291431091",
-    signgame: "", biz: "bh2_cn", name: "崩坏学园2" },
+    signgame: "", biz: "bh2_cn", name: $t("game-checkin.text_e5b1fba52e") },
 } as const satisfies Record<CnGameCheckinSource["game"], { endpoint: string; activity: string; signgame: string; biz: string; name: string }>;
 
 type Json = Record<string, unknown>;
@@ -114,7 +117,7 @@ function requestRole(source: CnGameCheckinSource) {
     source.game === "zzz" && /^[1-9]\d{7,8}$/u.test(uid) && region === "prod_gf_cn" ? region :
     legacyRole ? region : undefined;
   if (!route || (gameBiz && gameBiz !== route.biz) || !server) {
-    throw new HoyoRequestError("invalid-input", "游戏签到需要当前档案中已确认的国服角色和区服。");
+    throw new HoyoRequestError("invalid-input", $t("game-checkin.text_db5ac92505"));
   }
   return { route, uid, region: server };
 }
@@ -124,7 +127,7 @@ function headersFor(source: CnGameCheckinSource, route: SignRoute) {
   const cookie = account.cookie.trim();
   if (!cookie.includes("=") || cookie.length > 16_384 || /[^\x20-\x7e]/u.test(cookie) ||
       [device.id, device.fp].some((value) => value && !/^[A-Za-z0-9_-]{1,128}$/u.test(value))) {
-    throw new HoyoRequestError("invalid-input", "当前档案的签到 Cookie 或设备字段无效。");
+    throw new HoyoRequestError("invalid-input", $t("game-checkin.text_f4e5518f44"));
   }
   const timestamp = Math.floor(Date.now() / 1000);
   const nonce = Array.from({ length: 6 }, () => randomAlphabet[randomInt(randomAlphabet.length)]).join("");
@@ -161,7 +164,7 @@ function checkDataRole(data: Json, uid: string, region: string, route: SignRoute
 }
 
 function invalidResponse(route: SignRoute): never {
-  throw new HoyoRequestError("response", `官方${route.name}签到响应无效。`);
+  throw new HoyoRequestError("response", $t("game-checkin.text_e4f69cc76f", { "name": route.name }));
 }
 
 async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransport, action: "info" | "sign",
@@ -175,19 +178,19 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
   if (!writing) url.search = new URLSearchParams(params).toString();
   const headers = headersFor(source, route);
   if (proof) {
-    if (legacyLuna) throw new HoyoRequestError("invalid-input", `请在米游社官方客户端完成${route.name}签到验证。`);
+    if (legacyLuna) throw new HoyoRequestError("invalid-input", $t("game-checkin.text_a552ed7cd5", { "name": route.name }));
     if (!writing || !proofField(proof.challenge, 1024) || !proofField(proof.validate, 2048) ||
         proof.seccode !== `${proof.validate}|jordan`) {
-      throw new HoyoRequestError("invalid-input", "当前签到的人工验证结果格式无效。");
+      throw new HoyoRequestError("invalid-input", $t("game-checkin.text_2d21f06659"));
     }
     headers.set("x-rpc-challenge", proof.challenge);
     headers.set("x-rpc-validate", proof.validate);
     headers.set("x-rpc-seccode", proof.seccode);
   }
   async function guard() {
-    if (signal?.aborted) throw new HoyoRequestError("transport", `${route.name}签到已取消。`);
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("game-checkin.text_68aa39d9ad", { "name": route.name }));
     await verifyProfile?.();
-    if (signal?.aborted) throw new HoyoRequestError("transport", `${route.name}签到已取消。`);
+    if (signal?.aborted) throw new HoyoRequestError("transport", $t("game-checkin.text_68aa39d9ad", { "name": route.name }));
   }
   await guard();
   const timeout = AbortSignal.timeout(15_000);
@@ -200,18 +203,18 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
     });
   } catch {
     await guard();
-    throw new HoyoRequestError("transport", writing ? `${route.name}签到提交结果未确认。` : `${route.name}签到状态暂时无法读取。`);
+    throw new HoyoRequestError("transport", writing ? $t("game-checkin.text_e4e94cc9b7", { "name": route.name }) : $t("game-checkin.text_06f1fca3ad", { "name": route.name }));
   }
   const status = response.status;
   const code = response.ok ? "api" : "http";
-  const subject = `${route.name}签到`;
+  const subject = $t("game-checkin.text_2375fa68e4", { "name": route.name });
   const challenge = response.headers.get("x-rpc-aigis")?.trim();
   if (response.redirected || status === 429 || (!response.ok && status !== 401)) {
     void response.body?.cancel().catch(() => undefined);
     await guard();
     if (status === 429) throw new GameRecordRequestError(subject, "rate-limited", "http", status);
     if (challenge && challenge !== "{}") throw new GameRecordRequestError(subject, "risk", code, status);
-    throw new HoyoRequestError("http", `官方${subject}返回 HTTP 错误。`, status);
+    throw new HoyoRequestError("http", $t("game-checkin.text_3d0f75c29c", { "subject": subject }), status);
   }
   const payload = await readGameRecordPayload(response, 128 * 1024, deadline);
   await guard();
@@ -235,14 +238,14 @@ async function requestCheckin(source: CnGameCheckinSource, transport: HoyoTransp
     throw new GameRecordRequestError(subject, "rate-limited", code, status, retcode);
   }
   if (retcode === -100) throw new GameRecordRequestError(subject, "expired", code, status, retcode);
-  if (status === 401) throw new HoyoRequestError("http", `官方${subject}拒绝请求。`, status, retcode);
+  if (status === 401) throw new HoyoRequestError("http", $t("game-checkin.text_e9d7dda1a2", { "subject": subject }), status, retcode);
   if (retcode === undefined || deadline.aborted) invalidResponse(route);
   if (writing && retcode === -5003) {
     if (legacyLuna && source.game !== "nxx" && payload?.data != null && !data) invalidResponse(route);
     if (legacyLuna && data) checkDataRole(data, uid, region, route);
     return { route, already: true as const };
   }
-  if (retcode !== 0) throw new HoyoRequestError("api", `官方${subject}拒绝请求。`, status, retcode);
+  if (retcode !== 0) throw new HoyoRequestError("api", $t("game-checkin.text_e9d7dda1a2", { "subject": subject }), status, retcode);
   if (legacyLuna && payload?.data != null && !data) invalidResponse(route);
   if (data) checkDataRole(data, uid, region, route, !writing);
   return { route, data };

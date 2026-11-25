@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { basename, join } from "node:path";
 import { readMigrationSourceFile } from "./migration-files.ts";
 import type { LegacyPluginPlanEntry } from "./plugins/migration-plan.ts";
@@ -7,7 +10,7 @@ const miaoReason = rejectionReason(["miao-plugin"], []);
 const archiveLimit = 256 * 1024;
 const ambiguous = Symbol("conflicting legacy showcase selectors");
 const games = { genshin: "profileServer", starrail: "srProfileServer" } as const;
-const regions = ["官服", "渠道服", "国际服"] as const;
+const regions = [$t("lib.migration-showcase.text_f021b69823"), $t("lib.migration-showcase.text_d526ff7388"), $t("lib.migration-showcase.text_970d688dd6")] as const;
 type Game = keyof typeof games;
 type LegacyKey = (typeof games)[Game];
 type Region = typeof regions[number];

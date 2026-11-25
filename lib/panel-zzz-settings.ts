@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
 import { GlobalConfigWriteError, updateLocalConfiguration } from "./lotus-global-config-write.ts";
@@ -12,24 +15,24 @@ type RankValues = { allow_group: boolean; white_list: string[]; black_list: stri
 type PanelValues = { roleInterval: number; recallMsg: number };
 
 const rankFields = [
-  { key: "allow_group", label: "绝区零群排行总开关", type: "boolean", hint: "开启时使用黑名单，关闭时只在白名单群开放。适用于挑战榜和角色面板榜。" },
-  { key: "white_list", label: "群排行白名单", type: "list", hint: "每行一个群号。" },
-  { key: "black_list", label: "群排行黑名单", type: "list", hint: "每行一个群号。" },
-  { key: "max_display", label: "每页最多显示人数", type: "number", min: 1, max: 15 },
+  { key: "allow_group", label: $t("lib.panel-zzz-settings.text_565af9cda0"), type: "boolean", hint: $t("lib.panel-zzz-settings.text_455ac24035") },
+  { key: "white_list", label: $t("lib.panel-zzz-settings.text_184287c336"), type: "list", hint: $t("lib.panel-zzz-settings.text_06131d7112") },
+  { key: "black_list", label: $t("lib.panel-zzz-settings.text_3ae4ef1812"), type: "list", hint: $t("lib.panel-zzz-settings.text_06131d7112") },
+  { key: "max_display", label: $t("lib.panel-zzz-settings.text_2651cb5b1e"), type: "number", min: 1, max: 15 },
 ] as const;
 const panelFields = [
-  { key: "roleInterval", label: "逐角色请求间隔（毫秒）", type: "number", min: 0, max: 2_147_483_647,
-    hint: "只控制一次更新中连续两个角色请求之间的间隔，最低按 100 毫秒执行。面板更新命令没有整次冷却。" },
-  { key: "recallMsg", label: "提示撤回时间（秒）", type: "number", min: 0, max: maxZzzRecallSeconds,
-    hint: "适用于绝区零临时提示和管理回执。填 0 可关闭自动撤回。" },
+  { key: "roleInterval", label: $t("lib.panel-zzz-settings.text_2d4c200da6"), type: "number", min: 0, max: 2_147_483_647,
+    hint: $t("lib.panel-zzz-settings.text_3c6e80f36e") },
+  { key: "recallMsg", label: $t("lib.panel-zzz-settings.text_e28986289c"), type: "number", min: 0, max: maxZzzRecallSeconds,
+    hint: $t("lib.panel-zzz-settings.text_2f9882865c") },
 ] as const;
 const reminderFields = [
-  { key: "enable", label: "挑战提醒总开关", type: "boolean", hint: "只向本人已订阅的好友私聊发送。" },
-  { key: "abyssCheckLevel", label: "式舆检查关层", type: "number", min: 0, max: 6,
-    hint: "0 关闭式舆提醒，6 检查第五层的 S+ 评级。" },
-  { key: "deadlyStars", label: "危局星数阈值", type: "number", min: 0, max: 9, hint: "0 关闭危局提醒。" },
-  { key: "remindTime", label: "默认提醒时间", type: "text",
-    hint: "北京时间。可填每日20时或每周五20时30分，分钟须为整十分钟。" },
+  { key: "enable", label: $t("lib.panel-zzz-settings.text_abd8674713"), type: "boolean", hint: $t("lib.panel-zzz-settings.text_a9e0bb1779") },
+  { key: "abyssCheckLevel", label: $t("lib.panel-zzz-settings.text_aca40aedbe"), type: "number", min: 0, max: 6,
+    hint: $t("lib.panel-zzz-settings.text_a60f712fde") },
+  { key: "deadlyStars", label: $t("lib.panel-zzz-settings.text_93b643cd95"), type: "number", min: 0, max: 9, hint: $t("lib.panel-zzz-settings.text_627519f086") },
+  { key: "remindTime", label: $t("lib.panel-zzz-settings.text_b84d738a2a"), type: "text",
+    hint: $t("lib.panel-zzz-settings.text_670d3a8132") },
 ] as const;
 
 function object(value: unknown): Document | undefined {
@@ -37,10 +40,10 @@ function object(value: unknown): Document | undefined {
 }
 
 function groupList(value: unknown, legacy = false) {
-  if (!Array.isArray(value) || value.length > 2000) throw new Error("无效的群排行名单");
+  if (!Array.isArray(value) || value.length > 2000) throw new Error($t("lib.panel-zzz-settings.text_05212f1ea8"));
   const ids = value.map(id => typeof id === "string" ? id :
     legacy && typeof id === "number" && Number.isSafeInteger(id) ? String(id) : "");
-  if (!ids.every(id => /^[1-9]\d{0,15}$/u.test(id))) throw new Error("无效的群号");
+  if (!ids.every(id => /^[1-9]\d{0,15}$/u.test(id))) throw new Error($t("lib.panel-zzz-settings.text_9c7d63cb48"));
   return [...new Set(ids)];
 }
 
@@ -61,21 +64,21 @@ function requestedRank(value: unknown): RankValues {
   const values = object(value);
   if (!values || Object.keys(values).length !== rankFields.length || typeof values.allow_group !== "boolean" ||
       typeof values.max_display !== "number" || !Number.isInteger(values.max_display) ||
-      values.max_display < 1 || values.max_display > 15) throw new Error("无效的群排行设置");
+      values.max_display < 1 || values.max_display > 15) throw new Error($t("lib.panel-zzz-settings.text_36d11aed9a"));
   return { allow_group: values.allow_group, max_display: values.max_display,
     white_list: groupList(values.white_list), black_list: groupList(values.black_list) };
 }
 
 function requestedPanel(value: unknown): PanelValues {
   const values = object(value);
-  if (!values || Object.keys(values).length !== panelFields.length) throw new Error("无效的面板刷新设置");
+  if (!values || Object.keys(values).length !== panelFields.length) throw new Error($t("lib.panel-zzz-settings.text_b7f1b3bdc9"));
   const { roleInterval, recallMsg } = values;
   if (typeof roleInterval !== "number" || !Number.isSafeInteger(roleInterval) ||
       roleInterval < panelFields[0].min || roleInterval > panelFields[0].max) {
-    throw new Error("无效的逐角色请求间隔");
+    throw new Error($t("lib.panel-zzz-settings.text_43399e7d22"));
   }
   if (typeof recallMsg !== "number" || !Number.isInteger(recallMsg) || recallMsg < 0 || recallMsg > maxZzzRecallSeconds) {
-    throw new Error("无效的提示撤回时间");
+    throw new Error($t("lib.panel-zzz-settings.text_780e74c31a"));
   }
   return { roleInterval, recallMsg };
 }
@@ -135,7 +138,7 @@ export function panelZzzSettings(root: URL, section: "rank" | "panel" | "reminde
       try {
         body = object(await readPanelJson(request));
         if (!body || Object.keys(body).length !== 2 || !Object.hasOwn(body, "previous") || !Object.hasOwn(body, "values")) {
-          throw new Error("无效的设置请求");
+          throw new Error($t("lib.panel-zzz-settings.text_7dd6394c6d"));
         }
       } catch { return new Response(null, { status: 400 }); }
     }
@@ -157,9 +160,9 @@ export function panelZzzSettings(root: URL, section: "rank" | "panel" | "reminde
               values.abyssCheckLevel < 0 || values.abyssCheckLevel > 6 ||
               typeof values.deadlyStars !== "number" || !Number.isInteger(values.deadlyStars) ||
               values.deadlyStars < 0 || values.deadlyStars > 9 ||
-              typeof values.remindTime !== "string" || values.remindTime.length > 32) throw new Error("无效的挑战提醒设置");
+              typeof values.remindTime !== "string" || values.remindTime.length > 32) throw new Error($t("lib.panel-zzz-settings.text_99f56ec77c"));
           const { time } = challengeReminderTime(values.remindTime);
-          if (!time) throw new Error("无效的挑战提醒时间");
+          if (!time) throw new Error($t("lib.panel-zzz-settings.text_b3ff461bc7"));
           return { enable: values.enable, abyssCheckLevel: values.abyssCheckLevel, deadlyStars: values.deadlyStars, remindTime: time };
         }
         let previous: ChallengeReminderDefaults, values: ChallengeReminderDefaults;

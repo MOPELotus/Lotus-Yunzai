@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -24,16 +27,16 @@ function identity(data: Json, uid: string, region: string) {
   for (const row of [data, object(data.role)]) {
     for (const field of ["uid", "role_id", "game_uid"]) {
       if (row && Object.hasOwn(row, field) && String(row[field]) !== uid) {
-        throw new HoyoRequestError("response", "星铁角色名册的 UID 与当前档案不一致。");
+        throw new HoyoRequestError("response", $t("starrail-roster.text_f206effef1"));
       }
     }
     for (const field of ["region", "server"]) {
       if (row && Object.hasOwn(row, field) && row[field] !== region) {
-        throw new HoyoRequestError("response", "星铁角色名册的区服与当前档案不一致。");
+        throw new HoyoRequestError("response", $t("starrail-roster.text_6faec598a4"));
       }
     }
     if (row && Object.hasOwn(row, "game_biz") && row.game_biz !== "hkrpg_cn") {
-      throw new HoyoRequestError("response", "星铁角色名册的游戏标识无效。");
+      throw new HoyoRequestError("response", $t("starrail-roster.text_3b4eb48e81"));
     }
   }
 }
@@ -52,7 +55,7 @@ export async function readStarRailPersonalRoster(source: ProfileRequestContext, 
   identity(basic.data, uid, basic.region);
   const rows = basic.data.list ?? basic.data.avatars ?? basic.data.avatar_list;
   if (!Array.isArray(rows) || rows.length > 256 || rows.some(row => !object(row))) {
-    throw new HoyoRequestError("response", "星铁角色名册响应缺少有效角色列表。");
+    throw new HoyoRequestError("response", $t("starrail-roster.text_54b13927db"));
   }
   const role = object(index.data.role);
   const stats = object(index.data.stats);

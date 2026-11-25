@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { Database } from "bun:sqlite";
 import { Job } from "node-schedule";
 import { createHash } from "node:crypto";
@@ -13,8 +16,8 @@ import { legacyHostCronTimeZone } from "./plugins/tasks.ts";
 
 export const dailyNoteReminderFeatureNames = ["体力推送", "@lotus-yunzai/daily-note-reminders"] as const;
 
-const gameNames = { gs: "原神", sr: "星铁", zzz: "绝区零" } as const;
-const resources = { gs: "树脂", sr: "开拓力", zzz: "电量" } as const;
+const gameNames = { gs: $t("lib.daily-note-reminders.text_d1597c51ed"), sr: $t("lib.daily-note-reminders.text_a2927891f0"), zzz: $t("lib.daily-note-reminders.text_b1110352c9") } as const;
+const resources = { gs: $t("lib.daily-note-reminders.text_098c865928"), sr: $t("lib.daily-note-reminders.text_de78a76579"), zzz: $t("lib.daily-note-reminders.text_1c69b1aa72") } as const;
 const defaults = { gs: 160, sr: 260, zzz: 200 } as const;
 const minimum = { gs: 100, sr: 150, zzz: 120 } as const;
 const gameBusiness = { gs: "hk4e_cn", sr: "hkrpg_cn", zzz: "nap_cn" } as const;
@@ -67,7 +70,7 @@ type ReminderImage = (data: { game: Game; current: number; max: number },
   options: { inlineImageByteLimit?: number; signal: AbortSignal }) => Promise<Buffer | undefined>;
 
 function noticeDescription({ snapshot: { game, stamina: { current, max } } }: ReadNote) {
-  return `${gameNames[game]}${resources[game]}已达到提醒阈值（${current}/${max}）。`;
+  return $t("lib.daily-note-reminders.text_f9789a0217", { "value1": gameNames[game], "value2": resources[game], "current": current, "max": max });
 }
 
 function gameOf(name?: string): Game {
@@ -90,7 +93,7 @@ export function dailyNoteReminderBinding(source: ProfileRequestContext) {
 function databaseFile(file: string, create: boolean) {
   try {
     const info = lstatSync(file);
-    if (!info.isFile()) throw new Error("体力推送存档须为普通文件。");
+    if (!info.isFile()) throw new Error($t("lib.daily-note-reminders.text_0ff7b73de0"));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     if (!create) return;
@@ -128,7 +131,7 @@ const targetSql = `${actorSql} AND uid=$uid`;
 
 export function writeMigratedDailyNoteReminders(file: string, rows: readonly DailyNoteReminderEnrollment[]) {
   const database = databaseFile(file, false);
-  if (!database) throw new Error("体力推送暂存数据库须先创建。");
+  if (!database) throw new Error($t("lib.daily-note-reminders.text_f9f2e4d147"));
   try {
     database.transaction(() => {
       const insert = database.query(`INSERT INTO daily_note_reminders (bot,group_id,qq,game,uid,profile,binding,threshold,legacyUntil)
@@ -311,33 +314,33 @@ export function createDailyNoteReminders({
       const { isDelegated, message_type, self_id: bot, group_id, user_id: qq } = event;
       const validId = (id?: number): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0;
       if (isDelegated || message_type !== "group" || !validId(bot) || !validId(group_id) || !validId(qq) || bot === qq) {
-        return "请在本人要接收体力提醒的群里使用此指令。";
+        return $t("lib.daily-note-reminders.text_b59932a426");
       }
-      if (!enabled) return "本机器人未开启体力推送。";
+      if (!enabled) return $t("lib.daily-note-reminders.text_e0637c9a69");
       const current = activeSignal();
       const destination = { bot, group_id, qq };
       const gateway = transports().find(item => item.botId === bot);
       const eligible = () => active(current) && allowed(destination);
       if (!eligible() || !gateway || !await gateway.isGroupMember(group_id, qq).catch(() => false) || !eligible()) return;
       const game = gameOf((action ?? level)?.[1]);
-      const label = `${gameNames[game]}体力推送`;
+      const label = $t("lib.daily-note-reminders.text_a9748d0afa", { "value1": gameNames[game] });
       const key = groupKey({ ...destination, game });
       const profile = action?.[4] ? Number(action[4]) : undefined;
-      if (profile && profile > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
+      if (profile && profile > MAX_PROFILE_ID) return $t("lib.daily-note-reminders.text_3dd62228d2");
       const uid = action?.[3];
       try {
         if (level) {
           const value = Number(level[2]);
-          if (value < minimum[game]) return `${label}阈值不能小于 ${minimum[game]}。`;
+          if (value < minimum[game]) return $t("lib.daily-note-reminders.text_a59d15b8c3", { "label": label, "value2": minimum[game] });
           const changed = open(false)?.query(`UPDATE daily_note_reminders SET threshold=$threshold WHERE ${actorSql}`)
             .run({ ...key, $threshold: value }).changes;
-          return changed ? `${label}阈值已设为 ${value}。` : `你还没有在本群开启${label}。`;
+          return changed ? $t("lib.daily-note-reminders.text_0f46f3072c", { "label": label, "value": value }) : $t("lib.daily-note-reminders.text_46a3e63a35", { "label": label });
         }
         if (action?.[2] === "关闭") {
           const changed = open(false)?.query(`DELETE FROM daily_note_reminders WHERE ${actorSql}
             AND ($uid IS NULL OR uid=$uid) AND ($profile IS NULL OR profile=$profile)`)
             .run({ ...key, $uid: uid ?? null, $profile: profile ?? null }).changes;
-          return changed ? `本群${label}已关闭。` : `你还没有在本群开启${label}。`;
+          return changed ? $t("lib.daily-note-reminders.text_5ce0ab30b3", { "label": label }) : $t("lib.daily-note-reminders.text_46a3e63a35", { "label": label });
         }
         const user = String(qq);
         const selectable = new Map<string, { source: ProfileRequestContext; binding: string }>();
@@ -347,15 +350,15 @@ export function createDailyNoteReminders({
             if (uid && source.role.uid !== uid) continue;
             const binding = dailyNoteReminderBinding(source);
             if (!binding) continue;
-            if (selectable.has(source.role.uid)) return "同一 UID 出现在多个登录档案，请在指令末尾加上 档案编号。";
+            if (selectable.has(source.role.uid)) return $t("lib.daily-note-reminders.text_ab02af4fa4");
             selectable.set(source.role.uid, { source, binding });
           }
         }
-        if (!selectable.size) return "请先扫码登录并同步本人角色。";
+        if (!selectable.size) return $t("lib.daily-note-reminders.text_15d3f1efa8");
         for (const [roleUid, { source, binding }] of selectable) {
           const fresh = await sourceFor({ ...destination, game, uid: roleUid, profile: source.profileId, binding,
             threshold: defaults[game], nextAt: 0, legacyUntil: 0 });
-          if (fresh?.revision !== source.revision || !eligible()) return "档案已变化，请重新设置体力推送。";
+          if (fresh?.revision !== source.revision || !eligible()) return $t("lib.daily-note-reminders.text_ffc7f03b5b");
         }
         const db = open(true)!;
         const value = db.transaction(() => {
@@ -369,9 +372,9 @@ export function createDailyNoteReminders({
           }
           return selected;
         }).immediate();
-        return `本群${label}已开启，${selectable.size} 个角色，阈值 ${value}。`;
+        return $t("lib.daily-note-reminders.text_657d6aa336", { "label": label, "size": selectable.size, "value": value });
       } catch {
-        return "暂时无法保存体力推送设置，请稍后再试。";
+        return $t("lib.daily-note-reminders.text_f4a256ce5a");
       }
     },
   };
@@ -381,10 +384,10 @@ export function createDailyNoteReminders({
     start() {
       if (!enabled || stopped || started || signal.aborted) return;
       started = true;
-      const tick = () => runDue()?.catch(() => console.warn("[体力推送] 无法读取本轮设置。"));
+      const tick = () => runDue()?.catch(() => console.warn($t("lib.daily-note-reminders.text_fa17cc2548")));
       if (cron !== undefined) {
         job = reminderJob(cron, tick);
-        if (!job) console.warn("[体力推送] 定时配置无效。");
+        if (!job) console.warn($t("lib.daily-note-reminders.text_406611c259"));
       } else {
         timer = setInterval(() => { void tick(); }, pollInterval);
         timer.unref();

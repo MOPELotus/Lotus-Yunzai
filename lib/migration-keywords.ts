@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -23,7 +26,7 @@ function matches(previous: Stats, current: Stats | undefined) {
 }
 
 function changed() {
-  return new Error("旧词条数据在迁移期间发生变化，请重新取得停写后的安装副本。");
+  return new Error($t("lib.migration-keywords.text_0a60b02527"));
 }
 
 function scope(value: string): "global" | number | undefined {
@@ -101,7 +104,7 @@ export async function stageLegacyKeywords(sourcePath: string, stateDirectory: st
   const stage = await lstat(destination);
   if (withinInstallation(source, destination) || withinInstallation(destination, source) || !(await lstat(source)).isDirectory() ||
       destination !== resolve(stateDirectory) || !stage.isDirectory() || (stage.mode & 0o077)) {
-    throw new Error("词条迁移须使用独立的私有实体暂存目录。");
+    throw new Error($t("lib.migration-keywords.text_79065d8213"));
   }
   const result = { scopes: 0, keywords: 0, media: 0, archived: 0, unresolvedMedia: 0, normalizedKeywords: 0,
     rejectedScopes: 0, rejectedKeywords: 0, skippedFiles: 0 };
@@ -111,7 +114,7 @@ export async function stageLegacyKeywords(sourcePath: string, stateDirectory: st
   async function readDirectoryInfo(path: string) {
     const info = await named(path);
     if (!info) return false;
-    if (!info.isDirectory() || await realpath(path) !== path) throw new Error("旧词条数据须位于副本中的实体目录。");
+    if (!info.isDirectory() || await realpath(path) !== path) throw new Error($t("lib.migration-keywords.text_261aae67bb"));
     directories.set(path, info);
     return true;
   }
@@ -134,7 +137,7 @@ export async function stageLegacyKeywords(sourcePath: string, stateDirectory: st
         continue;
       }
       if (!info.isFile() || info.nlink !== 1) {
-        if (book !== undefined) throw new Error("旧词条作用域须为快照内无硬链接的普通 JSON 文件。");
+        if (book !== undefined) throw new Error($t("lib.migration-keywords.text_e4bf9ac236"));
         result.skippedFiles++;
         continue;
       }
@@ -153,7 +156,7 @@ export async function stageLegacyKeywords(sourcePath: string, stateDirectory: st
     await ensureDirectory(dirname(path));
     if (!await named(path)) await mkdir(path, { mode: 0o700 });
     const info = await lstat(path);
-    if (!info.isDirectory() || (info.mode & 0o077) || await realpath(path) !== path) throw new Error("词条暂存目录须为私有实体目录。");
+    if (!info.isDirectory() || (info.mode & 0o077) || await realpath(path) !== path) throw new Error($t("lib.migration-keywords.text_26d9afe9e7"));
   }
   async function write(path: string, bytes: Buffer | string) {
     signal?.throwIfAborted();

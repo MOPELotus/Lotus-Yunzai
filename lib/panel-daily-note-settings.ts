@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { isDeepStrictEqual } from "node:util";
 import { isAlias, isMap, parseDocument } from "yaml";
 import { dailyNoteReminderCooldown, dailyNoteReminderCron, dailyNoteReminderMessage } from "./daily-note-reminders.ts";
@@ -6,22 +9,22 @@ import { readLotusGlobalConfig } from "./lotus-global-config.ts";
 import { readPanelJson } from "./panel.ts";
 
 const sectionKey = "daily_note_reminders";
-const restart = "保存后重启宿主生效。";
+const restart = $t("lib.panel-daily-note-settings.text_d3d0842647");
 const modes = [
-  { label: "每 30 分钟检查", value: "interval" },
-  { label: "自定义 Cron", value: "cron" },
-  { label: "暂停调度，保留订阅", value: "paused" },
+  { label: $t("lib.panel-daily-note-settings.text_e932989fd5"), value: "interval" },
+  { label: $t("lib.panel-daily-note-settings.text_0761eeecfb"), value: "cron" },
+  { label: $t("lib.panel-daily-note-settings.text_42ab6c2f6c"), value: "paused" },
 ] as const;
 type Schedule = (typeof modes)[number]["value"];
 type Values = { enable: boolean; cooldown_hours: number; schedule: Schedule; cron: string; message: string };
 type Document = Readonly<Record<string, unknown>>;
 
 const fields = [
-  { key: "enable", label: "启用体力提醒", type: "boolean", hint: restart },
-  { key: "cooldown_hours", label: "成功提醒后的冷却（小时）", type: "number", hint: "可填小数，须能换算为整秒。" + restart },
-  { key: "schedule", label: "检查计划（北京时间）", type: "select", options: modes, hint: restart },
-  { key: "cron", label: "检查 Cron", type: "text", hint: "选自定义 Cron 后填写，支持五段或六段。" + restart },
-  { key: "message", label: "提醒文案", type: "text", multiline: true, hint: "留空时只发送体力结果，最长 512 字节。" + restart },
+  { key: "enable", label: $t("lib.panel-daily-note-settings.text_79054e5675"), type: "boolean", hint: restart },
+  { key: "cooldown_hours", label: $t("lib.panel-daily-note-settings.text_6c339b710e"), type: "number", hint: $t("lib.panel-daily-note-settings.text_77233c2a21") + restart },
+  { key: "schedule", label: $t("lib.panel-daily-note-settings.text_234a02f376"), type: "select", options: modes, hint: restart },
+  { key: "cron", label: $t("lib.panel-daily-note-settings.text_2cd7e30a6f"), type: "text", hint: $t("lib.panel-daily-note-settings.text_26a3ac41df") + restart },
+  { key: "message", label: $t("lib.panel-daily-note-settings.text_e6c984fcb2"), type: "text", multiline: true, hint: $t("lib.panel-daily-note-settings.text_3d74e40bec") + restart },
 ] as const;
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -92,7 +95,7 @@ function edit(text: string, local: Document, mutations: ReadonlyMap<string, unkn
     yaml = doc.toString({ lineWidth: 0 });
   }
   if (!isDeepStrictEqual(Bun.YAML.parse(yaml), expected)) throw new GlobalConfigWriteError("config");
-  return { yaml, value: { fields, values: snapshot({ [sectionKey]: next }), warning: "设置已保存。重启宿主后生效。" } };
+  return { yaml, value: { fields, values: snapshot({ [sectionKey]: next }), warning: $t("lib.panel-daily-note-settings.text_0c39d46c51") } };
 }
 
 class InvalidSchedule extends Error {}
@@ -126,12 +129,12 @@ export function panelDailyNoteSettings(root: URL, validateCron: (rule: string) =
           }
           const cron = next.cron.trim();
           if (next.schedule === "cron" && (cron !== current.cron || next.schedule !== current.schedule)) {
-            if (!dailyNoteReminderCron(cron) || !validateCron(cron)) throw new InvalidSchedule("请填写有效的体力提醒 Cron。");
+            if (!dailyNoteReminderCron(cron) || !validateCron(cron)) throw new InvalidSchedule($t("lib.panel-daily-note-settings.text_05be943ba5"));
             mutations.set("cron", cron);
           } else if (next.schedule !== current.schedule) {
             mutations.set("cron", next.schedule === "paused" ? null : undefined);
           } else if (next.schedule !== "cron" && cron !== current.cron) {
-            throw new InvalidSchedule("请先选择自定义 Cron。");
+            throw new InvalidSchedule($t("lib.panel-daily-note-settings.text_14a3d13fbc"));
           }
           return mutations.size ? edit(text, local, mutations) : { value: { fields, values: current } };
         },

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { reportResourceProgress, type ResourceProgressCallback } from "./resource-progress.ts";
 import { constants } from "node:fs";
 import { link, lstat, mkdir, open, readFile, readdir, readlink, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
@@ -49,25 +52,25 @@ async function activeSnapshot(root: string) {
     if (!missing(error)) throw error;
   });
   if (!info) return;
-  if (!info.isSymbolicLink()) throw new Error("托管图库当前路径须由同步器管理。");
+  if (!info.isSymbolicLink()) throw new Error($t("lib.character-gallery-sync.text_4fd789c9e9"));
   const relative = (await readlink(current)).replaceAll("\\", "/");
   const segments = relative.split("/");
   if (segments.length !== 2 || segments[0] !== snapshotDirectory || !snapshotName.test(segments[1]!)) {
-    throw new Error("托管图库当前指针无效。");
+    throw new Error($t("lib.character-gallery-sync.text_8191347343"));
   }
   const name = segments[1]!;
   const directory = join(root, snapshotDirectory, name);
   if (await realpath(current) !== directory || !(await lstat(directory)).isDirectory()) {
-    throw new Error("托管图库当前目录无效。");
+    throw new Error($t("lib.character-gallery-sync.text_554e025e12"));
   }
   const manifest = join(directory, manifestFile);
   const manifestStat = await lstat(manifest);
-  if (!manifestStat.isFile() || manifestStat.size > 4 * 1024 * 1024) throw new Error("托管图库记录无效。");
+  if (!manifestStat.isFile() || manifestStat.size > 4 * 1024 * 1024) throw new Error($t("lib.character-gallery-sync.text_b5ed8fe710"));
   const parsed = JSON.parse(await readFile(manifest, "utf8")) as Partial<GalleryManifest>;
   const sha = /^[0-9a-f]{40}$/u;
   if (!parsed.revisions || !gallerySourceNames.every(key => sha.test(parsed.revisions?.[key] ?? "")) ||
       !Array.isArray(parsed.images) || !parsed.images.every(validGalleryImage)) {
-    throw new Error("托管图库记录无效。");
+    throw new Error($t("lib.character-gallery-sync.text_b5ed8fe710"));
   }
   return { name, directory, manifest: parsed as GalleryManifest };
 }
@@ -112,19 +115,19 @@ async function applyParallel<T>(values: readonly T[], controller: AbortControlle
 
 export async function syncCharacterGallery(options: CharacterGallerySyncOptions): Promise<CharacterGallerySyncResult> {
   const report = (stage: string, message: string, completed?: number, total?: number) => reportResourceProgress(options.onProgress, options.signal, stage, message, completed, total);
-  report("gallery-plan", "读取角色图库版本与文件清单");
+  report("gallery-plan", $t("lib.character-gallery-sync.text_29d402ab5d"));
   const controller = new AbortController();
   const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
   signal.throwIfAborted();
   const configured = resolve(options.root);
   await mkdir(configured, { recursive: true, mode: 0o700 });
-  if (!(await lstat(configured)).isDirectory()) throw new Error("托管图库根须为独立目录。");
+  if (!(await lstat(configured)).isDirectory()) throw new Error($t("lib.character-gallery-sync.text_c482a85407"));
   const root = await realpath(configured);
-  const lock = await lockFile(join(root, "gallery-sync.sqlite"), "角色图库");
+  const lock = await lockFile(join(root, "gallery-sync.sqlite"), $t("lib.character-gallery-sync.text_1f0464b533"));
   try {
     const snapshots = join(root, snapshotDirectory);
     await mkdir(snapshots, { recursive: true, mode: 0o700 });
-    if (await realpath(snapshots) !== snapshots) throw new Error("托管图库快照目录无效。");
+    if (await realpath(snapshots) !== snapshots) throw new Error($t("lib.character-gallery-sync.text_748c3b6fe4"));
     const previous = await activeSnapshot(root);
     const source = createGallerySource({ fetch: options.fetch, githubToken: options.githubToken, signal });
     const plan = await source.plan();
@@ -132,14 +135,14 @@ export async function syncCharacterGallery(options: CharacterGallerySyncOptions)
     const images = [...plan.images.values()];
     const reusable = new Map<string, string>();
     let checked = 0;
-    report("gallery-check", "核对已有图库", 0, images.length);
+    report("gallery-check", $t("lib.character-gallery-sync.text_aeaa0389de"), 0, images.length);
     await applyParallel(images, controller, signal, async image => {
       try {
         const old = previousImages.get(image.path);
         if (!previous || !old || old.sha !== image.sha) return;
         const path = join(previous.directory, image.path);
         if (await reusableImage(path, image, signal)) reusable.set(image.path, path);
-      } finally { report("gallery-check", "核对图库文件", ++checked, images.length); }
+      } finally { report("gallery-check", $t("lib.character-gallery-sync.text_59991aa00b"), ++checked, images.length); }
     });
     const result: CharacterGallerySyncResult = {
       downloaded: images.length - reusable.size,
@@ -166,20 +169,20 @@ export async function syncCharacterGallery(options: CharacterGallerySyncOptions)
       await mkdir(staged, { mode: 0o700 });
       await Promise.all(galleryDirectories.map(directory => mkdir(join(staged, directory), { mode: 0o700 })));
       let completed = 0;
-      report("gallery-download", "同步图库文件", 0, images.length);
+      report("gallery-download", $t("lib.character-gallery-sync.text_08bb4ab749"), 0, images.length);
       await applyParallel(images, controller, signal, async image => {
         const destination = join(staged, image.path);
         await mkdir(dirname(destination), { recursive: true });
         const reuse = reusable.get(image.path);
         if (reuse) await link(reuse, destination);
         else await writeFile(destination, await source.image(image, plan.revisions), { flag: "wx", signal });
-        report("gallery-download", "同步图库文件", ++completed, images.length);
+        report("gallery-download", $t("lib.character-gallery-sync.text_08bb4ab749"), ++completed, images.length);
       });
       const manifest: GalleryManifest = { revisions: plan.revisions, images };
       await writeFile(join(staged, manifestFile), JSON.stringify(manifest) + "\n", { flag: "wx", signal });
       await symlink(join(snapshotDirectory, generation), next, "dir");
       signal.throwIfAborted();
-      report("gallery-publish", "发布已校验图库");
+      report("gallery-publish", $t("lib.character-gallery-sync.text_97a9949b00"));
       await rename(next, syncedCharacterGalleryPath(root));
       published = true;
     } finally {

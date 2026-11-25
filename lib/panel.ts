@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash, timingSafeEqual } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
@@ -51,7 +54,7 @@ export function panelApi(
 
 export async function readPanelJson(request: Pick<Request, "headers" | "body">, maxBytes = 65_536): Promise<unknown> {
   if (request.headers.get("Content-Type")?.split(";", 1)[0]?.trim() !== "application/json" || !request.body) {
-    throw new Error("请求须为 JSON。");
+    throw new Error($t("lib.panel.text_e4b4e9b980"));
   }
   const reader = request.body.getReader();
   const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -62,7 +65,7 @@ export async function readPanelJson(request: Pick<Request, "headers" | "body">, 
       const { done, value } = await reader.read();
       if (done) break;
       bytes += value.byteLength;
-      if (bytes > maxBytes) throw new Error("请求内容过大。");
+      if (bytes > maxBytes) throw new Error($t("lib.panel.text_df5ed19599"));
       body += decoder.decode(value, { stream: true });
     }
     return JSON.parse(body + decoder.decode()) as unknown;
@@ -119,7 +122,7 @@ export function panelAssets(directory: string) {
       }
     }
     if (!index) return new Response(null, { status: 404 });
-    return new Response(request.method === "HEAD" ? null : "面板尚未构建，请运行 bun run build:panel。", {
+    return new Response(request.method === "HEAD" ? null : $t("lib.panel.text_134e5094ea"), {
       status: 503,
       headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
     });

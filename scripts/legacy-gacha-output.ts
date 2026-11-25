@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { link, open, unlink } from "node:fs/promises";
@@ -29,7 +33,7 @@ export async function publishLegacyJsonExport(parent: string, prefix: "starrail"
         const info = await existing.stat();
         if (!info.isFile() || (info.mode & 0o777) !== 0o600 ||
             info.size !== content.length || !(await existing.readFile()).equals(content)) {
-          throw new Error("已有导出文件不可复用，请选另一个独立目录。");
+          throw new Error($t("scripts.legacy-gacha-output.text_228a60d24d"));
         }
       } finally {
         await existing.close();

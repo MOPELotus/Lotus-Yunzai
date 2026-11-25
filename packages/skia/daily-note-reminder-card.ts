@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("skia", messageCatalog.messages);
 import { builtinFontFallback, prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { builtinResourceDirectory } from "../../lib/builtin-resources.ts";
 import { createHash } from "node:crypto";
@@ -54,10 +57,10 @@ async function originalAsset(directory: string, relative: string) {
     path = join(path, part);
     const entry = await lstat(path);
     if (!(index === parts.length - 1 ? entry.isFile() && entry.size <= 32 * 1024 * 1024 : entry.isDirectory())) {
-      throw new Error("群体力原素材路径无效。");
+      throw new Error($t("daily-note-reminder-card.text_e908fa5c1b"));
     }
   }
-  if (await realpath(path) !== path) throw new Error("群体力原素材路径无效。");
+  if (await realpath(path) !== path) throw new Error($t("daily-note-reminder-card.text_e908fa5c1b"));
   return path;
 }
 
@@ -65,7 +68,7 @@ async function originalPng(directory: string, relative: string) {
   const bytes = await readFile(await originalAsset(directory, relative));
   if (bytes.length < 24 || !bytes.subarray(0, pngSignature.length).equals(pngSignature) ||
       bytes.readUInt32BE(16) * bytes.readUInt32BE(20) > 16_777_216) {
-    throw new Error("群体力原素材不是 PNG。");
+    throw new Error($t("daily-note-reminder-card.text_ea314a2900"));
   }
   return loadImage(bytes);
 }
@@ -137,24 +140,24 @@ function ratio(ctx: Context, model: DailyNoteReminderCardModel, theme: Theme,
 function paintGenshin(ctx: Context, model: DailyNoteReminderCardModel, theme: Theme) {
   ctx.drawImage(theme.background, 0, 0, 568, 314);
   if (theme.icon) ctx.drawImage(theme.icon, 71, 135, 51, 51);
-  text(ctx, "原神", 136, 113, 21, theme.labelFont, "#6e583a");
-  text(ctx, "原粹树脂", 136, 167, 26, theme.labelFont, "#444444");
+  text(ctx, $t("daily-note-reminder-card.text_d1597c51ed"), 136, 113, 21, theme.labelFont, "#6e583a");
+  text(ctx, $t("daily-note-reminder-card.text_b3bfdadd9a"), 136, 167, 26, theme.labelFont, "#444444");
   ratio(ctx, model, theme, 293, 169, 192, 42, model.current >= 159 ? "#b5342a" : "#a9843f", "#715833");
-  text(ctx, "Lotus-Yunzai", 79, 264, 13, theme.labelFont, "#000");
+  text(ctx, $t("daily-note-reminder-card.text_3867834e77"), 79, 264, 13, theme.labelFont, "#000");
 }
 
 function paintStarRail(ctx: Context, model: DailyNoteReminderCardModel, theme: Theme) {
   // Use the upper part of the original 1200 × 1835 sheet around its stamina section.
   ctx.drawImage(theme.background, 0, 0, theme.background.width, theme.background.height * 542 / 1835, 0, 0, 600, 271);
   fillRounded(ctx, 49, 97, 502, 128, 6, "#e5e5e5");
-  text(ctx, "星穹铁道", 79, 90, 27, theme.labelFont, "#302b25");
-  text(ctx, "开拓力", 79, 155, 24, theme.labelFont, "#25221d");
+  text(ctx, $t("daily-note-reminder-card.text_4548f2ad35"), 79, 90, 27, theme.labelFont, "#302b25");
+  text(ctx, $t("daily-note-reminder-card.text_de78a76579"), 79, 155, 24, theme.labelFont, "#25221d");
   ratio(ctx, model, theme, 191, 161, 284, 48, "#a26d3a", "#302b25");
   fillRounded(ctx, 79, 183, 441, 10, 5, "#a1a1a1");
   if (model.current > 0) {
     fillRounded(ctx, 79, 183, 441 * Math.min(1, model.current / model.max), 10, 5, "#b47f4c");
   }
-  text(ctx, "Lotus-Yunzai", 79, 242, 13, theme.labelFont, "#000");
+  text(ctx, $t("daily-note-reminder-card.text_3867834e77"), 79, 242, 13, theme.labelFont, "#000");
 }
 
 function paintZenless(ctx: Context, model: DailyNoteReminderCardModel, theme: Theme) {
@@ -164,10 +167,10 @@ function paintZenless(ctx: Context, model: DailyNoteReminderCardModel, theme: Th
   ctx.clip();
   ctx.drawImage(theme.background, 0, 0, theme.background.width * 320 / 800, theme.background.height * 319 / 376, 0, 0, 320, 319);
   if (theme.icon) ctx.drawImage(theme.icon, 42, 113, 90, 90);
-  text(ctx, "绝区零", 42, 48, 27, theme.labelFont, "#ffffff");
-  text(ctx, "电量", 146, 143, 24, theme.labelFont, "#ffffff");
+  text(ctx, $t("daily-note-reminder-card.text_b1110352c9"), 42, 48, 27, theme.labelFont, "#ffffff");
+  text(ctx, $t("daily-note-reminder-card.text_1c69b1aa72"), 146, 143, 24, theme.labelFont, "#ffffff");
   ratio(ctx, model, theme, 146, 198, 145, 46, model.current >= model.max ? "#91d85b" : "#ffab26", "#ffffff");
-  text(ctx, "Lotus-Yunzai", 42, 275, 13, theme.labelFont, "#ffffff");
+  text(ctx, $t("daily-note-reminder-card.text_3867834e77"), 42, 275, 13, theme.labelFont, "#ffffff");
   ctx.restore();
 }
 

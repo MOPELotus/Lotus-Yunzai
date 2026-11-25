@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { randomBytes, randomUUID } from "node:crypto";
 import { parseDeviceBinding, type AndroidDeviceInfo, type DeviceBinding } from "@lotus-yunzai/account";
 import { setTimeout as delay } from "node:timers/promises";
@@ -13,14 +16,14 @@ const apiLevels: Readonly<Record<string, string>> = {
 };
 
 export class DeviceFingerprintError extends Error {
-  constructor() { super("设备指纹申请未完成，请稍后重试。"); this.name = "DeviceFingerprintError"; }
+  constructor() { super($t("device-fingerprint.text_8e17707fac")); this.name = "DeviceFingerprintError"; }
 }
 
 export function buildDeviceFingerprintPayload(info: AndroidDeviceInfo,
   identity?: { readonly deviceId: string; readonly deviceGuid: string }) {
   if (identity && (!/^(?:[0-9a-f]{16}|[0-9a-f]{32})$/iu.test(identity.deviceId) ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(identity.deviceGuid))) {
-    throw new TypeError("自动设备身份无效。");
+    throw new TypeError($t("device-fingerprint.text_e45ff97bd2"));
   }
   const deviceId = identity?.deviceId ?? randomBytes(8).toString("hex");
   const deviceGuid = identity?.deviceGuid ?? randomUUID();

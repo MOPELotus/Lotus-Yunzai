@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 export interface ResourceProgress {
   readonly stage: string;
   readonly message: string;
@@ -7,7 +10,7 @@ export interface ResourceProgress {
 }
 export type ResourceProgressCallback = (progress: ResourceProgress) => unknown;
 export function reportResourceProgress(callback: ResourceProgressCallback | undefined, signal: AbortSignal | undefined,
-  stage: string, message: string, completed?: number, total?: number, unit = "项") {
+  stage: string, message: string, completed?: number, total?: number, unit = $t("lib.resource-progress.text_49ccde43a1")) {
   if (signal?.aborted) return;
   try {
     const result = callback?.({ stage, message, ...(completed !== undefined && { completed }), ...(total !== undefined && { total }), unit });

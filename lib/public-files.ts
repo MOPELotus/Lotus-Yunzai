@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 export const maxPublicFileBytes = 16 * 1024 * 1024;
 const maxTotalBytes = 64 * 1024 * 1024;
 const maxFiles = 256;
@@ -53,14 +56,14 @@ export function createPublicFiles() {
   }
 
   function register(data: Uint8Array, options: RegisterOptions): string {
-    if (closed) throw new Error("文件分享服务已关闭。");
+    if (closed) throw new Error($t("lib.public-files.text_2bf6943677"));
     if (!(data instanceof Uint8Array) || !ArrayBuffer.isView(data) || data.byteLength > maxPublicFileBytes) {
-      throw new Error("分享内容须为大小允许的字节数据。");
+      throw new Error($t("lib.public-files.text_66ae017344"));
     }
     const { timeMs, times, name, mime } = options;
     if (!Number.isSafeInteger(timeMs) || timeMs < 0 ||
         (times !== undefined && (!Number.isSafeInteger(times) || times < 0))) {
-      throw new Error("分享有效期或访问次数无效。");
+      throw new Error($t("lib.public-files.text_bcb1f3b395"));
     }
 
     let token: string;
@@ -71,7 +74,7 @@ export function createPublicFiles() {
     const now = performance.now();
     for (const [id, file] of files) if (expired(file, now)) remove(id, file);
     if (files.size >= maxFiles || totalBytes + data.byteLength > maxTotalBytes) {
-      throw new Error("文件分享容量已满。");
+      throw new Error($t("lib.public-files.text_4f5ddcfc16"));
     }
 
     const body = new Blob([new Uint8Array(data)]);

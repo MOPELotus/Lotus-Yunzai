@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import type { Database } from "bun:sqlite";
 import { lstat, mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
@@ -21,7 +24,7 @@ async function privateDirectory(path: string) {
     if (error.code !== "EEXIST") throw error;
   });
   if (!(await lstat(path)).isDirectory() || await realpath(path) !== path) {
-    throw new Error("暂存默认档案目录必须为实体目录。");
+    throw new Error($t("lib.migration-game-profile-defaults.text_70d9e565a7"));
   }
 }
 

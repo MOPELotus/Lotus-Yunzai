@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { constants, type Dirent } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
@@ -47,8 +50,8 @@ async function readRegularFile(path: string, maximum: number) {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const first = await file.stat();
-    if (!first.isFile()) throw new Error("插件元数据或入口须为普通文件。");
-    if (first.size > maximum) throw new PluginScanLimit("插件元数据或入口超过预检大小上限。");
+    if (!first.isFile()) throw new Error($t("lib.plugins.migration-plan.text_52713b508e"));
+    if (first.size > maximum) throw new PluginScanLimit($t("lib.plugins.migration-plan.text_ca0c983d5b"));
     const contents = Buffer.alloc(first.size + 1);
     let position = 0;
     while (position < contents.length) {
@@ -58,7 +61,7 @@ async function readRegularFile(path: string, maximum: number) {
     }
     const last = await file.stat();
     if (position !== first.size || last.size !== first.size || last.mtimeMs !== first.mtimeMs) {
-      throw new Error("插件元数据或入口在读取期间发生变化。");
+      throw new Error($t("lib.plugins.migration-plan.text_e4298a2bdc"));
     }
     return contents.subarray(0, position);
   } finally {
@@ -74,10 +77,10 @@ async function gitRepositories(plugin: string, targetBuiltInName: string | undef
   if (entry.isFile() && (targetBuiltInName === declaration.declaredName ||
     (declaration.declaredName && declaration.rejectionKind === "policy"))) return [];
   // A copied linked worktree does not establish ownership of its external Git metadata.
-  if (!entry.isDirectory()) throw new Error("插件的 Git 配置须在副本目录内。");
+  if (!entry.isDirectory()) throw new Error($t("lib.plugins.migration-plan.text_460f41b84a"));
   const config = await readRegularFile(join(dotGit, "config"), maximumMetadataBytes);
   const git = Bun.which("git");
-  if (!git) throw new Error("无法读取插件的 Git 来源。");
+  if (!git) throw new Error($t("lib.plugins.migration-plan.text_2fbd76aecc"));
   const child = Bun.spawn([git, "config", "--file", "-", "--no-includes", "-z", "--get-regexp", "^remote\\..*\\.url$"], {
     cwd: plugin, stdin: config, stdout: "pipe", stderr: "ignore", signal: AbortSignal.timeout(1_500),
     killSignal: "SIGKILL", maxBuffer: maximumMetadataBytes * 2,
@@ -85,14 +88,14 @@ async function gitRepositories(plugin: string, targetBuiltInName: string | undef
   });
   const [output, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
   if (code === 1) return [];
-  if (code !== 0) throw new Error("无法读取插件的 Git 来源。");
+  if (code !== 0) throw new Error($t("lib.plugins.migration-plan.text_2fbd76aecc"));
   return output.split("\0").filter(Boolean).map(line => line.slice(line.indexOf("\n") + 1));
 }
 
 async function entriesAt(path: string): Promise<Dirent[]> {
   const entry = await optionalStat(path);
   if (!entry) return [];
-  if (!entry.isDirectory()) throw new Error("插件根或入口目录须为实体目录。");
+  if (!entry.isDirectory()) throw new Error($t("lib.plugins.migration-plan.text_4d1c107236"));
   return (await readdir(path, { withFileTypes: true })).sort((first, second) => first.name.localeCompare(second.name, "en"));
 }
 
@@ -113,12 +116,12 @@ async function readScript(directory: string, entry: string) {
   const local = relative(directory, file);
   if (isAbsolute(entry) || !pluginScriptExtensions.has(extname(local)) ||
       local.split(sep).some(part => !isManagedPluginDirectory(part)) || local !== entry.split("/").join(sep)) {
-    throw new Error("插件入口须为包内相对脚本。");
+    throw new Error($t("lib.plugins.migration-plan.text_c391327652"));
   }
   let parent = directory;
   for (const part of local.split(sep).slice(0, -1)) {
     parent = join(parent, part);
-    if (!(await lstat(parent)).isDirectory()) throw new Error("插件入口须位于实体目录。");
+    if (!(await lstat(parent)).isDirectory()) throw new Error($t("lib.plugins.migration-plan.text_acccbe6e53"));
   }
   return readRegularFile(file, maximumScriptBytes);
 }
@@ -162,13 +165,13 @@ export async function planLegacyPlugins(
     const source = join(root, entry.name);
     const occupiesTarget = targetBuiltInPaths.has(path);
     if (!isManagedPluginDirectory(entry.name) || entry.isSymbolicLink()) {
-      plan.push({ path, status: "review", reason: "插件路径不适合自动归档，或为符号链接。" });
+      plan.push({ path, status: "review", reason: $t("lib.plugins.migration-plan.text_6d1d30b62c") });
       continue;
     }
     try {
       if (!entry.isDirectory()) {
         if (occupiesTarget) {
-          plan.push({ path, status: "review", reason: "与目标内置插件路径相同，源路径并非内置目录。" });
+          plan.push({ path, status: "review", reason: $t("lib.plugins.migration-plan.text_a7b03f8fe8") });
         } else if (entry.isFile() && entry.name.endsWith(".js")) {
           plan.push(scriptPlan(path, await readRegularFile(source, maximumScriptBytes)));
         }
@@ -195,7 +198,7 @@ export async function planLegacyPlugins(
       if (occupiesTarget) {
         plan.push(expectedNativeName === metadata.declaredName
           ? { path, status: "built-in" }
-          : { path, status: "review", reason: "旧插件占用目标内置目录，身份须先核对。" });
+          : { path, status: "review", reason: $t("lib.plugins.migration-plan.text_82d67f5339") });
         continue;
       }
       if (metadata.rejection) {
@@ -209,7 +212,7 @@ export async function planLegacyPlugins(
       }
       const duplicate = metadata.identities.map(identity => seen.get(identity)).find(label => label !== undefined);
       if (duplicate) {
-        plan.push({ path, status: "review", reason: `与 ${duplicate} 声明的插件身份重复。` });
+        plan.push({ path, status: "review", reason: $t("lib.plugins.migration-plan.text_f29e120ee0", { "duplicate": duplicate }) });
         continue;
       }
       const scripts = metadata.entry === undefined ? await legacyScripts(source) : [metadata.entry.replace(/^(?:\.\/)+/u, "")];
@@ -221,7 +224,7 @@ export async function planLegacyPlugins(
       for (const identity of metadata.identities) seen.set(identity, path);
       plan.push({ path, status: "retain" }, ...archive);
     } catch (error) {
-      const reason = error instanceof PluginScanLimit ? error.message : "无法安全读取插件元数据、Git 来源或入口。";
+      const reason = error instanceof PluginScanLimit ? error.message : $t("lib.plugins.migration-plan.text_0e0aac31f5");
       plan.push({ path, status: "scan-error", reason });
     }
   }
@@ -236,20 +239,20 @@ export function withinInstallation(base: string, path: string) {
 export async function planMigration(sourcePath: string, targetPath: string) {
   const [source, target] = await Promise.all([realpath(sourcePath), realpath(targetPath)]);
   const [sourceInfo, targetInfo] = await Promise.all([lstat(source), lstat(target)]);
-  if (!sourceInfo.isDirectory() || !targetInfo.isDirectory()) throw new Error("旧安装副本与目标安装须为实体目录。");
+  if (!sourceInfo.isDirectory() || !targetInfo.isDirectory()) throw new Error($t("lib.plugins.migration-plan.text_7448aa34e0"));
   if (withinInstallation(source, target) || withinInstallation(target, source) ||
       (sourceInfo.dev === targetInfo.dev && sourceInfo.ino === targetInfo.ino)) {
-    throw new Error("旧安装副本与目标安装须为独立目录，不能相同或互相包含。");
+    throw new Error($t("lib.plugins.migration-plan.text_e98c64012e"));
   }
   if (!(await lstat(join(source, "plugins"))).isDirectory()) {
-    throw new Error("旧安装副本的 plugins 须为实体目录。");
+    throw new Error($t("lib.plugins.migration-plan.text_ede7ef5421"));
   }
   const git = createLocalGit();
-  if (!git) throw new Error("迁移预检需要 Git，以核对目标的内置插件。");
+  if (!git) throw new Error($t("lib.plugins.migration-plan.text_2f3a0802da"));
   const topLevel = (await git(target, ["rev-parse", "--show-toplevel"]))?.trimEnd();
-  if (!topLevel || await realpath(topLevel) !== target) throw new Error("无法确认目标安装的 Git 工作区。");
+  if (!topLevel || await realpath(topLevel) !== target) throw new Error($t("lib.plugins.migration-plan.text_7a414fb75b"));
   const tree = await git(target, ["ls-tree", "-z", "HEAD:plugins"]);
-  if (tree === undefined) throw new Error("无法核对目标安装跟踪的插件目录。");
+  if (tree === undefined) throw new Error($t("lib.plugins.migration-plan.text_b07310b6e8"));
   const nativeDirectories = new Set(builtInDirectories.values());
   const protectedPaths = new Set<string>();
   for (const entry of tree.split("\0")) {

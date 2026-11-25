@@ -1,8 +1,11 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 const localOrigin = "http://lotus.invalid";
 const reserved = /^\/(?:status|panel|File|Media|OneBotv11|exit|captcha\/manual)(?:\/|$)/iu;
 const unsafe = /[\\\u0000-\u001f\u007f-\u009f]|%(?:0[0-9a-f]|1[0-9a-f]|5c|7f)/iu;
 const networkPath = /^\/(?:\/|%2f)/iu;
-const invalid = () => new Error("config/server.yaml 的 redirect 须为安全的 HTTP(S) 地址或站内绝对路径。");
+const invalid = () => new Error($t("lib.server-redirect.text_a5b12f10d3"));
 
 export function readServerRedirect(value: unknown): string | undefined {
   if (value === undefined || value === null || value === false) return;

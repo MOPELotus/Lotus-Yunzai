@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 export type RedeemGameId = "gs" | "sr" | "zzz" | "bh3"
 
 export interface RedeemGame {
@@ -15,11 +18,11 @@ export interface RedeemGame {
 }
 
 export const REDEEM_GAMES = Object.freeze<readonly [RedeemGame, ...RedeemGame[]]>([
-  { id: "gs", name: "原神", aliases: ["原神"], prefix: ["#"], community: "ys", gids: 2, uid: "75276539", provider: "miyolive" },
-  { id: "sr", name: "星穹铁道", aliases: ["星铁", "崩铁", "星穹铁道", "崩坏星穹铁道", "崩坏：星穹铁道"], prefix: ["*"], community: "sr", gids: 6, uid: "288909600", provider: "miyolive" },
-  { id: "zzz", name: "绝区零", aliases: ["绝区零", "绝区", "zzz"], prefix: ["%", "％"], community: "zzz", gids: 8, uid: "152039148", provider: "miyolive" },
-  { id: "bh3", name: "崩坏3", aliases: ["崩三", "崩坏三", "崩坏3"], prefix: [], community: "bh3", gids: 1, uid: "73565430",
-    provider: "miyolive", postPattern: /特别节目|直播兑换码/, searchKeyword: "前瞻 特别节目", requireExpiry: true },
+  { id: "gs", name: $t("redeem-preview.games.text_d1597c51ed"), aliases: [$t("redeem-preview.games.text_d1597c51ed")], prefix: ["#"], community: "ys", gids: 2, uid: "75276539", provider: "miyolive" },
+  { id: "sr", name: $t("redeem-preview.games.text_4548f2ad35"), aliases: [$t("redeem-preview.games.text_a2927891f0"), $t("redeem-preview.games.text_46f6225ff5"), $t("redeem-preview.games.text_4548f2ad35"), $t("redeem-preview.games.text_8b0c294909"), $t("redeem-preview.games.text_8cfc959b53")], prefix: ["*"], community: "sr", gids: 6, uid: "288909600", provider: "miyolive" },
+  { id: "zzz", name: $t("redeem-preview.games.text_b1110352c9"), aliases: [$t("redeem-preview.games.text_b1110352c9"), $t("redeem-preview.games.text_95cec3b66b"), "zzz"], prefix: ["%", "％"], community: "zzz", gids: 8, uid: "152039148", provider: "miyolive" },
+  { id: "bh3", name: $t("redeem-preview.games.text_6d3d8653d7"), aliases: [$t("redeem-preview.games.text_df43f0569d"), $t("redeem-preview.games.text_e3173a70bd"), $t("redeem-preview.games.text_6d3d8653d7")], prefix: [], community: "bh3", gids: 1, uid: "73565430",
+    provider: "miyolive", postPattern: /特别节目|直播兑换码/, searchKeyword: $t("redeem-preview.games.text_6e7dbd669b"), requireExpiry: true },
 ])
 
 export function parseRedeemCommand(message: unknown): RedeemGame | null {

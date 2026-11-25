@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -22,7 +25,7 @@ export function zzzMonthlyKey(value: unknown) {
 }
 
 function invalid(field: string): never {
-  throw new HoyoRequestError("response", `官方绝区零月报的${field}无效。`);
+  throw new HoyoRequestError("response", $t("zzz-monthly.text_7310cf1d4e", { "field": field }));
 }
 
 function object(value: unknown, field: string): Json {
@@ -51,45 +54,45 @@ function code(value: unknown, field: string) {
 function percent(value: unknown) {
   if (value == null || value === "") return;
   const string = typeof value === "number" ? String(value) : value;
-  if (typeof string !== "string" || !/^\d{1,3}(?:\.\d{1,8})?$/u.test(string) || Number(string) > 100) invalid("收入占比");
+  if (typeof string !== "string" || !/^\d{1,3}(?:\.\d{1,8})?$/u.test(string) || Number(string) > 100) invalid($t("zzz-monthly.text_efb0768dcf"));
   return string;
 }
 
 export function normalizeZzzMonthly(input: unknown, identity: Identity, requested = ""): {
   readonly record?: ZzzMonthlyRecord; readonly month?: string; readonly available: readonly string[]; readonly hasEnvelope: boolean;
 } {
-  const data = object(input, "响应");
+  const data = object(input, $t("zzz-monthly.text_3b1f210d39"));
   if (!Object.keys(data).length) return { available: [], hasEnvelope: false } as const;
   if ((typeof data.uid !== "number" && typeof data.uid !== "string") || String(data.uid) !== identity.uid ||
       data.region !== identity.region || (data.game_biz !== undefined && data.game_biz !== "nap_cn" && data.game_biz !== "nap_global")) {
-    invalid("UID 或区服");
+    invalid($t("zzz-monthly.text_2166719b56"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== (identity.region.endsWith("_cn") ? "nap_cn" : "nap_global")) invalid("游戏标识");
+  if (data.game_biz !== undefined && data.game_biz !== (identity.region.endsWith("_cn") ? "nap_cn" : "nap_global")) invalid($t("zzz-monthly.text_a81ce382a1"));
   const month = zzzMonthlyKey(data.data_month);
-  if (!month || (requested && month !== requested)) invalid("查询月份");
+  if (!month || (requested && month !== requested)) invalid($t("zzz-monthly.text_91739da90d"));
   const current = data.current_month == null ? undefined : zzzMonthlyKey(data.current_month);
-  if (data.current_month != null && !current) invalid("当前月份");
-  if (current && month > current) invalid("查询月份");
+  if (data.current_month != null && !current) invalid($t("zzz-monthly.text_3ab07bf4f4"));
+  if (current && month > current) invalid($t("zzz-monthly.text_91739da90d"));
   const available = [...new Set(list(data.optional_month, "可用月份", 36).map(row => {
     const key = zzzMonthlyKey(row);
-    if (!key || (current && key > current)) invalid("可用月份");
+    if (!key || (current && key > current)) invalid($t("zzz-monthly.text_c5cc2fb874"));
     return key;
   }))];
   if (data.month_data == null) return { month, available, hasEnvelope: true };
-  const content = object(data.month_data, "收支数据");
+  const content = object(data.month_data, $t("zzz-monthly.text_ce65729e0d"));
   const quantities = new Map<string, number>();
-  for (const value of list(content.list, "货币列表", 32)) {
-    const row = object(value, "货币项");
-    const type = code(row.data_type, "货币类型");
-    const quantity = count(row.count, "货币数量");
+  for (const value of list(content.list, $t("zzz-monthly.text_eac8bc429b"), 32)) {
+    const row = object(value, $t("zzz-monthly.text_edc50739c0"));
+    const type = code(row.data_type, $t("zzz-monthly.text_f68f3cc743"));
+    const quantity = count(row.count, $t("zzz-monthly.text_ce04180680"));
     if (quantity === undefined) continue;
     const existing = quantities.get(type);
-    if (existing !== undefined && existing !== quantity) invalid("重复货币");
+    if (existing !== undefined && existing !== quantity) invalid($t("zzz-monthly.text_27b6aef8fa"));
     quantities.set(type, quantity);
   }
-  const income = list(content.income_components, "收入来源", 64).map(value => {
-    const row = object(value, "收入来源");
-    return { action: code(row.action, "来源"), num: count(row.num, "来源数量"), percent: percent(row.percent) };
+  const income = list(content.income_components, $t("zzz-monthly.text_54a124e369"), 64).map(value => {
+    const row = object(value, $t("zzz-monthly.text_54a124e369"));
+    return { action: code(row.action, $t("zzz-monthly.text_a488e93d69")), num: count(row.num, $t("zzz-monthly.text_2b8777184f")), percent: percent(row.percent) };
   });
   const record: ZzzMonthlyRecord = { ...identity, data_month: month,
     month_data: { list: [...quantities].map(([data_type, count]) => ({ data_type, count })), income_components: income } };
@@ -119,7 +122,7 @@ export async function openHoYoLabZzzMonthly(source: HoYoLabZzzRecordAccount, tra
 
 async function readMonths(uid: string, month: string, collect: boolean,
   read: (requested: string) => Promise<ReturnType<typeof normalizeZzzMonthly>>) {
-  if (month !== "" && zzzMonthlyKey(month) !== month) throw new HoyoRequestError("invalid-input", "绝区零月报月份无效。");
+  if (month !== "" && zzzMonthlyKey(month) !== month) throw new HoyoRequestError("invalid-input", $t("zzz-monthly.text_281478f903"));
   const initial = await read(month);
   const months = new Map<string, ZzzMonthlyRecord>();
   if (initial.record) months.set(initial.record.data_month, initial.record);

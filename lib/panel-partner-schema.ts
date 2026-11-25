@@ -1,10 +1,13 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 export const partnerNumbers = [
-  { key: "login_timeout_ms", label: "扫码有效期（毫秒）", min: 1, max: 2_147_483_647 },
-  { key: "login_poll_ms", label: "登录轮询间隔（毫秒）", min: 1, max: 2_147_483_647 },
-  { key: "delay_ms_min", label: "最小操作间隔（毫秒）", min: 0, max: 300000 },
-  { key: "delay_ms_max", label: "最大操作间隔（毫秒）", min: 0, max: 300000 },
-  { key: "review_max_chars", label: "乐评字数上限", min: 20, max: 500 },
-  { key: "review_timeout_ms", label: "AI 乐评超时（毫秒）", min: 1, max: 2_147_483_647 },
+  { key: "login_timeout_ms", label: $t("lib.panel-partner-schema.text_d1aec4bc04"), min: 1, max: 2_147_483_647 },
+  { key: "login_poll_ms", label: $t("lib.panel-partner-schema.text_3587e44396"), min: 1, max: 2_147_483_647 },
+  { key: "delay_ms_min", label: $t("lib.panel-partner-schema.text_9440d9ab44"), min: 0, max: 300000 },
+  { key: "delay_ms_max", label: $t("lib.panel-partner-schema.text_64b9c010db"), min: 0, max: 300000 },
+  { key: "review_max_chars", label: $t("lib.panel-partner-schema.text_531deee4c4"), min: 20, max: 500 },
+  { key: "review_timeout_ms", label: $t("lib.panel-partner-schema.text_002c069f88"), min: 1, max: 2_147_483_647 },
 ] as const;
 
 export const partnerScheduleDefault = "0 30 1 * * ? *";
@@ -13,7 +16,7 @@ export const partnerEditableReviewModes = ["fixed", "responses", "codex"] as con
 export type PartnerEditableReviewMode = typeof partnerEditableReviewModes[number];
 
 export const partnerReviewModes = {
-  fixed: "固定评论库", responses: "Responses API 联网生成", codex: "本机 Codex CLI 联网生成", disabled: "迁移后等待本机确认", unknown: "未知配置",
+  fixed: $t("lib.panel-partner-schema.text_59c40d9247"), responses: $t("lib.panel-partner-schema.text_77830bbf0d"), codex: $t("lib.panel-partner-schema.text_affb9e9f87"), disabled: $t("lib.panel-partner-schema.text_3f9f2fe291"), unknown: $t("lib.panel-partner-schema.text_324aa2a7c6"),
 } as const;
 
 export interface PartnerPanelSettings {

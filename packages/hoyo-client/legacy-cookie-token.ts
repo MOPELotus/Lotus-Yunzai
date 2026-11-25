@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 
@@ -26,11 +29,11 @@ function accountIdOf(value: unknown): string | undefined {
 }
 
 function invalidResponse(): never {
-  throw new HoyoRequestError("response", "官方通行证返回的 Cookie 身份证明无效。");
+  throw new HoyoRequestError("response", $t("legacy-cookie-token.text_0cb89bd1c0"));
 }
 
 function transportError(): HoyoRequestError {
-  return new HoyoRequestError("transport", "官方通行证 Cookie 验证请求未完成。");
+  return new HoyoRequestError("transport", $t("legacy-cookie-token.text_00ebe861dc"));
 }
 
 async function readProof(response: Response, signal: AbortSignal): Promise<Record<string, unknown>> {
@@ -70,7 +73,7 @@ export async function verifyLegacyCookieToken({ accountId, cookieToken }: Legacy
   { signal }: { readonly signal?: AbortSignal } = {}): Promise<LegacyCookieTokenProof> {
   if (typeof accountId !== "string" || !accountIdOf(accountId) || typeof cookieToken !== "string" ||
       !/^[A-Za-z0-9._~+/%=-]{1,4096}$/u.test(cookieToken) || /^v2_/iu.test(cookieToken)) {
-    throw new HoyoRequestError("invalid-input", "请输入有效的国服 v1 Cookie Token 和通行证 UID。");
+    throw new HoyoRequestError("invalid-input", $t("legacy-cookie-token.text_04aeadbbf8"));
   }
   const timeout = AbortSignal.timeout(10_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -92,18 +95,18 @@ export async function verifyLegacyCookieToken({ accountId, cookieToken }: Legacy
   if (deadline.aborted || !response.ok || response.redirected) {
     void response.body?.cancel().catch(() => undefined);
     if (deadline.aborted) throw transportError();
-    throw new HoyoRequestError("http", "官方通行证 Cookie 验证返回 HTTP 错误。", response.status);
+    throw new HoyoRequestError("http", $t("legacy-cookie-token.text_2390c466ba"), response.status);
   }
   const challenge = response.headers.get("x-rpc-aigis")?.trim();
   if (challenge && challenge !== "{}") {
     void response.body?.cancel().catch(() => undefined);
-    throw new HoyoRequestError("api", "官方通行证要求额外验证，请在官方客户端处理。");
+    throw new HoyoRequestError("api", $t("legacy-cookie-token.text_15849001cc"));
   }
   const payload = await readProof(response, deadline);
   if (deadline.aborted) throw transportError();
   if (typeof payload.retcode !== "number" || !Number.isSafeInteger(payload.retcode)) invalidResponse();
   if (payload.retcode !== 0) {
-    throw new HoyoRequestError("api", "官方通行证未接受该 Cookie。", response.status, payload.retcode);
+    throw new HoyoRequestError("api", $t("legacy-cookie-token.text_b3fde6aa06"), response.status, payload.retcode);
   }
   const user = object(object(payload.data)?.user_info);
   if (accountIdOf(user?.aid) !== accountId) invalidResponse();

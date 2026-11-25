@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
 import type { CheckinScheduleProfile } from "./checkin-schedule-plan.ts";
 import type { CommandContext, CommandModule, CommandReply } from "./commands.ts";
@@ -15,8 +18,8 @@ interface CheckinSession {
 }
 
 const domesticGames = [
-  ["genshin", "原神"], ["honkai_sr", "星铁"], ["zzz", "绝区零"],
-  ["honkai3rd", "崩坏3"], ["honkai2", "崩坏2"], ["tears_of_themis", "未定事件簿"],
+  ["genshin", $t("lib.checkin-registration-commands.text_d1597c51ed")], ["honkai_sr", $t("lib.checkin-registration-commands.text_a2927891f0")], ["zzz", $t("lib.checkin-registration-commands.text_b1110352c9")],
+  ["honkai3rd", $t("lib.checkin-registration-commands.text_6d3d8653d7")], ["honkai2", $t("lib.checkin-registration-commands.text_7deeae4b7e")], ["tears_of_themis", $t("lib.checkin-registration-commands.text_a6e4fbed57")],
 ] as const;
 
 export function checkinStatus(directory: string | undefined) {
@@ -27,7 +30,7 @@ export function checkinStatus(directory: string | undefined) {
     try {
       ids = await profiles.listIds(qq);
     } catch {
-      if (isCurrent()) return "暂时无法读取本人的签到档案。";
+      if (isCurrent()) return $t("lib.checkin-registration-commands.text_7ee042e03c");
       return;
     }
     let bound = 0;
@@ -40,16 +43,16 @@ export function checkinStatus(directory: string | undefined) {
         if (loggedIn) bound++;
         if (!enabled) continue;
         const selected = domesticGames.filter(([game]) => games[game]?.enabled).map(([, name]) => name).join("、");
-        const scopes = [selected || "无国服游戏", communityForums.length ? " + 社区" : "", loggedIn ? "" : "（待登录）"].join("");
-        registered.push(`档案 ${id}：${scopes}`);
+        const scopes = [selected || $t("lib.checkin-registration-commands.text_48847ce750"), communityForums.length ? $t("lib.checkin-registration-commands.text_a0a51a4f5c") : "", loggedIn ? "" : $t("lib.checkin-registration-commands.text_b50ba41408")].join("");
+        registered.push($t("lib.checkin-registration-commands.text_97df6735fe", { "id": id, "scopes": scopes }));
       } catch { unreadable++; }
     }
     if (!isCurrent()) return;
-    if (unreadable && unreadable === ids.length) return "暂时无法读取本人的签到档案。";
-    const lines = [`已绑定 ${bound} 个登录档案，已注册 ${registered.length} 个自动签到档案。`, ...registered];
-    if (!bound) lines.push("尚无登录资料，可发送 #扫码登录。");
-    else if (!registered.length) lines.push("尚未注册自动签到，可发送 #注册自动签到。");
-    if (unreadable) lines.push(`另有 ${unreadable} 个档案暂时无法读取。`);
+    if (unreadable && unreadable === ids.length) return $t("lib.checkin-registration-commands.text_7ee042e03c");
+    const lines = [$t("lib.checkin-registration-commands.text_0f3d1b5e02", { "bound": bound, "length": registered.length }), ...registered];
+    if (!bound) lines.push($t("lib.checkin-registration-commands.text_51a7eea04b"));
+    else if (!registered.length) lines.push($t("lib.checkin-registration-commands.text_8636a1b569"));
+    if (unreadable) lines.push($t("lib.checkin-registration-commands.text_4e5abb06d6", { "unreadable": unreadable }));
     return lines.join("\n");
   };
 }
@@ -64,7 +67,7 @@ export function checkinUnregistration(directory: string | undefined, reconcilePl
     try {
       ids = await profiles.listIds(qq);
     } catch {
-      if (isCurrent()) return "暂时无法读取本人的签到档案。";
+      if (isCurrent()) return $t("lib.checkin-registration-commands.text_7ee042e03c");
       return;
     }
     for (const id of ids) {
@@ -86,11 +89,11 @@ export function checkinUnregistration(directory: string | undefined, reconcilePl
       catch { planPending = true; }
     }
     if (!isCurrent()) return;
-    if (!disabled) return failed ? "暂时无法关闭本人的自动签到，请重新发送指令。" : "未注册自动签到，无需关闭。";
-    const lines = [`已关闭 ${disabled} 个档案的自动签到，登录资料已保留。`,
-      "如需继续，请重新发送 #注册自动签到，其他档案按编号注册。"];
-    if (failed) lines.push(`另有 ${failed} 个档案未能关闭，请重试。`);
-    if (planPending) lines.push("签到计划将在下一轮重新检查。");
+    if (!disabled) return failed ? $t("lib.checkin-registration-commands.text_d66da44236") : $t("lib.checkin-registration-commands.text_edbea1acbb");
+    const lines = [$t("lib.checkin-registration-commands.text_8b9d3060de", { "disabled": disabled }),
+      $t("lib.checkin-registration-commands.text_c09281f8cf")];
+    if (failed) lines.push($t("lib.checkin-registration-commands.text_039ed664c0", { "failed": failed }));
+    if (planPending) lines.push($t("lib.checkin-registration-commands.text_59a3fb3ede"));
     return lines.join("\n");
   };
 }
@@ -109,34 +112,34 @@ export function checkinRegistrationCommands(directory: string | undefined, signa
       const match = register.exec(context.normalizedMessage);
       if (!match || signal.aborted) return;
       const profileId = Number(match[1] ?? 1);
-      if (profileId > MAX_PROFILE_ID) return "档案编号须在 1 到 255 之间。";
+      if (profileId > MAX_PROFILE_ID) return $t("lib.checkin-registration-commands.text_3dd62228d2");
       if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) {
-        return "请从对应的 QQ 会话注册自动签到。";
+        return $t("lib.checkin-registration-commands.text_bcfa35434f");
       }
-      if (!canRegister({ ...context, isMaster: isCheckinCommandOwner(context) })) return "当前会话无权注册自动签到。";
+      if (!canRegister({ ...context, isMaster: isCheckinCommandOwner(context) })) return $t("lib.checkin-registration-commands.text_94faea8ae1");
       const qq = String(context.user_id);
       let saved = false;
       try {
         const state = await profiles.checkinSettings(qq, profileId);
-        if (!state.loggedIn) return `请先登录档案 ${profileId}。`;
+        if (!state.loggedIn) return $t("lib.checkin-registration-commands.text_76720712c8", { "profileId": profileId });
         if (signal.aborted) return;
         const updated = await profiles.setCheckinEnabled(qq, profileId, state.revision, true,
           signal, undefined, () => checkinSettingsNickname(context));
         saved = true;
         const current = await profiles.checkinSettings(qq, profileId);
         if (signal.aborted) return;
-        if (current.revision !== updated.revision) return "档案设置已变化，请重新查看当前签到配置。";
+        if (current.revision !== updated.revision) return $t("lib.checkin-registration-commands.text_fa4505e2c7");
         await addRegisteredProfile({ qq, profileId, name: current.displayName, enabled: current.enabled, schedule: current.schedule });
         if (signal.aborted) return;
         return viewProfile(profileId, context);
       } catch (error) {
         if (signal.aborted) return;
-        if (saved) return `档案 ${profileId} 已注册，暂时无法更新本地签到计划或显示资料卡。`;
+        if (saved) return $t("lib.checkin-registration-commands.text_b396f6ac98", { "profileId": profileId });
         if (error instanceof ProfileError && (error.code === "missing" || error.code === "login-required")) {
-          return `请先登录档案 ${profileId}。`;
+          return $t("lib.checkin-registration-commands.text_76720712c8", { "profileId": profileId });
         }
-        if (error instanceof ProfileError && error.code === "changed") return "档案设置已变化，请重新注册。";
-        return "暂时无法注册自动签到。";
+        if (error instanceof ProfileError && error.code === "changed") return $t("lib.checkin-registration-commands.text_4ef0078278");
+        return $t("lib.checkin-registration-commands.text_0867e4d0d3");
       }
     },
   };

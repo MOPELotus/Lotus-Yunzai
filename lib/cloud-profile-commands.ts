@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
 import { CloudGenshinWalletError, CloudZzzWalletError, HoyoRequestError, normalizeCloudGenshinComboToken,
   normalizeCloudZzzComboToken, readCloudGenshinWallet, readCloudZzzWallet } from "@lotus-yunzai/hoyo-client";
@@ -60,30 +63,30 @@ export function createCloudGenshinWalletQuery({
     try {
       const current = await readDomesticCloud(qq, id);
       signal.throwIfAborted();
-      if (!current.loggedIn) return `请先登录档案 ${id}。`;
-      if (!current.token) return `档案 ${id} 尚未绑定国服云原神凭据。`;
+      if (!current.loggedIn) return $t("lib.cloud-profile-commands.text_62b08191fe", { "id": id });
+      if (!current.token) return $t("lib.cloud-profile-commands.text_5073be696b", { "id": id });
       const verifyProfile = async () => {
         signal.throwIfAborted();
         const latest = await readProfile(qq, id).catch(() => undefined);
-        if (!latest?.loggedIn || latest.revision !== current.revision) throw new ProfileError("changed", "档案已变更。");
+        if (!latest?.loggedIn || latest.revision !== current.revision) throw new ProfileError("changed", $t("lib.cloud-profile-commands.text_8a1edc5158"));
         signal.throwIfAborted();
       };
       await verifyProfile();
       const wallet = await readWallet(current.token, transport, { signal: signal, verifyProfile });
       await verifyProfile();
       return [
-        `云原神钱包 · 档案 ${id}`,
-        ...(wallet.cloudCoins !== undefined ? [`米云币：${wallet.cloudCoins}`] : []),
-        `免费时长：${wallet.freeTimeMinutes} 分钟`,
-        ...(wallet.totalTimeMinutes !== undefined ? [`总时长：${wallet.totalTimeMinutes} 分钟`] : []),
+        $t("lib.cloud-profile-commands.text_4f62054abe", { "id": id }),
+        ...(wallet.cloudCoins !== undefined ? [$t("lib.cloud-profile-commands.text_8be4d0e378", { "cloudCoins": wallet.cloudCoins })] : []),
+        $t("lib.cloud-profile-commands.text_7c33007d93", { "freeTimeMinutes": wallet.freeTimeMinutes }),
+        ...(wallet.totalTimeMinutes !== undefined ? [$t("lib.cloud-profile-commands.text_0ad0336aef", { "totalTimeMinutes": wallet.totalTimeMinutes })] : []),
       ].join("\n");
     } catch (error) {
       if (signal.aborted) return;
-      if (missing(error)) return `请先登录档案 ${id}。`;
-      if (error instanceof ProfileError && error.code === "changed") return "档案已变更，请重新查询云原神钱包。";
+      if (missing(error)) return $t("lib.cloud-profile-commands.text_62b08191fe", { "id": id });
+      if (error instanceof ProfileError && error.code === "changed") return $t("lib.cloud-profile-commands.text_8651fb2117");
       if (error instanceof CloudGenshinWalletError) return error.message;
-      if (error instanceof HoyoRequestError && error.code === "invalid-input") return `档案 ${id} 的国服云原神凭据无效，请在私聊重新绑定。`;
-      return "暂时无法查询云原神钱包。";
+      if (error instanceof HoyoRequestError && error.code === "invalid-input") return $t("lib.cloud-profile-commands.text_1df5509062", { "id": id });
+      return $t("lib.cloud-profile-commands.text_a23b62d4a1");
     }
   };
 }
@@ -92,28 +95,28 @@ export function cloudProfileCommands({
   signal, readProfile, saveToken, setEnabled, viewProfile, readWallet = readCloudGenshinWallet, readZzzWallet = readCloudZzzWallet,
 }: CloudProfileCommandsOptions): CommandModule {
   async function bindToken(message: string, context: MessageFallbackContext) {
-    if (context.message_type !== "private") return "请勿在群聊或终端发送云游戏凭据。";
+    if (context.message_type !== "private") return $t("lib.cloud-profile-commands.text_b8b7673a92");
     const match = binding.exec(message);
-    if (!match) return "请发送 #绑定云原神token 或 #绑定云绝区零token 加空格和凭据，可在指令后加档案编号。";
+    if (!match) return $t("lib.cloud-profile-commands.text_07b095a113");
     const [, label, suffix, input] = match;
     const game = label === "原神" ? "genshin" : "zzz";
-    const name = `云${label}`;
+    const name = $t("lib.cloud-profile-commands.text_d020f268cb", { "label": label });
     const id = profileId(suffix!);
-    if (id === undefined) return "档案编号须在 1 到 255 之间。";
+    if (id === undefined) return $t("lib.cloud-profile-commands.text_3dd62228d2");
     const session = context.privateCredentialSignal;
     const qq = userId(context);
-    if (!session || session.aborted || !qq) return `请从当前连接的机器人好友私聊绑定${name}凭据。`;
+    if (!session || session.aborted || !qq) return $t("lib.cloud-profile-commands.text_b4fd89d4a0", { "name": name });
 
     const scoped = AbortSignal.any([signal, session]);
     let saved = false;
     try {
       const token = (game === "genshin" ? normalizeCloudGenshinComboToken : normalizeCloudZzzComboToken)(input!);
       const current = await readProfile(qq, id);
-      if (!current.loggedIn) return `请先登录档案 ${id}。`;
+      if (!current.loggedIn) return $t("lib.cloud-profile-commands.text_62b08191fe", { "id": id });
       const verifyProfile = async () => {
         scoped.throwIfAborted();
         const next = await readProfile(qq, id).catch(() => undefined);
-        if (!next?.loggedIn || next.revision !== current.revision) throw new ProfileError("changed", "档案已变更。");
+        if (!next?.loggedIn || next.revision !== current.revision) throw new ProfileError("changed", $t("lib.cloud-profile-commands.text_8a1edc5158"));
         scoped.throwIfAborted();
       };
 
@@ -129,12 +132,12 @@ export function cloudProfileCommands({
       }
     } catch (error) {
       if (scoped.aborted) return;
-      if (saved) return `档案 ${id} 的${name}凭据已保存，暂时无法显示资料卡。`;
-      if (missing(error)) return `请先登录档案 ${id}。`;
-      if (error instanceof ProfileError && error.code === "changed") return `档案已变更，请重新绑定${name}凭据。`;
+      if (saved) return $t("lib.cloud-profile-commands.text_c8a7010d74", { "id": id, "name": name });
+      if (missing(error)) return $t("lib.cloud-profile-commands.text_62b08191fe", { "id": id });
+      if (error instanceof ProfileError && error.code === "changed") return $t("lib.cloud-profile-commands.text_e479d0ec59", { "name": name });
       if ((error instanceof CloudGenshinWalletError || error instanceof CloudZzzWalletError) && error.reason === "expired") return error.message;
-      if (error instanceof HoyoRequestError && error.code === "invalid-input") return `请输入有效的${name}凭据。`;
-      return `暂时无法读取${name}钱包，档案未更新。`;
+      if (error instanceof HoyoRequestError && error.code === "invalid-input") return $t("lib.cloud-profile-commands.text_1819e082d3", { "name": name });
+      return $t("lib.cloud-profile-commands.text_714c85fc19", { "name": name });
     }
   }
 
@@ -148,23 +151,23 @@ export function cloudProfileCommands({
       if (!match) return;
       const [, action, label, suffix] = match;
       const id = profileId(suffix!);
-      if (id === undefined) return "档案编号须在 1 到 255 之间。";
+      if (id === undefined) return $t("lib.cloud-profile-commands.text_3dd62228d2");
       const qq = userId(context);
-      if (!qq || context.message_type === "terminal") return "请从对应的 QQ 会话设置云游戏。";
+      if (!qq || context.message_type === "terminal") return $t("lib.cloud-profile-commands.text_0bde32a470");
       let saved = false;
       try {
         const current = await readProfile(qq, id);
         if (signal.aborted) return;
-        if (!current.loggedIn) return `请先登录档案 ${id}。`;
+        if (!current.loggedIn) return $t("lib.cloud-profile-commands.text_62b08191fe", { "id": id });
         await setEnabled(qq, id, current.revision, label === "原神" ? "genshin" : "zzz", action === "启用" || action === "开启");
         saved = true;
         if (!signal.aborted) return await viewProfile(id, context);
       } catch (error) {
         if (signal.aborted) return;
-        if (saved) return `档案 ${id} 的云游戏设置已保存，暂时无法显示资料卡。`;
-        if (missing(error)) return `请先登录档案 ${id}。`;
-        if (error instanceof ProfileError && error.code === "changed") return "档案设置已变化，请重试。";
-        return "暂时无法保存云游戏设置。";
+        if (saved) return $t("lib.cloud-profile-commands.text_998c47c16c", { "id": id });
+        if (missing(error)) return $t("lib.cloud-profile-commands.text_62b08191fe", { "id": id });
+        if (error instanceof ProfileError && error.code === "changed") return $t("lib.cloud-profile-commands.text_3ddebc59b1");
+        return $t("lib.cloud-profile-commands.text_1bb7e909b2");
       }
     },
   };

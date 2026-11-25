@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import https from "node:https"
 
 export const officialJsonByteLimit = 4 * 1024 * 1024
@@ -14,7 +17,7 @@ export function officialReadTarget(url: string | URL) {
   const target = new URL(url)
   if (target.protocol !== "https:" || target.username || target.password || target.port
       || !OFFICIAL_ROUTES.get(target.hostname)?.includes(target.pathname)) {
-    throw new Error("不支持的官方查询地址")
+    throw new Error($t("redeem-preview.http.text_a5c7a696a8"))
   }
   return target
 }
@@ -35,18 +38,18 @@ export function requestOfficialJson(url: string | URL, { headers = {}, timeoutMs
     const request = https.request(target, { method: "GET", headers: { ...headers, "accept-encoding": "identity" }, signal: deadline }, response => {
       if (response.statusCode !== 200) {
         response.resume()
-        reject(new Error(`官方接口 HTTP ${response.statusCode}`))
+        reject(new Error($t("redeem-preview.http.text_a7934a720b", { "statusCode": response.statusCode })))
         return
       }
       const chunks: Buffer[] = []
       let bytes = 0
       response.on("data", (chunk: Buffer) => {
         bytes += chunk.length
-        if (bytes > officialJsonByteLimit) response.destroy(new Error("官方接口响应过大"))
+        if (bytes > officialJsonByteLimit) response.destroy(new Error($t("redeem-preview.http.text_131ede9f29")))
         else chunks.push(chunk)
       })
       response.on("error", reject)
-      response.on("aborted", () => reject(new Error("官方接口响应中断")))
+      response.on("aborted", () => reject(new Error($t("redeem-preview.http.text_8f7fb7b501"))))
       response.on("end", () => {
         try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))) }
         catch (error) { reject(error) }

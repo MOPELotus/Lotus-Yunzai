@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -28,7 +31,7 @@ export interface ZzzHoloBossSnapshot extends Identity {
 }
 
 function invalid(field: string): never {
-  throw new HoyoRequestError("response", `官方拟境湮灭战响应的${field}无效。`);
+  throw new HoyoRequestError("response", $t("zzz-holo-boss.text_08256966ea", { "field": field }));
 }
 
 function object(value: unknown): Json | undefined {
@@ -53,7 +56,7 @@ function text(value: unknown, limit = 1024) {
 
 function wallTime(value: unknown) {
   if (value === undefined || value === null) return;
-  const fields = object(value) ?? invalid("统计周期");
+  const fields = object(value) ?? invalid($t("zzz-holo-boss.text_f4f09df9e1"));
   const year = count(fields.year, 2099);
   const month = count(fields.month, 12);
   const day = count(fields.day, 31);
@@ -61,25 +64,25 @@ function wallTime(value: unknown) {
   const hour = count(fields.hour ?? 0, 23);
   const minute = count(fields.minute ?? 0, 59);
   const second = count(fields.second ?? 0, 59);
-  if (!year || year < 2024 || !month || !day || hour === undefined || minute === undefined || second === undefined) invalid("统计周期");
+  if (!year || year < 2024 || !month || !day || hour === undefined || minute === undefined || second === undefined) invalid($t("zzz-holo-boss.text_f4f09df9e1"));
   const date = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
-  if (date.getUTCMonth() !== month - 1) invalid("统计周期");
+  if (date.getUTCMonth() !== month - 1) invalid($t("zzz-holo-boss.text_f4f09df9e1"));
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
 function duration(value: unknown) {
   if (value === undefined || value === null) return;
-  const fields = object(value) ?? invalid("挑战耗时");
+  const fields = object(value) ?? invalid($t("zzz-holo-boss.text_c5c66a9f44"));
   if (fields.minute == null && fields.second == null) return;
   const minute = count(fields.minute ?? 0, 999);
   const second = count(fields.second ?? 0, 59);
-  if (minute === undefined || second === undefined) invalid("挑战耗时");
+  if (minute === undefined || second === undefined) invalid($t("zzz-holo-boss.text_c5c66a9f44"));
   return minute * 60 + second;
 }
 
 function portrait(value: unknown): ZzzShiyuPortrait | undefined {
   if (value === null) return;
-  const row = object(value) ?? invalid("代理人");
+  const row = object(value) ?? invalid($t("zzz-holo-boss.text_5aea7d747f"));
   const id = count(row.id, 999_999);
   const icon = text(row.role_square_url);
   if (!id && !icon) return;
@@ -89,17 +92,17 @@ function portrait(value: unknown): ZzzShiyuPortrait | undefined {
 }
 
 function room(input: unknown): ZzzHoloBossRoom {
-  const row = object(input) ?? invalid("首领记录");
-  const boss = row.boss == null ? undefined : object(row.boss) ?? invalid("首领");
-  const medal = boss?.medal == null ? undefined : object(boss.medal) ?? invalid("首领徽章");
-  if (medal?.is_no_injured !== undefined && typeof medal.is_no_injured !== "boolean") invalid("无伤标记");
+  const row = object(input) ?? invalid($t("zzz-holo-boss.text_83c1bceb83"));
+  const boss = row.boss == null ? undefined : object(row.boss) ?? invalid($t("zzz-holo-boss.text_58cae7ec87"));
+  const medal = boss?.medal == null ? undefined : object(boss.medal) ?? invalid($t("zzz-holo-boss.text_d3099bb227"));
+  if (medal?.is_no_injured !== undefined && typeof medal.is_no_injured !== "boolean") invalid($t("zzz-holo-boss.text_d8623bb355"));
   const avatars = row.avatar_list ?? [];
-  if (!Array.isArray(avatars) || avatars.length > 3) invalid("队伍");
-  const rank = optionalCount(row.rank, 10_000, "排名");
+  if (!Array.isArray(avatars) || avatars.length > 3) invalid($t("zzz-holo-boss.text_1053fbb75f"));
+  const rank = optionalCount(row.rank, 10_000, $t("zzz-holo-boss.text_6570a98f28"));
   return {
     name: text(boss?.name, 192), bossIcon: text(boss?.icon), medalIcon: text(medal?.medal_icon),
     undamaged: medal?.is_no_injured === true,
-    stars: optionalCount(row.star, 4, "星级"), duration: duration(row.challenge_time), rank: rank || undefined,
+    stars: optionalCount(row.star, 4, $t("zzz-holo-boss.text_9c55a439d7")), duration: duration(row.challenge_time), rank: rank || undefined,
     avatars: avatars.map(portrait),
   };
 }
@@ -110,24 +113,24 @@ function total(bosses: readonly ZzzHoloBossRoom[], key: "stars" | "duration") {
 
 export function normalizeZzzHoloBoss(value: unknown, identity: Identity): ZzzHoloBossSnapshot {
   const data = object(value);
-  if (!data || typeof data.unlock !== "boolean") invalid("解锁状态");
+  if (!data || typeof data.unlock !== "boolean") invalid($t("zzz-holo-boss.text_beddbcb9d8"));
   for (const key of ["uid", "role_id", "game_uid"]) {
     const actual = data[key];
     if (actual !== undefined && (typeof actual !== "string" && typeof actual !== "number" || String(actual) !== identity.uid)) {
-      invalid("档案 UID");
+      invalid($t("zzz-holo-boss.text_5e66ce9fd0"));
     }
   }
   for (const key of ["region", "server"]) {
-    if (data[key] !== undefined && data[key] !== identity.region) invalid("档案区服");
+    if (data[key] !== undefined && data[key] !== identity.region) invalid($t("zzz-holo-boss.text_e6dcb75782"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid("游戏标识");
-  if (data.schedule_type !== undefined && count(data.schedule_type, 2) !== identity.scheduleType) invalid("期次");
+  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-holo-boss.text_a81ce382a1"));
+  if (data.schedule_type !== undefined && count(data.schedule_type, 2) !== identity.scheduleType) invalid($t("zzz-holo-boss.text_4a703a03f5"));
   const rooms = data.list ?? [];
-  if (!Array.isArray(rooms) || rooms.length > 8) invalid("挑战列表");
+  if (!Array.isArray(rooms) || rooms.length > 8) invalid($t("zzz-holo-boss.text_3ed0782680"));
   if (!data.unlock || !rooms.length) return { ...identity, status: "empty", undamaged: 0, bosses: [] };
   const start = wallTime(data.start_time);
   const end = wallTime(data.end_time);
-  if (start && end && start >= end) invalid("统计周期");
+  if (start && end && start >= end) invalid($t("zzz-holo-boss.text_f4f09df9e1"));
   const bosses = rooms.map(room);
   return {
     ...identity, status: "available", period: start && end ? { start, end } : undefined, bosses,

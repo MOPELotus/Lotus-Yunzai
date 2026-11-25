@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { fileURLToPath } from "node:url";
 import { migrateTrssWishSnapshot, migrationArguments, type MigrationInputs } from "../lib/migration-trss-wish.ts";
 import { planMigration, type LegacyMigrationPlan } from "../lib/plugins/migration-plan.ts";
@@ -14,7 +18,7 @@ export async function preflightMigration(source: string, target: string, inputs:
 if (import.meta.main) {
   const selected = migrationArguments(Bun.argv.slice(2), Bun.env.LOTUS_GENSHIN_TRSS_WISH_SNAPSHOT_URL);
   if (!selected) {
-    console.error("用法：bun run migrate:plan <旧安装副本路径> [--trss-wish-authorization 授权JSON]");
+    console.error($t("scripts.migrate-plan.text_d455546f2b"));
     process.exitCode = 2;
   } else {
     try {
@@ -22,7 +26,7 @@ if (import.meta.main) {
       console.log(JSON.stringify(plan, null, 2));
     } catch (error) {
       if (error instanceof Error && !("code" in error)) console.error(error.message);
-      else console.error("迁移预检无法读取旧安装副本或目标安装。");
+      else console.error($t("scripts.migrate-plan.text_1fe31f97a4"));
       process.exitCode = 1;
     }
   }

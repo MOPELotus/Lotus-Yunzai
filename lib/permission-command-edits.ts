@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { fileURLToPath } from "node:url";
 import { accountScopePolicies, accountScopes, groupExportScopes, mediaDownloadScopes, mediaOwnerScopePolicies,
   mediaOwnerScopes, type AccountScopePolicy } from "./account-scope-policy.ts";
@@ -15,7 +18,7 @@ type Edit = { readonly type: "defaultPolicy"; readonly policy: GlobalPermissionP
 
 const allowedScopes: readonly string[] = [...accountScopes, ...groupExportScopes, "group.cleanup", ...mediaDownloadScopes];
 const restartScopes: readonly string[] = accountScopes.filter(scope => scope !== "scheduler.manage");
-const restartNote = "签到注册、登录信息刷新、计划生成和执行在宿主重启后采用新设置。";
+const restartNote = $t("lib.permission-command-edits.text_25b5aee137");
 const aliases: Readonly<Record<string, AccountScopePolicy>> = {
   允许: "allow", 拒绝: "deny", 继承: "inherit", 主人: "master_only", 主人限定: "master_only", master: "master_only",
 };
@@ -50,14 +53,14 @@ export function parsePermissionEdit(text: string): Edit | "invalid" | "unsupport
 export async function editChatPermissions(root: URL, edit: Edit, session: {
   readonly active: () => boolean; readonly signal: AbortSignal; readonly actor: string; readonly group?: number;
 }): Promise<{ readonly note: string; readonly changed: boolean } | string> {
-  if (!session.active()) return "当前会话不能修改业务权限。";
+  if (!session.active()) return $t("lib.permission-command-edits.text_2ed34cb807");
   const path = fileURLToPath(new URL("data/audit/permissions.jsonl", root));
   const entry = { actor: session.actor, group: session.group === undefined ? "" : String(session.group), command: edit, operation: crypto.randomUUID() };
   function audit(phase: "plan" | "result", result: string) {
     return appendPrivateAuditLine(path, { time: new Date().toISOString(), ...entry, phase, result });
   }
   try { await audit("plan", "pending"); }
-  catch { return "无法记录业务权限操作，配置未修改。"; }
+  catch { return $t("lib.permission-command-edits.text_7a276a6b98"); }
 
   let changed: boolean;
   try {
@@ -92,20 +95,20 @@ export async function editChatPermissions(root: URL, edit: Edit, session: {
     });
   } catch (error) {
     await audit("result", "rejected").catch(() => {});
-    if (error instanceof LegacyPermissionAlias) return "该号码仍由旧配置固定，无法从当前名单移除。";
-    if (error instanceof GlobalConfigWriteError && error.reason === "conflict") return "权限配置已在别处修改，请重试。";
-    return "未能修改业务权限，请检查当前配置和授权。";
+    if (error instanceof LegacyPermissionAlias) return $t("lib.permission-command-edits.text_a43412628b");
+    if (error instanceof GlobalConfigWriteError && error.reason === "conflict") return $t("lib.permission-command-edits.text_9f1dfa2b8c");
+    return $t("lib.permission-command-edits.text_ac358dfadf");
   }
   try { await audit("result", changed ? "ok" : "unchanged"); }
-  catch { return changed ? "配置已保存，操作结果未写入审计。操作计划已留存。" : "未修改配置，操作结果未写入审计。"; }
-  if (!changed) return { note: "权限配置已经是指定状态。", changed };
+  catch { return changed ? $t("lib.permission-command-edits.text_14e46522c2") : $t("lib.permission-command-edits.text_219bbb5fbe"); }
+  if (!changed) return { note: $t("lib.permission-command-edits.text_eb8f8d3ab2"), changed };
   if (edit.type === "defaultPolicy") {
-    return { note: `已切换到${edit.policy === "deny" ? "白名单" : "黑名单"}模式，影响继承全局权限的业务。\n${restartNote}`, changed };
+    return { note: $t("lib.permission-command-edits.text_94fd7bd339", { "value1": edit.policy === "deny" ? $t("lib.permission-command-edits.text_27e2d9e2d9") : $t("lib.permission-command-edits.text_174ec5a4ab"), "restartNote": restartNote }), changed };
   }
   if (edit.type === "scopePolicy") {
-    const notice = restartScopes.includes(edit.scope) ? "宿主重启后采用新设置。" : "";
-    return { note: `已将 ${edit.scope} 设为 ${edit.policy}。${notice}`, changed };
+    const notice = restartScopes.includes(edit.scope) ? $t("lib.permission-command-edits.text_e45d7b8e16") : "";
+    return { note: $t("lib.permission-command-edits.text_a13c99fa66", { "scope": edit.scope, "policy": edit.policy, "notice": notice }), changed };
   }
-  const action = edit.action === "allow" ? "允许" : edit.action === "deny" ? "拒绝" : "移除";
-  return { note: `已${action}${edit.subject === "groups" ? "群" : "用户"} ${edit.id}。\n${restartNote}`, changed };
+  const action = edit.action === "allow" ? $t("lib.permission-command-edits.text_ce7ef28b67") : edit.action === "deny" ? $t("lib.permission-command-edits.text_136de7a8c4") : $t("lib.permission-command-edits.text_6135d4159e");
+  return { note: $t("lib.permission-command-edits.text_3b0593ccc1", { "action": action, "value2": edit.subject === "groups" ? $t("lib.permission-command-edits.text_0df737cb62") : $t("lib.permission-command-edits.text_0d0e1a86b3"), "id": edit.id, "restartNote": restartNote }), changed };
 }

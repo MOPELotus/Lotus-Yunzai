@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, realpath, rmdir, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
@@ -25,7 +28,7 @@ function mapping(value: unknown): value is Record<string, unknown> {
 
 function parseEntry(value: unknown): Entry {
   if (!mapping(value) || typeof value.time !== "number" || !Number.isSafeInteger(value.time) || value.time < 0 ||
-      (value.status !== "started" && value.status !== "finished")) throw new Error("前瞻自动兑换账本含无效记录。");
+      (value.status !== "started" && value.status !== "finished")) throw new Error($t("lib.migration-redeem-state.text_0e7d23f5eb"));
   return { time: value.time, status: value.status };
 }
 
@@ -47,7 +50,7 @@ function sameFile(expected: Stats, actual: Stats | undefined) {
 }
 
 function changed() {
-  return new Error("前瞻兑换源在读取或暂存期间发生变化。");
+  return new Error($t("lib.migration-redeem-state.text_939ab4eb53"));
 }
 
 async function readFrozen(path: string, maxBytes: number, inventory: Map<string, Stats | undefined>) {
@@ -55,7 +58,7 @@ async function readFrozen(path: string, maxBytes: number, inventory: Map<string,
   inventory.set(path, expected);
   if (!expected) return;
   if (!expected.isFile() || expected.nlink !== 1 || expected.size > maxBytes || await realpath(path) !== path) {
-    throw new Error("前瞻兑换源须为安装副本内无链接且大小受限的普通文件。");
+    throw new Error($t("lib.migration-redeem-state.text_655c663d39"));
   }
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
@@ -69,8 +72,8 @@ async function readFrozen(path: string, maxBytes: number, inventory: Map<string,
     if (!sameFile(expected, await file.stat()) || await realpath(path) !== path) throw changed();
     let value: unknown;
     try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(buffer)); }
-    catch { throw new Error("前瞻兑换源必须是有效的 JSON 对象。"); }
-    if (!mapping(value)) throw new Error("前瞻兑换源必须是有效的 JSON 对象。");
+    catch { throw new Error($t("lib.migration-redeem-state.text_cab5e22222")); }
+    if (!mapping(value)) throw new Error($t("lib.migration-redeem-state.text_cab5e22222"));
     return value;
   } finally {
     await file.close();
@@ -80,7 +83,7 @@ async function readFrozen(path: string, maxBytes: number, inventory: Map<string,
 export async function stageLegacyRedeemState(sourcePath: string, stagePath: string, signal?: AbortSignal) {
   signal?.throwIfAborted();
   const [source, stage] = await Promise.all([realpath(sourcePath), realpath(stagePath)]);
-  if (within(source, stage) || within(stage, source)) throw new Error("旧安装副本与前瞻兑换暂存目录必须分离。");
+  if (within(source, stage) || within(stage, source)) throw new Error($t("lib.migration-redeem-state.text_542cd9eac6"));
 
   const journal = { files: 0, entries: 0, pending: 0, duplicates: 0, conflicts: 0, authoritative: false };
   const activities = { files: 0, games: 0, entries: 0 };
@@ -95,11 +98,11 @@ export async function stageLegacyRedeemState(sourcePath: string, stagePath: stri
     if (saved) {
       journal.files++;
       const marked = Object.hasOwn(saved, marker);
-      if (marked && saved[marker] !== 1) throw new Error("前瞻自动兑换账本版本无效。");
+      if (marked && saved[marker] !== 1) throw new Error($t("lib.migration-redeem-state.text_565b79885f"));
       for (const [key, input] of Object.entries(saved)) {
         signal?.throwIfAborted();
         if (key === marker) continue;
-        if (!batchKey.test(key)) throw new Error("前瞻自动兑换账本含无效批次。");
+        if (!batchKey.test(key)) throw new Error($t("lib.migration-redeem-state.text_08745cae18"));
         const entry = parseEntry(input);
         if (!marked) journal.authoritative = true;
         const prior = entries.get(key);
@@ -145,7 +148,7 @@ export async function stageLegacyRedeemState(sourcePath: string, stagePath: stri
   if (!journal.files && !activities.files) return { journal, activities };
   const parent = join(stage, "data");
   await mkdir(parent, { recursive: true, mode: 0o700 });
-  if (await realpath(parent) !== parent) throw new Error("前瞻兑换暂存数据须位于实体目录。");
+  if (await realpath(parent) !== parent) throw new Error($t("lib.migration-redeem-state.text_18615c6173"));
   const directory = join(parent, "redeemCodes");
   await mkdir(directory, { mode: 0o700 });
   const created: string[] = [];

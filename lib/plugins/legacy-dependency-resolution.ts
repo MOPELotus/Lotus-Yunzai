@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
+import messageCatalog from "../../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { createRequire, isBuiltin } from "node:module";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
@@ -60,7 +63,7 @@ export async function checkRetainedHostDependency(
   const target = await realpath(targetRoot);
   const pluginRoot = join(target, "plugins");
   if (!isAbsolute(finalImporterDirectory) || !isInside(pluginRoot, finalImporterDirectory)) {
-    throw new Error("外部插件依赖检查须使用目标插件内的绝对路径。");
+    throw new Error($t("lib.plugins.legacy-dependency-resolution.text_0793a1805e"));
   }
 
   if (isBuiltin(specifier) && declaredRange === undefined) return { status: "runtime" };

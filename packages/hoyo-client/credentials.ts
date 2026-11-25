@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { createHash, randomInt, randomUUID } from "node:crypto";
 import type { ProfileAccountContext, RefreshedCredentials } from "@lotus-yunzai/account";
 import { HoyoRequestError, requiresServiceVerification } from "./errors.ts";
@@ -45,7 +48,7 @@ function readLogin(account: ProfileAccountContext["account"]) {
     ["mid", "account_mid_v2", "ltmid_v2"].map((key) => cookie.get(key))).find(Boolean) || "";
   if (candidates.size !== 1 || !uid || !/^\d+$/u.test(uid) || !validField(stoken) ||
       (mid && !validField(mid)) || (stoken.startsWith("v2_") && !mid)) {
-    throw new Error("档案登录信息缺失或账号归属冲突。");
+    throw new Error($t("credentials.text_3920a61482"));
   }
   return { uid, stoken, mid };
 }
@@ -100,14 +103,14 @@ function checkIdentity(data: Record<string, unknown>, login: ReturnType<typeof r
   if ((requireUid && !ids.length) || ids.some((value) =>
       (typeof value !== "string" && !(typeof value === "number" && Number.isSafeInteger(value))) || String(value) !== login.uid) ||
       mids.some((value) => !login.mid || String(value) !== login.mid)) {
-    throw new HoyoRequestError("profile-changed", "令牌交换返回的账号身份与档案不一致。");
+    throw new HoyoRequestError("profile-changed", $t("credentials.text_b3aa32f3ae"));
   }
 }
 
 function tokenFields(token: string, key: "ltoken" | "cookie_token", login: ReturnType<typeof readLogin>) {
   const uidKey = key === "ltoken" ? "ltuid" : "account_id";
   if (!token.startsWith("v2_")) return [`${key}=${token}`, `${uidKey}=${login.uid}`];
-  if (!login.mid) throw new Error("v2 令牌缺少配套的账号 MID。");
+  if (!login.mid) throw new Error($t("credentials.text_765c68eea6"));
   const midKey = key === "ltoken" ? "ltmid_v2" : "account_mid_v2";
   return [`${key}_v2=${token}`, `${uidKey}_v2=${login.uid}`, `${midKey}=${login.mid}`];
 }
@@ -134,30 +137,30 @@ export function createCredentialExchange(transport: HoyoTransport = fetch) {
         response = await transport(endpoint, { ...init, redirect: "error", credentials: "omit", proxy: false, signal: deadline });
       } catch {
         signal?.throwIfAborted();
-        throw new HoyoRequestError("transport", `${target} 换票请求未完成。`);
+        throw new HoyoRequestError("transport", $t("credentials.text_624451d9b4", { "target": target }));
       }
       if (!response.ok || response.redirected || (response.url && response.url !== endpoint.href)) {
         await response.body?.cancel().catch(() => undefined);
-        throw new HoyoRequestError("http", `${target} 换票 HTTP 请求失败。`, response.status);
+        throw new HoyoRequestError("http", $t("credentials.text_e7c8543f5a", { "target": target }), response.status);
       }
       const verification = response.headers.get("x-rpc-aigis")?.trim();
       if (verification && verification !== "{}") {
         await response.body?.cancel().catch(() => undefined);
-        throw new HoyoRequestError("api", `${target} 换票需要在官方客户端完成验证。`, response.status);
+        throw new HoyoRequestError("api", $t("credentials.text_79193902c9", { "target": target }), response.status);
       }
       const payload = await readGameRecordPayload(response, 32 * 1024, deadline);
       signal?.throwIfAborted();
       await verifyProfile?.();
       signal?.throwIfAborted();
-      if (timeout.aborted) throw new HoyoRequestError("transport", `${target} 换票超时。`);
-      if (!payload) throw new HoyoRequestError("response", `${target} 换票响应无法读取。`, response.status);
+      if (timeout.aborted) throw new HoyoRequestError("transport", $t("credentials.text_641592e9b6", { "target": target }));
+      if (!payload) throw new HoyoRequestError("response", $t("credentials.text_8809dadbcc", { "target": target }), response.status);
       if (requiresServiceVerification(payload)) {
-        throw new HoyoRequestError("api", `${target} 换票暂时无法核验。`, response.status);
+        throw new HoyoRequestError("api", $t("credentials.text_717358c7ff", { "target": target }), response.status);
       }
       const rawCode = payload.retcode;
       const retcode = typeof rawCode === "string" && /^-?\d{1,10}$/u.test(rawCode) ? Number(rawCode) : rawCode;
       if (retcode !== 0) {
-        throw new HoyoRequestError("api", `${target} 换票未成功。`, response.status,
+        throw new HoyoRequestError("api", $t("credentials.text_30aeb3b0d5", { "target": target }), response.status,
           typeof retcode === "number" && Number.isSafeInteger(retcode) ? retcode : undefined);
       }
       return record(payload.data);
@@ -188,7 +191,7 @@ export function createCredentialExchange(transport: HoyoTransport = fetch) {
     );
     const ltoken = lt.ltoken || record(lt.token).token;
     if (!validField(ltoken)) {
-      throw new HoyoRequestError("response", "换票没有返回有效的 LToken。");
+      throw new HoyoRequestError("response", $t("credentials.text_ab7cc83061"));
     }
     checkIdentity(lt, login, false);
 
@@ -198,7 +201,7 @@ export function createCredentialExchange(transport: HoyoTransport = fetch) {
     );
     const cookieToken = ck.cookie_token || record(ck.token).token;
     if (!validField(cookieToken)) {
-      throw new HoyoRequestError("response", "换票没有返回有效的 CookieToken。");
+      throw new HoyoRequestError("response", $t("credentials.text_5ae4bd2792"));
     }
     checkIdentity(ck, login, true);
 

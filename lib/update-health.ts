@@ -1,9 +1,12 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { delimiter, dirname, isAbsolute } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { isGitRevision } from "./local-git.ts";
 import { pluginProbeTokenEnvironment, pluginStartupGraceMs, readPluginLoading } from "./plugin-load-progress.ts";
 
-const failure = "更新候选运行状态验证失败。";
+const failure = $t("lib.update-health.text_02cecbc624");
 const listenLine = /(?:^|\n)HTTP 正在监听 http:\/\/127\.0\.0\.1:([1-9]\d{0,4})\/status\r?\n/u;
 const stopTimeout = 1_000;
 const maxBodyBytes = 4_096;

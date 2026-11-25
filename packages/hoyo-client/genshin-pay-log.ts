@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../i18n/index.ts";
+import messageCatalog from "./i18n/zh-CN.json";
+const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { HoyoTransport } from "./credentials.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 
@@ -99,7 +102,7 @@ export async function readOnlineGenshinPayLog(auth: string, uid: string, verify:
     const tier = tiers.indexOf(amount);
     const index = tier < 0 ? firstPurchases.indexOf(amount) : tier;
     if (index < 0) continue;
-    const entry = monthData.get(month) ?? { month: `${Number(month.slice(-2))}月`, payNum: Array<number>(tiers.length).fill(0) };
+    const entry = monthData.get(month) ?? { month: $t("genshin-pay-log.text_fa4962f757", { "value1": Number(month.slice(-2)) }), payNum: Array<number>(tiers.length).fill(0) };
     entry.payNum[index] = (entry.payNum[index] ?? 0) + 1;
     monthData.set(month, entry);
     if (amount !== 680) crystal += amount;

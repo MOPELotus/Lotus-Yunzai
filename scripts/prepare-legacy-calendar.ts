@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdtemp, open, readdir, realpath, rename, rm } from "node:fs/promises";
@@ -14,7 +18,7 @@ async function existingBundle(path: string, files: Readonly<Record<string, strin
     if (error.code !== "ENOENT") throw error;
   });
   if (!metadata) return false;
-  const conflict = () => new Error("已有导出目录的内容不一致，请选另一个导出父目录。");
+  const conflict = () => new Error($t("scripts.prepare-legacy-calendar.text_1f27536cc7"));
   if (!metadata.isDirectory()) throw conflict();
   const names = await readdir(path);
   if (names.length !== Object.keys(files).length || names.some((name) => !Object.hasOwn(files, name))) throw conflict();
@@ -62,7 +66,7 @@ const args = process.argv.slice(2);
 const exporting = args[0] === "--export";
 const [parent, snapshot] = exporting ? args.slice(1) : [undefined, args[0]];
 if (!snapshot || snapshot.startsWith("--") || (exporting ? !parent || parent.startsWith("--") || args.length !== 3 : args.length !== 1)) {
-  console.error("用法：bun scripts/prepare-legacy-calendar.ts [--export <独立导出父目录>] <新版日历状态副本>");
+  console.error($t("scripts.prepare-legacy-calendar.text_7582c71be9"));
   process.exit(2);
 }
 
@@ -71,7 +75,7 @@ try {
   const result = parent ? await exportBundle(parent, files) : { changed: false };
   console.log(JSON.stringify({ mode: exporting ? "export" : "dry-run", ...counts, ...result }));
 } catch (error) {
-  console.error(error instanceof SyntaxError ? "定时日历副本不是有效的 JSON。"
-    : error instanceof Error && !("code" in error) ? error.message : "无法读取定时日历副本或写入独立导出目录。");
+  console.error(error instanceof SyntaxError ? $t("scripts.prepare-legacy-calendar.text_3a79247f51")
+    : error instanceof Error && !("code" in error) ? error.message : $t("scripts.prepare-legacy-calendar.text_abf691c134"));
   process.exitCode = 1;
 }

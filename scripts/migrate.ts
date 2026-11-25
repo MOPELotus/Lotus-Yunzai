@@ -1,3 +1,7 @@
+import "../lib/i18n-preload.ts";
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, readFile, realpath, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,17 +56,17 @@ interface PreparedMigration {
 
 async function loadPrepared(directory: string, source: string, target: string): Promise<PreparedMigration> {
   const info = await lstat(directory);
-  if (!info.isDirectory() || (info.mode & 0o077) !== 0) throw new Error("迁移暂存须为私有实体目录。");
+  if (!info.isDirectory() || (info.mode & 0o077) !== 0) throw new Error($t("scripts.migrate.text_5799c14bc5"));
   const file = join(directory, "plan.json");
   const metadata = await lstat(file);
-  if (!metadata.isFile() || metadata.nlink !== 1 || metadata.size > 256 * 1024) throw new Error("迁移暂存清单无效。");
+  if (!metadata.isFile() || metadata.nlink !== 1 || metadata.size > 256 * 1024) throw new Error($t("scripts.migrate.text_2520464652"));
   const result = JSON.parse(await readFile(file, "utf8")) as PreparedMigration;
   if (!result || result.version !== 1 || !Array.isArray(result.plugins) ||
       !result.plugins.every(path => typeof path === "string") || !result.report || typeof result.report !== "object") {
-    throw new Error("迁移暂存清单无效。");
+    throw new Error($t("scripts.migrate.text_2520464652"));
   }
   if (result.source !== source || result.target !== target) {
-    throw new Error("当前目标已有使用另一来源的迁移记录。请核对要使用的安装目录。");
+    throw new Error($t("scripts.migrate.text_4eaffaac91"));
   }
   return result;
 }
@@ -132,14 +136,14 @@ async function prepare(source: string, target: string, directory: string, inputs
 export async function migrateInstallation(sourcePath: string, targetPath: string, signal?: AbortSignal, inputs: MigrationInputs = {}) {
   const [source, target] = await Promise.all([realpath(sourcePath), realpath(targetPath)]);
   const directory = join(dirname(target), "." + basename(target) + ".lotus-migration-prepared");
-  const lock = await lockFile(directory + ".sqlite", "旧安装迁移", 0);
+  const lock = await lockFile(directory + ".sqlite", $t("scripts.migrate.text_c4f9e29ea5"), 0);
   try {
     signal?.throwIfAborted();
     const prepared = await exists(directory)
       ? await loadPrepared(directory, source, target)
       : await prepare(source, target, directory, inputs, signal);
     if (inputs.trssWishSnapshot && !prepared.report.trssWish) {
-      throw new Error("现有迁移暂存未包含旧 TRSS 限抽。需要续接时请从新目标重新准备带授权的迁移。");
+      throw new Error($t("scripts.migrate.text_ae1b21dded"));
     }
     signal?.throwIfAborted();
     const result = await publishMigrationPayload(target, join(directory, "payload"), async () => {
@@ -154,11 +158,11 @@ export async function migrateInstallation(sourcePath: string, targetPath: string
 if (import.meta.main) {
   const selected = migrationArguments(Bun.argv.slice(2), Bun.env.LOTUS_GENSHIN_TRSS_WISH_SNAPSHOT_URL);
   if (!selected) {
-    console.error("用法：bun run migrate <旧安装快照路径> [--trss-wish-authorization 授权JSON]");
+    console.error($t("scripts.migrate.text_53e0d37568"));
     process.exitCode = 2;
   } else {
     const controller = new AbortController();
-    const interrupt = () => controller.abort(new Error("旧安装迁移已中止。"));
+    const interrupt = () => controller.abort(new Error($t("scripts.migrate.text_c6d906eede")));
     process.on("SIGINT", interrupt);
     process.on("SIGTERM", interrupt);
     try {
@@ -166,7 +170,7 @@ if (import.meta.main) {
       console.log(JSON.stringify(outcome, null, 2));
     } catch (error) {
       if (error instanceof Error && !("code" in error)) console.error(error.message);
-      else console.error("旧安装迁移未能完成。");
+      else console.error($t("scripts.migrate.text_2fa1ad7929"));
       process.exitCode = 1;
     } finally {
       process.off("SIGINT", interrupt);

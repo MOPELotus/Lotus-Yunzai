@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, symlink } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -45,7 +46,7 @@ test("当前宿主仅接受主人发送整轮公告与资讯命令，缺存储�
   }, 2400, preload, async root => {
     const target = join(root, "plugins", "notice");
     await cp(new URL("../plugins/notice", import.meta.url), target, { recursive: true, filter: name => ![".git", "node_modules"].includes(basename(name)) });
-    await symlink(join(import.meta.dir, "../packages"), join(root, "packages"), "dir");
+    await linkHostPackages(root);
     await symlink(join(import.meta.dir, "../plugins/notice/node_modules"), join(target, "node_modules"), "dir");
   });
 });

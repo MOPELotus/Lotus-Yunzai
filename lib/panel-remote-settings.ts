@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
@@ -40,15 +43,15 @@ export function panelRemoteSettings(root: URL) {
     const elevated = isRemoteAdministrator();
     return {
       fields: [
-        { key: "paired", label: "本机 TOTP 配对", type: "boolean", readonly: true,
-          hint: "在私人本机终端运行 bun --no-env-file scripts/remote-otp.ts setup 配对，使用 reset 更换验证器。" },
-        { key: "enabled", label: "允许远程运维", type: "boolean", readonly: !current.enabled && !(ready && supported),
-          hint: "仅支持已在本机配对的 Linux 或 Windows 宿主。关闭后拒绝新操作并阻止尚未写入的文件发布。" },
-        { key: "timeout", label: "命令超时（毫秒）", type: "number", min: 100, max: 120_000 },
-        { key: "shells", label: "允许的 Shell", type: "list", hint: "一行一个，可选 sh、bash、zsh、pwsh、powershell、cmd。仅能运行宿主已安装的 Shell。" },
-        { key: "allowAdmin", label: "允许管理员入口", type: "boolean", readonly: !current.allowAdmin && !(supported && elevated),
-          hint: "仅当 Linux 宿主以 root 身份运行或 Windows 宿主已经拥有管理员令牌时可启用。不会改变进程权限。" },
-        { key: "overwrite", label: "允许普通上传覆盖同名文件", type: "boolean" },
+        { key: "paired", label: $t("lib.panel-remote-settings.text_3a4d722d83"), type: "boolean", readonly: true,
+          hint: $t("lib.panel-remote-settings.text_0a1a264563") },
+        { key: "enabled", label: $t("lib.panel-remote-settings.text_c18ff17e7e"), type: "boolean", readonly: !current.enabled && !(ready && supported),
+          hint: $t("lib.panel-remote-settings.text_234c46b1a2") },
+        { key: "timeout", label: $t("lib.panel-remote-settings.text_aa4c8bfaf2"), type: "number", min: 100, max: 120_000 },
+        { key: "shells", label: $t("lib.panel-remote-settings.text_bfc205d564"), type: "list", hint: $t("lib.panel-remote-settings.text_999524176b") },
+        { key: "allowAdmin", label: $t("lib.panel-remote-settings.text_f27f582a3c"), type: "boolean", readonly: !current.allowAdmin && !(supported && elevated),
+          hint: $t("lib.panel-remote-settings.text_98523a008e") },
+        { key: "overwrite", label: $t("lib.panel-remote-settings.text_2ba2976e85"), type: "boolean" },
       ],
       values: { ...current, paired: ready },
     };
@@ -71,7 +74,7 @@ export function panelRemoteSettings(root: URL) {
       if (!previous || !values) return new Response(null, { status: 400 });
       const mayEnable = () => (previous.enabled || !values.enabled || supported && paired()) &&
         (previous.allowAdmin || !values.allowAdmin || supported && isRemoteAdministrator());
-      if (!mayEnable()) return Response.json({ message: "请先完成本机配对，管理员入口还需要宿主已经具备管理员权限。" }, { status: 403 });
+      if (!mayEnable()) return Response.json({ message: $t("lib.panel-remote-settings.text_b84abd1ec9") }, { status: 403 });
       await updateLocalConfiguration(root, "remote", {
         signal: request.signal,
         canWrite: active,

@@ -1,3 +1,6 @@
+import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
+import messageCatalog from "../i18n/zh-CN.json";
+const $t = createTextTranslator("core", messageCatalog.messages);
 import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { readMigrationSourceFile } from "./migration-files.ts";
@@ -45,7 +48,7 @@ export async function stageLegacyLolomiConfig(archive: string | undefined, stage
 
   const output = join(stage, "config");
   await mkdir(output, { mode: 0o700, recursive: true });
-  if (await realpath(output) !== output) throw new Error("原神伤害配置暂存路径须为实体目录。");
+  if (await realpath(output) !== output) throw new Error($t("lib.migration-lolomi-config.text_cbcaef444d"));
   signal?.throwIfAborted();
   await writeFile(join(output, "genshin-damage.yaml"), Bun.YAML.stringify(settings), { flag: "wx", mode: 0o600 });
   return { active: true, deferred: false };
