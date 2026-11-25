@@ -1,6 +1,9 @@
 import { readRegistrationTime } from "./registration-time.ts";
 export { readRegistrationTime } from "./registration-time.ts";
 import { withMiyousheCaptcha } from "./captcha-business.ts";
+import { withHoyoReadRetries } from "./read-retry.ts";
+export { withHoyoReadRetries } from "./read-retry.ts";
+export { withReadRetries } from "@lotus-yunzai/http";
 export type { HoyoTransport } from "./credentials.ts";
 export { requestDeviceFingerprint, DeviceFingerprintError } from "./device-fingerprint.ts";
 import { readGenshinMonthly, type GenshinMonthlyOptions } from "./genshin-monthly.ts";
@@ -155,9 +158,10 @@ interface CookieRevision {
 const sharedRevisions = new Map<string, CookieRevision>();
 
 export function createHoyoClient(
-  transport: HoyoTransport = fetch,
+  baseTransport: HoyoTransport = fetch,
   recovery?: CookieRecovery,
 ) {
+  const transport = withHoyoReadRetries(baseTransport);
   const revisions = recovery?.scope ? sharedRevisions : new Map<string, CookieRevision>();
 
   async function keyFor({ qq, profileId, revision }: ProfileAccountContext): Promise<string> {
@@ -337,7 +341,7 @@ export function createHoyoClient(
       onAttempt?.(profile);
       const guard = recovery && (() => ensureCurrentProfile(profile));
       const current = { ...source, ...profile };
-      return withMiyousheCaptcha(transport, request => reader(current, request, options, guard), {
+      return withMiyousheCaptcha((url, init) => transport(url, { ...init, readRetryGuard: guard }), request => reader(current, request, options, guard), {
         signal: options.signal, verify: guard, context: { qq: profile.qq, profileId: profile.profileId },
         game: "game" in current && (current.game === "gs" || current.game === "sr" || current.game === "zzz") ? current.game : undefined,
       });

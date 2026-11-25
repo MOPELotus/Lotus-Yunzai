@@ -1,7 +1,8 @@
 import { getDefaultCaptchaSolver, type CaptchaChallenge, type CaptchaProof } from "./captcha.ts";
 import { setTimeout as delay } from "node:timers/promises";
+import { transientReadResponse } from "@lotus-yunzai/http";
 import type { ProfileAccountContext } from "@lotus-yunzai/account";
-import type { HoyoTransport } from "./credentials.ts";
+import type { HoyoTransport, HoyoTransportInit } from "./credentials.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 
 const shopOrigin = "https://bbs-api.miyoushe.com";
@@ -145,9 +146,9 @@ async function request(transport: HoyoTransport, url: URL, profile: ProfileAccou
   signal?.throwIfAborted();
   const timeout = AbortSignal.timeout(10_000);
   const deadline = signal ? AbortSignal.any([timeout, signal]) : timeout;
-  const options: RequestInit = {
+  const options: HoyoTransportInit = {
     method: body === undefined ? "GET" : "POST", headers, credentials: "omit", redirect: "error",
-    referrerPolicy: "no-referrer", signal: deadline,
+    referrerPolicy: "no-referrer", signal: deadline, ...(retryRead ? { readRetry: false as const } : {}),
     ...(body === undefined ? {} : { body }),
   };
   let response: Response | undefined;
@@ -159,6 +160,11 @@ async function request(transport: HoyoTransport, url: URL, profile: ProfileAccou
       deadline.throwIfAborted();
     }
     response = await transport(url, options).catch(() => undefined);
+    if (response && attempts > attempt + 1 && transientReadResponse(response) && !response.redirected) {
+      await response.body?.cancel().catch(() => undefined);
+      response = undefined;
+      continue;
+    }
     if (response || deadline.aborted) break;
   }
   if (!response || response.redirected || (response.url && response.url !== url.href)) return;

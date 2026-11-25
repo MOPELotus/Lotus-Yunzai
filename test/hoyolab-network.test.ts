@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { createServer } from "node:net";
 import { hoyoTransportForBot } from "../lib/hoyolab-network.ts";
+import { withHoyoReadRetries } from "../packages/hoyo-client/read-retry.ts";
 
 test("旧国际服代理只隧道转发 HoYoLAB 核验和签到域名，失败不直连", async () => {
   const connections: string[] = [];
@@ -41,7 +42,7 @@ test("旧国际服代理只隧道转发 HoYoLAB 核验和签到域名，失败�
 });
 
 test("空的旧代理配置沿用原传输，无效地址只阻断国际服", async () => {
-  for (const value of [undefined, null, false, ""]) expect(hoyoTransportForBot(value)).toBe(fetch);
+  for (const value of [undefined, null, false, ""]) expect(hoyoTransportForBot(value)).toBe(withHoyoReadRetries(fetch));
   const transport = hoyoTransportForBot("socks5://127.0.0.1:1080");
   await expect(transport(new URL("https://api-account-os.hoyolab.com/"), {})).rejects.toThrow("国际服代理地址无效");
 });

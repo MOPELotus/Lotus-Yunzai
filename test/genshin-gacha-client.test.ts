@@ -44,6 +44,27 @@ device: { id: fixture-device, fp: fixture-fp, android_version: "14", name: Fixtu
   }
 }
 
+test("同次抽卡更新在授权网关失败和单页断连后继续，不重头请求其他卡池", () => profile(async (source, profiles) => {
+  let authCalls = 0;
+  const pools = new Map<string, number>();
+  const client = createHoyoClient(async (url) => {
+    if (url.pathname === authPath) {
+      if (++authCalls === 1) return new Response("gateway", { status: 410, headers: { "Content-Type": "text/html" } });
+      return success({ authkey, game_uid: uid, region });
+    }
+    const pool = url.searchParams.get("gacha_type")!;
+    pools.set(pool, (pools.get(pool) ?? 0) + 1);
+    if (pool === "301" && pools.get(pool) === 1) throw Object.assign(new Error("connection closed"), { code: "ECONNRESET" });
+    return success({ list: [] });
+  }, { profiles, exchange: async () => { throw Error("transient failure must not refresh credentials"); } });
+  const result = await client.fetchGenshinGacha(source, options);
+  expect(result.uid).toBe(uid);
+  expect(result.pools).toHaveLength(4);
+  expect(authCalls).toBe(2);
+  expect(Object.fromEntries(pools)).toEqual({ "301": 2, "302": 1, "500": 1, "200": 1 });
+  expect((await profiles.requestContext("42", 2, "gs")).revision).toBe(source.revision);
+}));
+
 test("只在官方换令牌接口确认档案过期时刷新，逐抽接口失效码不改档案", () => profile(async (source, profiles) => {
   let refreshes = 0;
   let authRequests = 0;

@@ -4,7 +4,9 @@ import { HoyoRequestError, requiresServiceVerification } from "./errors.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 import { passportAppHeaders } from "./passport-qr.ts";
 
-export type HoyoTransport = (endpoint: URL, init: RequestInit & { readonly proxy?: false }) => Promise<Response>;
+export type { ReadTransportInit as HoyoTransportInit } from '@lotus-yunzai/http';
+import type { ReadTransport } from '@lotus-yunzai/http';
+export type HoyoTransport = ReadTransport;
 
 const passportOrigin = "https://passport-api.mihoyo.com";
 const webOrigin = "https://api-takumi.mihoyo.com";

@@ -1,4 +1,4 @@
-import { HoyoRequestError } from "@lotus-yunzai/hoyo-client";
+import { HoyoRequestError, withHoyoReadRetries } from "@lotus-yunzai/hoyo-client";
 
 const internationalOrigins = new Set([
   "https://passport-api-sg.hoyolab.com",
@@ -27,13 +27,13 @@ function parseProxy(address: unknown): URL | undefined {
 export function hoyoTransportForBot(proxyAddress: unknown) {
   const configured = proxyAddress == null || proxyAddress === false ||
     (typeof proxyAddress === "string" && proxyAddress.trim() === "") ? undefined : proxyAddress;
-  if (configured === undefined) return fetch;
+  if (configured === undefined) return withHoyoReadRetries(fetch);
   const proxy = parseProxy(configured);
   if (!proxy) console.warn("[HoYoLAB] bot.yaml 的 proxyAddress 无效，国际服请求已停用。");
 
-  return async (endpoint: URL, init: RequestInit) => {
+  return withHoyoReadRetries(async (endpoint: URL, init: RequestInit) => {
     if (!internationalOrigins.has(endpoint.origin)) return fetch(endpoint, init);
     if (!proxy) throw new HoyoRequestError("transport", "bot.yaml 的国际服代理地址无效。");
     return fetch(endpoint, { ...init, redirect: "error", proxy: { url: proxy, headers: {}, respectNoProxy: false } });
-  };
+  });
 }

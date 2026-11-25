@@ -1,5 +1,6 @@
 import { createHash, randomInt } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
+import { transientReadResponse } from "@lotus-yunzai/http";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -315,9 +316,9 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     if (attempt) await guard();
     try {
       response = await diagnostics.read(() => transport(endpoint, {
-        method, body, headers, credentials: "omit", redirect: "error", signal: deadline,
+        method, body, headers, credentials: "omit", redirect: "error", signal: deadline, readRetry: false,
       }));
-      if (response.status === 410 && /^text\/html(?:\s*;|$)/iu.test(response.headers.get("Content-Type") ?? "") && attempt < 2) {
+      if (transientReadResponse(response) && !response.redirected && attempt < 2) {
         await response.body?.cancel().catch(() => undefined);
         response = undefined;
         await wait(250 * (attempt + 1), undefined, { signal: deadline });

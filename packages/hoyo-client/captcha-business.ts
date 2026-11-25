@@ -1,5 +1,6 @@
 import { createHash, randomInt } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
+import { transientReadResponse } from "@lotus-yunzai/http";
 import type { Game } from "@lotus-yunzai/account";
 import { getDefaultCaptchaSolver, type CaptchaChallenge, type CaptchaEvent, type CaptchaProof } from "./captcha.ts";
 import type { HoyoTransport } from "./credentials.ts";
@@ -172,15 +173,14 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
       deadline.throwIfAborted();
       try {
         response = await transport(url, { method: body === undefined ? "GET" : "POST", headers, body: encoded,
-          signal: deadline, keepalive: false, redirect: "error", credentials: "omit", referrerPolicy: "no-referrer" });
+          signal: deadline, keepalive: false, redirect: "error", credentials: "omit", referrerPolicy: "no-referrer", readRetry: false });
       } catch (error) {
         await guard();
         if (deadline.aborted || attempt + 1 === attempts) throw error;
         await wait(250 * (attempt + 1), undefined, { signal: deadline });
         continue;
       }
-      const gatewayGone = response.status === 410 && /^text\/html(?:\s*;|$)/iu.test(response.headers.get("Content-Type") ?? "");
-      if (gatewayGone && attempt + 1 < attempts) {
+      if (transientReadResponse(response) && !response.redirected && attempt + 1 < attempts) {
         await response.body?.cancel().catch(() => undefined);
         response = undefined;
         await wait(250 * (attempt + 1), undefined, { signal: deadline });

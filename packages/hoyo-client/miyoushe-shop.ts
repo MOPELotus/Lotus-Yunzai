@@ -1,5 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
-import type { HoyoTransport } from "./credentials.ts";
+import { transientReadResponse } from "@lotus-yunzai/http";
+import type { HoyoTransport, HoyoTransportInit } from "./credentials.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 
 const origin = "https://api-takumi.mihoyo.com";
@@ -19,15 +20,19 @@ export async function readMiyousheShop(transport: HoyoTransport, route: "list" |
   url.search = new URLSearchParams({ app_id: "1", point_sn: "myb", ...params }).toString();
   const timeout = AbortSignal.timeout(8_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
-  const request: RequestInit = {
-    method: "GET", credentials: "omit", redirect: "error", signal: deadline,
+  const request: HoyoTransportInit = {
+    method: "GET", credentials: "omit", redirect: "error", signal: deadline, readRetry: false,
     headers: { Accept: "application/json", Origin: "https://user.mihoyo.com", Referer: "https://user.mihoyo.com/",
       "x-rpc-client_type": "5" },
   };
   let pending: Response | undefined;
-  // Only repeat an anonymous GET whose transport failed before an HTTP response.
+  // Anonymous reads share one three-attempt budget for transport/gateway failures.
   for (let attempt = 0; attempt < 3 && !deadline.aborted; attempt++) {
     pending = await transport(url, request).catch(() => undefined);
+    if (pending && attempt < 2 && transientReadResponse(pending) && !pending.redirected) {
+      await pending.body?.cancel().catch(() => undefined);
+      pending = undefined;
+    }
     if (pending || deadline.aborted || attempt === 2) break;
     await delay(150 * (attempt + 1), undefined, { signal: deadline }).catch(() => undefined);
   }
