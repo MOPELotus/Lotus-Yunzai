@@ -18,7 +18,7 @@ function document(qq: string, id: number, own: Readonly<Record<keyof typeof game
   const roles = (uids: readonly string[], region: string, gameBiz: string) =>
     uids.map((uid, index) => ({ uid, nickname: `样本${index + 1}`, region, game_biz: gameBiz }));
   return {
-    user: { qq }, profile: { id }, account: {
+    user: { qq }, profile: { id }, device: { id: `fixture-device-${qq}-${id}`, fp: "0123456789abc", bound: true }, account: {
       stuid: "99042", stoken: "fixture-private-token", cookie: "ltuid=99042; ltoken=fixture-private-cookie",
       current_uid: { gs: own.gs[0], sr: own.sr[0], zzz: own.zzz[0], bh3: "7654321" },
       game_roles: { gs: roles(own.gs, "cn_gf01", "hk4e_cn"), sr: roles(own.sr, "prod_gf_cn", "hkrpg_cn"),

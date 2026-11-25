@@ -21,6 +21,12 @@ export async function linkHostPackages(root: string) {
   }
 }
 
+/** Opt rendering fixtures into an initialized deployment's repository-owned bundle. */
+export async function linkHostBuiltinResources(root: string) {
+  await mkdir(join(root, "resources"), { recursive: true });
+  await symlink(join(import.meta.dir, "../resources/builtin"), join(root, "resources/builtin"), "dir");
+}
+
 export async function copyHost(root: string) {
   await cp(new URL("../lib", import.meta.url), join(root, "lib"), { recursive: true });
   await cp(new URL("../i18n", import.meta.url), join(root, "i18n"), { recursive: true });

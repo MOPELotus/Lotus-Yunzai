@@ -70,7 +70,8 @@ async function prepare(root: string) {
   await writeFile(join(root, "theme/meta-gs/weapon/sword/data.json"), JSON.stringify({ 11513: { name: "静水流涌之辉" } }));
   for (const [id, uid] of [[1, privateUid], [2, reloadUid]] as const) {
     await writeFile(join(root, "profiles", id === 1 ? "42.yaml" : "42-2.yaml"), Bun.YAML.stringify({
-      user: { qq: "42" }, profile: { id }, account: {
+      user: { qq: "42" }, profile: { id },
+      device: { id: `fixture-device-42-${id}`, fp: "0123456789abc", bound: true }, account: {
         ltuid: "900001", stuid: "900001", stoken: "synthetic-stoken",
         cookie: "account_id=900001;cookie_token=synthetic-token",
         game_roles: { gs: [{ uid, region: "cn_gf01", game_biz: "hk4e_cn" }] }, current_uid: { gs: uid },

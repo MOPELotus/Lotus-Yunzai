@@ -109,6 +109,7 @@ globalThis.fetch = async (input, options) => {
     await writeFile(join(root, "rank-writes.jsonl"), "");
     await writeFile(join(root, "profiles/42.yaml"), Bun.YAML.stringify({
       user: { qq: String(qid) }, profile: { id: 1 }, enabled: true,
+      device: { id: "fixture-zzz-rank-device", fp: "0123456789abc", bound: true },
       account: { stuid: "71526", ltuid: "71526", stoken: "v2_fixture", mid: "fixture",
         cookie: "ltuid_v2=71526; ltmid_v2=fixture; ltoken_v2=v2_fixture; cookie_token_v2=v2_cookie" },
       games: { os: { verified_activity_cookie: cookie, verified_account_id: "810", verified_realm: "US" } },

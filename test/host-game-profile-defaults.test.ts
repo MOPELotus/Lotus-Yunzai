@@ -23,7 +23,8 @@ function archive(qq: number, id: number, credentials: number, uids: Partial<Reco
       region: game === "gs" ? "cn_gf01" : "prod_gf_cn",
       game_biz: game === "gs" ? "hk4e_cn" : game === "sr" ? "hkrpg_cn" : "nap_cn" }] : []];
   }));
-  return Bun.YAML.stringify({ user: { qq: String(qq) }, profile: { id }, account: {
+  return Bun.YAML.stringify({ user: { qq: String(qq) }, profile: { id },
+    device: { id: `fixture-device-${qq}-${id}`, fp: "0123456789abc", bound: true }, account: {
     stuid: String(credentials), stoken: "fixture-stoken", cookie: `account_id=${credentials}; ltoken=fixture-cookie`,
     current_uid: uids, game_roles,
   } });
@@ -187,7 +188,7 @@ globalThis.fetch = Object.assign(async (input, options) => {
       await one("%面板", gameRoles.zzz[1]);
       await rename(join(root, "profiles", "42-2.yaml"), join(root, "profiles", "42-2.archived"));
       await one("#原神面板", gameRoles.gs[0]);
-      await one("#面板2", "profile 2");
+      await one("#面板2", "请先登录档案 2");
       await one("#星铁面板", gameRoles.sr[1]);
       expect((await sendMilky("%UID1", { sender_id: 42, peer_id: 42 })).status).toBe(200);
       const reset = await milky.next("send_private_message");

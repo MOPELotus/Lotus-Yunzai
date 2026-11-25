@@ -1,4 +1,4 @@
-import { linkHostPackages } from "./host-fixture.ts";
+import { linkHostBuiltinResources, linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { appendFile, cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -88,6 +88,7 @@ test("星铁历史超过三期完整转发，双协议读简易前期、空页�
     await cp(plugin, installed, { recursive: true, filter: file => ![".git", "node_modules", "test"].includes(basename(file)) });
     await symlink(join(plugin, "node_modules"), join(installed, "node_modules"), "dir");
     await linkHostPackages(root);
+    await linkHostBuiltinResources(root);
     const evidence = Bun.env.LOTUS_SR_CHALLENGE_EVIDENCE;
     if (evidence && await Bun.file(join(evidence, "theme/floor12.png")).exists()) {
       await cp(join(evidence, "theme"), join(root, "data/starrail/challenge-theme"), { recursive: true });
@@ -101,7 +102,7 @@ test("星铁历史超过三期完整转发，双协议读简易前期、空页�
         "version: 1", `user: { qq: "${qq}" }`, `profile: { id: ${id} }`, "account:",
         `  cookie: "cookie_token=cn-${qq}-${id}"`, `  stuid: "${qq}"`, "  stoken: fixture-session",
         `  game_roles: { sr: [{ uid: "${uid}", region: "${region}", game_biz: "${gameBiz}" }] }`,
-        `  current_uid: { sr: "${uid}" }`, `device: { id: "device-${qq}-${id}" }`, "",
+        `  current_uid: { sr: "${uid}" }`, `device: { id: "device-${qq}-${id}", fp: "0123456789abc", bound: true }`, "",
       ].join("\n"));
     }
   });

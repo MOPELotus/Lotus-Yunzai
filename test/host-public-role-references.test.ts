@@ -159,7 +159,7 @@ test("两个真实宿主网关只让好友管理自身公开引用，三游戏�
     await other("*导出面板 100000043", "请先签名验证本人 UID 100000043");
     await other("*体力", "正在查询");
     const note = await milky.next("send_private_message");
-    expect(JSON.stringify(note.params)).toContain("没有找到可查询的 profile");
+    expect(JSON.stringify(note.params)).toContain("没有找到可查询的档案");
     note.respond({ message_seq: ++id });
     const mixed = await one("#UID", "公开当前 1");
     expect(mixed.match(/100000042/gu)).toHaveLength(1);

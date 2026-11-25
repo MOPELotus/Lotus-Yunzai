@@ -24,6 +24,7 @@ test("旧注册时间只给本人好友私聊读取与当前档案匹配的三�
   const zzz = cache("backup/plugins", "zzz_RegTime");
   const profileContents = Bun.YAML.stringify({
     user: { qq: "42" }, profile: { id: 1 },
+    device: { id: "fixture-anniversary-device", fp: "0123456789abc", bound: true },
     account: { cookie: "ltoken=fixture-cookie", stoken: "fixture-stoken", game_roles: {
       gs: [{ uid: gsUid, region: "cn_gf01", game_biz: "hk4e_cn" }],
       sr: [{ uid: srUid, region: "prod_gf_cn", game_biz: "hkrpg_cn" }],
@@ -41,7 +42,7 @@ test("旧注册时间只给本人好友私聊读取与当前档案匹配的三�
   function spawn() {
     return Bun.spawn([process.execPath, "--no-env-file", "app.ts"], {
       cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe",
-      env: { PATH: process.env.PATH, LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token, LOTUS_PROFILE_DIR: profiles },
+      env: { PATH: process.env.PATH, LOTUS_HTTP_PORT: "0", LOTUS_ONEBOT_PORT: "0", LOTUS_ONEBOT_TOKEN: token, LOTUS_PROFILE_DIR: profiles },
     });
   }
 

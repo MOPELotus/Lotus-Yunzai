@@ -1,4 +1,4 @@
-import { linkHostPackages } from "./host-fixture.ts";
+import { linkHostBuiltinResources, linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, rename, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -60,10 +60,11 @@ async function prepare(root: string) {
   await cp(source, plugin, { recursive: true, filter: path => ![".git", "node_modules"].includes(basename(path)) });
   await symlink(join(source, "node_modules"), join(plugin, "node_modules"), "dir");
   await linkHostPackages(root);
+  await linkHostBuiltinResources(root);
   await mkdir(join(root, "profiles"), { recursive: true });
   for (const qq of [42, 43]) {
     await writeFile(join(root, "profiles", qq + ".yaml"), Bun.YAML.stringify({
-      user: { qq: String(qq) }, account: { cookie: `account_id=${qq};cookie_token=local-fixture;ltuid=${qq};ltoken=fixture`,
+      user: { qq: String(qq) }, device: { id: `fixture-device-${qq}`, fp: "0123456789abc", bound: true }, account: { cookie: `account_id=${qq};cookie_token=local-fixture;ltuid=${qq};ltoken=fixture`,
         stuid: String(qq), stoken: "fixture", ltuid: String(qq), ltoken: "fixture",
         game_roles: { gs: [{ uid, region: "cn_gf01", game_biz: "hk4e_cn" }] }, current_uid: { gs: uid },
       },
@@ -110,6 +111,10 @@ test("原神探索上限和活动武器名单经原始指令逐次热读，坏�
       mil.respond({ message_seq: 300 + iteration });
     }
     const raw = await Bun.file(join(root, "draws.jsonl")).text();
+    if (proof) {
+      await Bun.write(join(proof, "draws.jsonl"), raw);
+      for (const [index, bytes] of images.entries()) await Bun.write(join(proof, `${index}.png`), bytes);
+    }
     const draw: { readonly labels: readonly string[] }[] = raw.trim().split("\n").map(line => JSON.parse(line));
     expect(draw).toHaveLength(6);
     const positions = (labels: readonly string[], name: string) => labels.indexOf(name);
@@ -121,14 +126,11 @@ test("原神探索上限和活动武器名单经原始指令逐次热读，坏�
       expect(labels).toContain(index === 2 ? "B[70.71%]" : "D");
       expect(labels).not.toContain("/111");
     }
-    for (const [index, first, second] of [[1, "祭礼残章", "嘟嘟可故事集"], [3, "嘟嘟可故事集", "祭礼残章"],
-      [5, "祭礼残章", "嘟嘟可故事集"]] as const) {
+    // The original weapon template uses the bundled short alias for long names.
+    for (const [index, first, second] of [[1, "祭礼残章", "嘟嘟可"], [3, "嘟嘟可", "祭礼残章"],
+      [5, "祭礼残章", "嘟嘟可"]] as const) {
       expect(positions(draw[index]!.labels, first)).toBeGreaterThan(-1);
       expect(positions(draw[index]!.labels, second)).toBeGreaterThan(positions(draw[index]!.labels, first));
-    }
-    if (proof) {
-      await Bun.write(join(proof, "draws.jsonl"), raw);
-      for (const [index, bytes] of images.entries()) await Bun.write(join(proof, `${index}.png`), bytes);
     }
   }, 10_000, preload, prepare);
 }, 24_000);

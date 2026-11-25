@@ -1,13 +1,14 @@
-import { linkHostPackages } from "./host-fixture.ts";
+import { linkHostBuiltinResources, linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, symlink, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, join } from "node:path";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const imageEndpoint = "https://upload-static.mihoyo.com/fixture-tarot.png";
 const tarotEndpoint = "https://api-takumi-record.mihoyo.com/game_record/app/genshin/api/role_combat";
 const assets = Bun.env.LOTUS_TAROT_ARTIFACTS_DIR;
+const skiaEntry = join(import.meta.dir, "../packages/skia/node_modules/skia-canvas/lib/index.js");
 const fixtureIcon = { icon: imageEndpoint };
 const album = (first: number, second: number) => ({ curr_num: 1, total_num: 2, list: [
   { name: "旅人", is_unlock: !!first, unlock_num: first, ...fixtureIcon },
@@ -18,7 +19,19 @@ function preload() {
   return `
 const nativeFetch = globalThis.fetch;
 Bun.env.LOTUS_PROFILE_DIR = "./profiles";
-${assets ? 'Bun.env.LOTUS_SKIA_MODE = "gpu";' : ''}
+${assets ? `
+import { Canvas } from ${JSON.stringify(skiaEntry)};
+import { appendFileSync } from "node:fs";
+Bun.env.LOTUS_SKIA_MODE = "gpu";
+Bun.env.VK_DRIVER_FILES = "/usr/share/vulkan/icd.d/nvidia_icd.json";
+const write = Canvas.prototype.toBuffer;
+Canvas.prototype.toBuffer = async function (...args) {
+  const output = await write.call(this, ...args);
+  if (this.engine.renderer !== "GPU" || this.engine.api !== "Vulkan" || !this.engine.device?.includes("RTX A4000")) throw Error("缺少物理显卡验证");
+  appendFileSync(${JSON.stringify(join(assets, "engine.jsonl"))}, JSON.stringify(this.engine) + "\\n");
+  return output;
+};
+` : ""}
 const seen = [];
 globalThis.fetch = async (address, options) => {
   const url = new URL(address instanceof Request ? address.url : address);
@@ -49,28 +62,22 @@ async function prepare(root: string) {
   await cp(source, destination, { recursive: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });
   await symlink(join(source, "node_modules"), join(destination, "node_modules"), "dir");
   await linkHostPackages(root);
+  await linkHostBuiltinResources(root);
   await mkdir(join(root, "profiles"), { recursive: true });
   for (const [qq, id, uid, region] of [[42, 2, "100000042", "cn_gf01"], [43, 1, "500000043", "cn_qd01"]] as const) {
     await writeFile(join(root, "profiles", `${qq}${id > 1 ? "-" + id : ""}.yaml`), Bun.YAML.stringify({
-      user: { qq: String(qq) }, profile: { id }, account: {
+      user: { qq: String(qq) }, profile: { id },
+      device: { id: `fixture-tarot-device-${qq}`, fp: "0123456789abc", bound: true }, account: {
         cookie: `account_id=${qq};cookie_token=tarot-test-${qq};ltuid=${qq};ltoken=fixture`,
         stuid: String(qq), stoken: "fixture", ltuid: String(qq), ltoken: "fixture",
         game_roles: { gs: [{ uid, region, game_biz: "hk4e_cn" }] }, current_uid: { gs: uid },
       },
     }));
   }
-  // Use the same default path that the migrated runtime reads. Fresh CI has isolated assets.
-  const theme = "data/genshin/miao-theme";
-  for (const file of ["stat/imgs/bg1.png", "stat/imgs/footer.png", "common/font/NZBZ.woff", "common/font/HYWH-65W.woff", "common/font/tttgbnumber.woff"]) {
-    const installed = Bun.file(join(import.meta.dir, "..", theme, file));
-    const target = join(root, theme, file);
-    await mkdir(dirname(target), { recursive: true });
-    if (assets && await installed.exists()) await Bun.write(target, installed);
-    else if (file.endsWith(".png")) await Bun.write(target, Uint8Array.fromBase64(png));
-  }
+
 }
 
-test("OneBot 群聊通过正式模块展示圣牌并匹配交换，沿用当前档案和默认旧主题路径", async () => {
+test("OneBot 群聊通过正式模块展示圣牌并匹配交换，沿用当前档案和默认内置主题", async () => {
   await withDualGatewayFixture("genshin-tarot", "disablePrivate: false\n", async ({ root, onebot, sendOneBot }) => {
     const group = { message_type: "group", sub_type: "normal", group_id: 601 };
     async function receive(command: string, user_id: number, rosterReads: number, name: string, latestHeight: number) {

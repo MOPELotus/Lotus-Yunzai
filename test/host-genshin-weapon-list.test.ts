@@ -1,4 +1,4 @@
-import { linkHostPackages } from "./host-fixture.ts";
+import { linkHostBuiltinResources, linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -38,10 +38,12 @@ async function prepare(root: string) {
   await cp(source, destination, { recursive: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });
   await symlink(join(source, "node_modules"), join(destination, "node_modules"), "dir");
   await linkHostPackages(root);
+  await linkHostBuiltinResources(root);
   await mkdir(join(root, "profiles"), { recursive: true });
   for (const [qq, id, uid, region] of [[42, 2, "123456789", "cn_gf01"], [43, 1, "523456789", "cn_qd01"]]) {
     await writeFile(join(root, "profiles", `${qq}${id === 1 ? "" : "-" + id}.yaml`), Bun.YAML.stringify({
-      user: { qq: String(qq) }, profile: { id }, account: {
+      user: { qq: String(qq) }, profile: { id },
+      device: { id: `fixture-weapon-device-${qq}`, fp: "0123456789abc", bound: true }, account: {
         cookie: `account_id=${qq};cookie_token=weapon-test-${qq};ltuid=${qq};ltoken=fixture`,
         stuid: String(qq), stoken: "fixture", ltuid: String(qq), ltoken: "fixture",
         game_roles: { gs: [{ uid, region, game_biz: "hk4e_cn" }] }, current_uid: { gs: uid },

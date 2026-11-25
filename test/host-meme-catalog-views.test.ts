@@ -1,3 +1,4 @@
+import { linkHostPackages } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { cp, mkdir, symlink, writeFile } from "node:fs/promises";
@@ -8,9 +9,24 @@ import { isExcludedMemeTemplate } from "../plugins/meme/template-policy.ts";
 import { builtinMemeTemplates } from "../plugins/meme/templates/index.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 
+const proof = Bun.env.LOTUS_MEME_CATALOG_GPU_PROOF;
+const skiaEntry = join(import.meta.dir, "../packages/skia/node_modules/skia-canvas/lib/index.js");
 const description = "可选参数：[circle: 是否将图片变为圆形]\n参数命令：[大圆]\n预览图片：";
 const offline = `
 Bun.env.LOTUS_SKIA_MODE = "gpu";
+${proof ? `
+import { Canvas } from ${JSON.stringify(skiaEntry)};
+import { appendFileSync } from "node:fs";
+Bun.env.VK_DRIVER_FILES = "/usr/share/vulkan/icd.d/nvidia_icd.json";
+const write = Canvas.prototype.toBuffer;
+Canvas.prototype.toBuffer = async function (...args) {
+  const output = await write.call(this, ...args);
+  if (this.engine.renderer !== "GPU" || this.engine.api !== "Vulkan" || !this.engine.device?.includes("RTX A4000")) throw Error("缺少物理显卡验证");
+  appendFileSync(${JSON.stringify(join(proof, "engine.jsonl"))}, JSON.stringify(this.engine) + "\\n");
+  return output;
+};
+` : ""}
+
 const nativeFetch = globalThis.fetch;
 globalThis.fetch = Object.assign(async (input, init) => {
   const url = new URL(input instanceof Request ? input.url : String(input));
@@ -27,7 +43,7 @@ async function copyMeme(root: string) {
     recursive: true, filter: file => basename(file) !== ".git" && basename(file) !== "node_modules",
   });
   await symlink(join(source, "node_modules"), join(destination, "node_modules"), "dir");
-  await symlink(fileURLToPath(new URL("../packages/", import.meta.url)), join(root, "packages"), "dir");
+  await linkHostPackages(root);
 }
 
 async function catalog(root: string, server: URL) {
@@ -73,6 +89,7 @@ test("正常宿主通过 OneBot 和 Milky 返回目录、统计信息卡及同�
       const oneList = await onebot.next("send_msg");
       expect(oneList.params).toMatchObject({ user_id: 42, message: [{ type: "image" }] });
       const rendered = imageBytes(oneList.params);
+      if (proof) await Bun.write(join(proof, "catalog.png"), rendered);
       const metadata = await new Bun.Image(rendered).metadata();
       expect(metadata).toMatchObject({ width: 3600, format: "png" });
 
@@ -86,6 +103,7 @@ test("正常宿主通过 OneBot 和 Milky 返回目录、统计信息卡及同�
       const oneUsage = await onebot.next("send_msg");
       expect(oneUsage.params).toMatchObject({ user_id: 42, message: [{ type: "image" }] });
       const usage = imageBytes(oneUsage.params);
+      if (proof) await Bun.write(join(proof, "usage.png"), usage);
       expect(await new Bun.Image(usage).metadata()).toMatchObject({ width: 4608, format: "png" });
 
       await sendMilky("meme统计");
