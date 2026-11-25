@@ -3,14 +3,16 @@ import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { observeCnRead } from "./cn-read-diagnostics.ts";
+import { addRecordFingerprint } from "./record-fingerprint.ts";
 
 export class GameRecordRequestError extends HoyoRequestError {
-  constructor(subject: string, readonly reason: "expired" | "risk" | "rate-limited",
+  constructor(subject: string, readonly reason: "expired" | "risk" | "rate-limited" | "account",
     code: "api" | "http", status: number, retcode?: number) {
     super(code, {
       expired: `官方${subject}的 Cookie 已失效。`,
       risk: `官方${subject}要求验证，请在官方客户端处理后重试。`,
       "rate-limited": `官方${subject}请求过于频繁，请稍后重试。`,
+      account: `米游社账号异常，暂时无法查询${subject.replace(/查询$/u, "")}。`,
     }[reason], status, retcode);
   }
 }
@@ -29,7 +31,7 @@ const records = {
 };
 const unspecifiedRegion = new Set(["", "unknown", "undefined", "null", "none", "-"]);
 const expiredCodes = new Set([-100, 10001, 10101, 10102, 10103]);
-const riskCodes = new Set([1034, 10035, 10041]);
+const riskCodes = new Set([1034, 10035]);
 const zzzCardPaths = {
   "zzz-index": "index",
   "zzz-avatar": "avatar/basic",
@@ -147,6 +149,7 @@ function apiError(payload: Json | undefined, status: number, retcode: number | u
   const code = status === 401 || status === 429 ? "http" : "api";
   const subject = `${label}查询`;
   if (status === 429) return new GameRecordRequestError(subject, "rate-limited", code, status, retcode);
+  if (retcode === 10041) return new GameRecordRequestError(subject, "account", code, status, retcode);
   if ((retcode !== undefined && riskCodes.has(retcode)) || /验证码|captcha|geetest|challenge|风控/iu.test(String(message))) {
     return new GameRecordRequestError(subject, "risk", code, status, retcode);
   }
@@ -210,8 +213,8 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   if ((starRailMonthly || starRailGridFight || starRailRogue) && (!savedRegion || !gameBiz.trim())) {
     throw new HoyoRequestError("invalid-input", `${label}需使用档案中已同步的国服角色。`);
   }
-  if ((starRailMonthly || starRailGridFight || starRailRogue) && (!source.device.id?.trim() || !source.device.fp?.trim())) {
-    throw new HoyoRequestError("invalid-input", `请先在此档案绑定同一设备的 device_id 和 device_fp，再查询${label}。`);
+  if ((starRailMonthly || starRailGridFight || starRailRogue) && !source.device.id?.trim()) {
+    throw new HoyoRequestError("invalid-input", `当前档案缺少设备 ID，请重新扫码登录后查询${label}。`);
   }
   if (options.kind === "genshin-panel-detail" && (!Array.isArray(options.characterIds) || !options.characterIds.length ||
       options.characterIds.length > 256 || options.characterIds.some(id => !Number.isSafeInteger(id) || id < 1))) {
@@ -301,16 +304,25 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   await guard();
   const timeout = AbortSignal.timeout(15_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  await addRecordFingerprint(headers, transport, deadline, guard);
   const method = body === undefined ? "GET" : "POST";
   const diagnostics = observeCnRead(path, method, signal, timeout);
-  let response: Response;
-  try {
-    response = await diagnostics.read(() => transport(endpoint, {
-      method, body, headers, credentials: "omit", redirect: "error", signal: deadline,
-    }));
-  } catch {
-    throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
+  let response: Response | undefined;
+  // Every registered route here is a reader, including POST character/detail.
+  // Retrying a lost connection cannot repeat a sign-in, exchange or other write.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await guard();
+    try {
+      response = await diagnostics.read(() => transport(endpoint, {
+        method, body, headers, credentials: "omit", redirect: "error", signal: deadline,
+      }));
+      break;
+    } catch {
+      await guard();
+      if (deadline.aborted || attempt === 2) throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
+    }
   }
+  if (!response) throw new HoyoRequestError("transport", `官方${subject}请求未完成。`);
   if (response.redirected || (response.url && response.url !== endpoint.href) ||
       (!response.ok && response.status !== 401 && response.status !== 429)) {
     await response.body?.cancel().catch(() => undefined);

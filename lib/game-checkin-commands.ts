@@ -112,7 +112,8 @@ function outcome(rows: readonly GameCheckinResult[], officialClient = "米游社
   const reasons = new Set<string>();
   for (const row of rows) {
     if (row.status !== "failed" || !(row.error instanceof GameRecordRequestError)) continue;
-    reasons.add({ risk: `需要在${officialClient}完成验证`, expired: "Cookie 已过期", "rate-limited": "请求频繁" }[row.error.reason]);
+    reasons.add({ risk: `需要在${officialClient}完成验证`, expired: "Cookie 已过期", "rate-limited": "请求频繁",
+      account: "米游社账号异常" }[row.error.reason]);
   }
   const unsent = (firstBind ? [`首次绑定需在${officialClient}签到`] : []).concat([...reasons]);
   if (unconfirmed) return { label: "未确认", reason: [`提交结果未确认，请在${officialClient}核对`, ...unsent].join("，") };

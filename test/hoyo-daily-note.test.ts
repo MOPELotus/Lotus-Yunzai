@@ -48,7 +48,7 @@ test("体力查询续期后发出首页，换绑时停止发送余下页面", as
   try {
     await writeFile(join(directory, "42.yaml"), JSON.stringify({
       account: { stuid: "62", stoken: "fixture-stoken", cookie: "ltoken=expired", game_roles: { gs: roles } },
-      device: { id: "fixture-device" },
+      device: { id: "fixture-device", fp: "fixture-fp" },
     }));
     globalThis.fetch = (async (input, options) => {
       const endpoint = new URL(String(input));
@@ -261,7 +261,7 @@ test("登录失效、风控与限频分开处理且上游正文不会进入错�
   for (const [status, retcode, message, reason] of [
     [200, -100, "stale synthetic-secret", "expired"],
     [200, 10035, "synthetic-secret", "risk"],
-    [200, 10041, "synthetic-secret", "risk"],
+    [200, 10041, "synthetic-secret", "account"],
     [200, -100, "captcha synthetic-secret", "risk"],
     [200, -100, "visit too frequently synthetic-secret", "rate-limited"],
     [401, 1034, "synthetic-secret", "risk"],
@@ -319,7 +319,7 @@ account:
   game_roles:
     gs: [{ uid: '123456789', region: cn_gf01 }, { uid: '223456789', region: cn_gf01 }]
     sr: [{ uid: '523456789', region: prod_qd_cn }]
-device: { id: fixture-device }
+device: { id: fixture-device, fp: fixture-fp }
 `;
   try {
     await writeFile(path, profile);
@@ -419,7 +419,7 @@ test("星铁和绝区零旧体力别名经宿主前缀只读发起人的相应�
     profile: { id: 2 }, user: { qq: 42 },
     account: { stuid: "62", stoken: "synthetic-stoken", cookie: "ltoken=expired",
       game_roles: { gs: [gs], sr: [sr], zzz: [nap] } },
-    device: { id: "synthetic-device" },
+    device: { id: "synthetic-device", fp: "synthetic-fp" },
   };
   const queries: string[][] = [];
   const destinations: string[][] = [];

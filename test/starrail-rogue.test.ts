@@ -98,7 +98,7 @@ test("拒绝跨角色、跨区、缺设备、结构错误及风险响应", async
       .rejects.toMatchObject({ code: "response" });
   }
   const offline = async () => { throw Error("不得联网"); };
-  await expect(readStarRailRogue({ ...source, device: { ...source.device, fp: "" } }, offline, options))
+  await expect(readStarRailRogue({ ...source, device: { ...source.device, id: "", fp: "" } }, offline, options))
     .rejects.toMatchObject({ code: "invalid-input" });
   await expect(readStarRailRogue({ ...source, role: { ...source.role, gameBiz: "hkrpg_global" } }, offline, options))
     .rejects.toMatchObject({ code: "invalid-input" });

@@ -58,7 +58,7 @@ test("星铁月收入校验区服和设备，区分无数据、错归属、坏�
     { ...source, role: { ...source.role, uid: "800000126", region: "prod_official_asia", gameBiz: "hkrpg_global" } },
     { ...source, role: { ...source.role, region: "" } },
     { ...source, role: { ...source.role, uid: channelUid } },
-    { ...source, device: { ...source.device, fp: "" } },
+    { ...source, device: { ...source.device, id: "", fp: "" } },
   ]) await expect(client.fetchStarRailMonthly(other)).rejects.toMatchObject({ code: "invalid-input" });
   expect(requests).toBe(0);
   expect((await client.fetchStarRailMonthly(source)).snapshot).toBeNull();

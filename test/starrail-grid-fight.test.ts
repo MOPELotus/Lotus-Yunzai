@@ -37,7 +37,7 @@ test("rejects unsynced, cross-region, foreign payloads and invalid game archive 
   for (const role of [
     { ...source.role, region: "" }, { ...source.role, region: "prod_gf_cn" }, { ...source.role, gameBiz: "" },
   ]) await expect(readStarRailGridFight({ ...source, role }, offline, {})).rejects.toMatchObject({ code: "invalid-input" });
-  await expect(readStarRailGridFight({ ...source, device: { ...source.device, fp: "" } }, offline, {}))
+  await expect(readStarRailGridFight({ ...source, device: { ...source.device, id: "", fp: "" } }, offline, {}))
     .rejects.toMatchObject({ code: "invalid-input" });
   for (const data of [
     { role: { uid: "500000456" } }, { grid_fight_brief: { server: "prod_gf_cn" } },
