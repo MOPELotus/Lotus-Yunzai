@@ -136,7 +136,7 @@ test("不向非国服或缺同档设备出站，不接错角色、异区、缺�
   const noNetwork = async () => { calls++; throw new Error("must never send"); };
   await expect(readStarRailGrowth({ ...source, role: { ...source.role, region: "prod_official_asia" } }, noNetwork, query))
     .rejects.toMatchObject({ code: "invalid-input" });
-  await expect(readStarRailGrowth({ ...source, device: { ...source.device, fp: "" } }, noNetwork, query))
+  await expect(readStarRailGrowth({ ...source, device: { ...source.device, id: "" } }, noNetwork, query))
     .rejects.toMatchObject({ code: "invalid-input" });
   expect(calls).toBe(0);
   for (const wrong of [{ ...detail, avatar: { item_id: "1106" } }, { ...detail, region: "prod_gf_cn" },

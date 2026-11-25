@@ -70,7 +70,6 @@ test("拒绝未绑定设备、海外及错误区服、失效配方和档案变�
   let calls = 0;
   const transport = async () => { calls++; return answer(); };
   for (const invalid of [
-    { ...source, device: { ...source.device, fp: "" } },
     { ...source, device: { ...source.device, id: "" } },
     { ...source, device: { ...source.device, fp: "illegal\nfixture" } },
     { ...source, role: { ...role, region: "cn_gf01" } },
@@ -298,4 +297,31 @@ device: { bound: true, id: fixture-id, fp: fixture-fp }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+
+test("背包查询为未配对设备补查询指纹，并只重试明确的网关故障", async () => {
+  const issued = "123456789abcd";
+  const missing = { ...source, device: { ...source.device, id: "backpack-fp-regression", fp: "" } };
+  const paths: string[] = [];
+  let reads = 0;
+  const result = await readGenshinBackpack(missing, async (url, init) => {
+    paths.push(url.pathname);
+    if (url.pathname.endsWith("getFp")) {
+      expect(new Headers(init.headers).has("Cookie")).toBe(false);
+      return Response.json({ retcode: 0, data: { code: 200, device_fp: issued } });
+    }
+    expect(new Headers(init.headers).get("x-rpc-device_fp")).toBe(issued);
+    if (++reads === 1) return new Response("gone", { status: 410, headers: { "Content-Type": "text/html" } });
+    return answer();
+  }, options);
+  expect(result.items[0]?.count).toBe(60);
+  expect(paths).toHaveLength(3);
+  expect(missing.device.fp).toBe("");
+  let calls = 0;
+  await expect(readGenshinBackpack(source, async () => {
+    calls++;
+    return Response.json({ retcode: 10041, message: "账号异常" });
+  }, options)).rejects.toMatchObject({ reason: "account" });
+  expect(calls).toBe(1);
 });

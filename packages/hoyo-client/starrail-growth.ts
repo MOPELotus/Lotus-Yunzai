@@ -131,8 +131,8 @@ export async function readStarRailGrowth(source: ProfileRequestContext, transpor
       region !== (uid.startsWith("5") ? "prod_qd_cn" : "prod_gf_cn")) {
     throw new HoyoRequestError("invalid-input", "星铁养成需要已同步的本人国服星铁档案。");
   }
-  if (!source.device.id?.trim() || !source.device.fp?.trim()) {
-    throw new HoyoRequestError("invalid-input", "请先在此档案绑定设备 ID 和指纹，再查询星铁养成。");
+  if (!source.device.id?.trim()) {
+    throw new HoyoRequestError("invalid-input", "当前档案缺少设备 ID，无法查询星铁养成。");
   }
   if (!whole(avatarId, 1, 9_999_999) || !label(name) || !Array.isArray(levels) ||
       levels.length !== defaultStarRailGrowthLevels.length || levels.some((value, index) =>

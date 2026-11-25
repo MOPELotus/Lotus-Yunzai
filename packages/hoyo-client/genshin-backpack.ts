@@ -1,4 +1,6 @@
 import { createHash, randomInt } from "node:crypto";
+import { setTimeout as wait } from "node:timers/promises";
+import { addRecordFingerprint } from "./record-fingerprint.ts";
 import { normalizeProfileRoleArtworkUrl, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { observeCnRead } from "./cn-read-diagnostics.ts";
@@ -158,21 +160,23 @@ function requestHeaders(source: ProfileRequestContext, query: string, body: stri
   const validDeviceField = (value: string | undefined): value is string =>
     typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(value);
   if (!cookie.includes("=") || /[^\x20-\x7E]/u.test(account.cookie) || cookie.length > 16_384 ||
-      !validDeviceField(device.id) || !validDeviceField(device.fp)) {
-    throw new HoyoRequestError("invalid-input", `${kind}需要当前档案的 Cookie 和已绑定的设备 ID、指纹。`);
+      !validDeviceField(device.id) || (device.fp && !validDeviceField(device.fp))) {
+    throw new HoyoRequestError("invalid-input", `${kind}的 Cookie 或设备信息无效，请检查当前档案。`);
   }
   const time = Math.round(Date.now() / 1000);
   const nonce = randomInt(100000, 1000000);
   const digest = createHash("md5").update(`salt=${signingSalt}&t=${time}&r=${nonce}&b=${body ?? ""}&q=${query}`).digest("hex");
   const model = device.model && /^[\x20-\x7E]{1,128}$/u.test(device.model) ? device.model : "Android";
   const android = device.androidVersion && /^\d{1,2}(?:\.\d+){0,2}$/u.test(device.androidVersion) ? device.androidVersion : "12";
-  return new Headers({
+  const headers = new Headers({
     Accept: "application/json", "Content-Type": "application/json", Cookie: cookie,
-    "x-rpc-device_id": device.id, "x-rpc-device_fp": device.fp,
+    "x-rpc-device_id": device.id,
     "x-rpc-app_version": appVersion, "x-rpc-client_type": "5", Referer: "https://webstatic.mihoyo.com/",
     "User-Agent": `Mozilla/5.0 (Linux; Android ${android}; ${model}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 miHoYoBBS/${appVersion}`,
     DS: `${time},${nonce},${digest}`,
   });
+  if (device.fp) headers.set("x-rpc-device_fp", device.fp);
+  return headers;
 }
 
 function responseError(kind: Calculation): never {
@@ -279,16 +283,29 @@ async function requestCalculator(source: ProfileRequestContext, transport: HoyoT
   await guard();
   const timeout = AbortSignal.timeout(15_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  await addRecordFingerprint(headers, transport, deadline, guard);
   const method = body === undefined ? "GET" : "POST";
   const diagnostics = observeCnRead(endpoint.pathname, method, signal, timeout);
-  let response: Response;
-  try {
-    response = await diagnostics.read(() => transport(endpoint, {
-      method, body, headers, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: deadline,
-    }));
-  } catch {
-    transportError(kind);
+  let response: Response | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await guard();
+    try {
+      response = await diagnostics.read(() => transport(endpoint, {
+        method, body, headers, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: deadline,
+      }));
+      if (response.status === 410 && /^text\/html(?:\s*;|$)/iu.test(response.headers.get("Content-Type") ?? "") && attempt < 2) {
+        await response.body?.cancel().catch(() => undefined);
+        response = undefined;
+        await wait(250 * (attempt + 1), undefined, { signal: deadline });
+        continue;
+      }
+      break;
+    } catch {
+      await guard();
+      if (deadline.aborted || attempt === 2) transportError(kind);
+    }
   }
+  if (!response) transportError(kind);
   const status = response.status;
   const apiCode = status === 401 || status === 429 ? "http" : "api";
   const challenge = response.headers.get("x-rpc-aigis")?.trim();
@@ -308,7 +325,8 @@ async function requestCalculator(source: ProfileRequestContext, transport: HoyoT
   const retcode = whole(payload?.retcode);
   const message = [payload?.message, payload?.msg, object(payload?.data)?.message]
     .find((value): value is string => typeof value === "string") ?? "";
-  if ([1034, 10035, 10041].includes(retcode ?? 0) || /验证码|captcha|geetest|challenge|风控/iu.test(message)) {
+  if (retcode === 10041) throw new GameRecordRequestError(subject, "account", apiCode, status, retcode);
+  if ([1034, 10035].includes(retcode ?? 0) || /验证码|captcha|geetest|challenge|风控/iu.test(message)) {
     throw new GameRecordRequestError(subject, "risk", apiCode, status, retcode);
   }
   if (retcode === 10101 || /频繁|too frequent|rate limit/iu.test(message)) {
