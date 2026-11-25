@@ -45,8 +45,15 @@ export function redeemCodeCommands(options: RedeemPreviewOptions = {},
     try {
       const previous = await auto.profiles.previewRedeemSettings(qq, id);
       if (enabled && !previous.loggedIn) return `请先登录档案 ${id}。`;
-      if (enabled && !previous.enabled && !auto.canRegister(context)) return "当前会话无权注册前瞻码自动兑换。";
-      const update = await auto.profiles.setPreviewRedeemSettings(qq, id, previous.revision, enabled, enabled ? profileGames : undefined, signal);
+      // Registration also authorizes a missing-history recovery, even when an
+      // imported profile already has enable:true. Always check enrollment access.
+      if (enabled && !auto.canRegister(context)) return "当前会话无权注册前瞻码自动兑换。";
+      const verifyRegistration = async () => {
+        signal.throwIfAborted();
+        if (enabled && !auto.canRegister(context)) throw new Error("前瞻自动兑换注册权限已变化。");
+      };
+      const update = await auto.profiles.setPreviewRedeemSettings(qq, id, previous.revision, enabled,
+        enabled ? profileGames : undefined, signal, verifyRegistration, enabled ? { enroll: true } : undefined);
       if (signal.aborted) return;
       if (!enabled) return `档案 ${id} 已关闭前瞻码自动兑换。`;
       const saved = await auto.profiles.previewRedeemSettings(qq, id);

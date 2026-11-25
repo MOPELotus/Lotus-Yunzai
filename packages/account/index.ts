@@ -986,8 +986,10 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       return { qq, profileId, revision, account: state.account, device: state.device, selectedUid };
     },
     async setPreviewRedeemSettings(qq: string, profileId: number, expectedRevision: string, enabled: boolean,
-      games?: readonly Game[], signal?: AbortSignal, verify?: () => Promise<void>) {
+      games?: readonly Game[], signal?: AbortSignal, verify?: () => Promise<void>,
+      options?: { readonly enroll?: true }) {
       if (typeof enabled !== "boolean" || (games && games.some(game => !profileGames.includes(game)))) invalidCheckinSettings();
+      if (options?.enroll && !enabled) invalidCheckinSettings();
       return updateCheckinProfile(qq, profileId, expectedRevision, (document, state) => {
         if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", "档案尚未登录。");
         const previous = previewRedeemPreference(document.auto_redeem);
@@ -995,7 +997,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         if (enabled && !selected.length) throw new ProfileError("invalid", "请至少选择一款游戏。");
         if (document.auto_redeem === undefined && !enabled && games === undefined) return document;
         return { ...document, auto_redeem: { ...record(document.auto_redeem), enable: enabled, games: selected,
-          ...(document.auto_redeem === undefined && { local_enrollment: true }) } };
+          ...((document.auto_redeem === undefined || options?.enroll) && { local_enrollment: true }) } };
       }, signal, verify);
     },
     async accountContext(qq: string, id = 1) {
