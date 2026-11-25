@@ -80,3 +80,29 @@ test("允许明确的缺签名，拒绝重定向、坏编码、大回包及连�
   expect((await pending).state).toBe("unavailable");
   expect(cancelled).toBe(true);
 });
+
+test("公开签名临时连接错误有限重试，取消及限流保持停止", async () => {
+  let calls = 0;
+  const result = await readPublicGameSignature("gs", gs, active(), async () => {
+    if (++calls < 3) throw Object.assign(new Error("reset"), { code: "ECONNRESET" });
+    return genshin();
+  });
+  expect(calls).toBe(3); expect(result.state).toBe("ready");
+  calls = 0;
+  await readPublicGameSignature("gs", gs, active(), async () => { calls++; return new Response("", { status: 503 }); });
+  expect(calls).toBe(3);
+  calls = 0;
+  await readPublicGameSignature("gs", gs, active(), async () => { calls++; return new Response("", { status: 503, headers: { "Retry-After": "10" } }); });
+  expect(calls).toBe(1);
+  const stop = new AbortController(); calls = 0;
+  await readPublicGameSignature("gs", gs, stop.signal, async () => { calls++; stop.abort(); throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); });
+  expect(calls).toBe(1);
+});
+
+test("签名重试重新检查读守卫，过期会话不再发送请求", async () => {
+  let calls = 0, guards = 0;
+  const result = await readPublicGameSignature("gs", gs, active(), async () => {
+    calls++; throw Object.assign(new Error("reset"), { code: "ECONNRESET" });
+  }, async () => { if (++guards > 1) throw new Error("session expired"); });
+  expect(result.state).toBe("unavailable"); expect(calls).toBe(1); expect(guards).toBe(2);
+});

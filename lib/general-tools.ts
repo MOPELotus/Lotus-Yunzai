@@ -1,3 +1,4 @@
+import { withReadRetries } from "@lotus-yunzai/http";
 import type { CommandContext, CommandModule, CommandReply } from "./commands.ts";
 import { segment } from "./messages.ts";
 
@@ -58,10 +59,11 @@ async function boundedBody(response: Response, bytes: number, signal: AbortSigna
 }
 
 export function generalToolCommands(lifecycle: AbortSignal, transport: PublicFetch = fetch): CommandModule {
+  const read = withReadRetries(transport);
   const inFlight = new Map<string, Promise<CommandReply>>();
   const fetchBody = async (url: URL, signal: AbortSignal, limit: number, expected: RegExp, accept: string) => {
     try {
-      const response = await transport(url, { credentials: "omit", redirect: "error", signal, headers: { Accept: accept } });
+      const response = await read(url, { credentials: "omit", redirect: "error", signal, headers: { Accept: accept } });
       return await boundedBody(response, limit, signal, expected);
     } catch {
       return undefined;

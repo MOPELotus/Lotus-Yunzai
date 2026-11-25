@@ -70,3 +70,24 @@ test("无授权、错误期数和无效 UID 不出站，站点封锁结果与空
     return Response.json({ retcode: 100, data: [arkRow] });
   })).toEqual({ status: "unavailable" });
 });
+
+test("Akasha UID榜与总数GET独立重试，保留授权UID范围且不重做另一条已成功查询", async () => {
+  const counts = { rows: 0, totals: 0 };
+  const result = await queryStygianRank("akasha", [first], "6.1", signal, async (input, init) => {
+    const url = new URL(input);
+    expect(init.method).toBe("GET");
+    expect(init.credentials).toBe("omit");
+    expect(new Headers(init.headers).has("cookie")).toBe(false);
+    if (url.searchParams.get("size") === "1") {
+      counts.totals++;
+      expect(url.searchParams.get("uids")).toBe("");
+      return Response.json({ data: [{ index: 11000 }] });
+    }
+    counts.rows++;
+    expect(url.searchParams.get("uids")).toBe(`[uid]${first}`);
+    if (counts.rows < 3) return new Response("busy", { status: 503 });
+    return Response.json({ data: [{ uid: first, stygianIndex: 5, stygianSeconds: 77, index: 113 }] });
+  });
+  expect(counts).toEqual({ rows: 3, totals: 1 });
+  expect(result).toEqual({ status: "ok", rows: [{ uid: first, difficulty: 5, seconds: 77, rank: 113, total: 11000 }] });
+});

@@ -1,3 +1,4 @@
+import { withoutReadRetries, withReadRetries } from "@lotus-yunzai/http";
 // Request and result fields follow Ark e81b5ef. See rank-statistics.LICENSE.
 import { postArkQuery, readBoundedRankPayload, type RankStatsTransport } from "./rank-statistics.ts";
 
@@ -62,7 +63,8 @@ async function fetchAkasha(uids: readonly string[], version: string, signal: Abo
   }).toString();
   try {
     signal.throwIfAborted();
-    const response = await transport(url.href, {
+    const request = withReadRetries((target, init) => withoutReadRetries(() => transport(target.href, init)));
+    const response = await request(url, {
       method: "GET", headers: { Accept: "application/json" }, credentials: "omit", redirect: "error",
       signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     });

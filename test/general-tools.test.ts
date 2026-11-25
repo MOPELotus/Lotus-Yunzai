@@ -85,5 +85,24 @@ test("软件各平台独立降级，保留有效项并过滤跨域链接", async
   expect(await commands.dispatch("#推荐软件", group)).toEqual({
     type: "forward", nodes: ["电脑推荐软件：笔记  工具\n地址：https://www.ghxi.com/joplin.html"], batchSize: 20, senderName: "推荐软件",
   });
-  expect(sources).toEqual(["https://www.ghxi.com/ghapi?type=query&n=pc", "https://www.ghxi.com/ghapi?type=query&n=and"]);
+  expect(sources).toEqual(["https://www.ghxi.com/ghapi?type=query&n=pc", ...Array(3).fill("https://www.ghxi.com/ghapi?type=query&n=and")]);
+});
+
+test("群聊工具受控API和图片GET各自有限重试，限流与取消不继续", async () => {
+  const seen = new Map<string, number>();
+  const module = generalToolCommands(new AbortController().signal, async url => {
+    const count = (seen.get(url.hostname) ?? 0) + 1; seen.set(url.hostname, count);
+    if (url.hostname === "shibe.online") return new Response("", { status: 429 });
+    if (count < 3) throw Object.assign(new Error("reset"), { code: "ECONNRESET" });
+    if (url.hostname === "api.thecatapi.com") return Response.json([{ url: "https://cdn2.thecatapi.com/cat.jpg" }]);
+    return imageResponse();
+  });
+  const registry = new CommandRegistry(); registry.registerModule(module);
+  expect(await registry.dispatch("#cat", group)).toHaveProperty("type", "forward");
+  expect(Object.fromEntries(seen)).toEqual({ "shibe.online": 1, "api.thecatapi.com": 3, "cdn2.thecatapi.com": 3 });
+  const stop = new AbortController(); let calls = 0;
+  const stopped = new CommandRegistry();
+  stopped.registerModule(generalToolCommands(stop.signal, async () => { calls++; stop.abort(); throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); }));
+  await stopped.dispatch("#cat", group);
+  expect(calls).toBe(1);
 });

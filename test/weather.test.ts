@@ -115,3 +115,22 @@ test("宿主从 OneBot 和 Milky 的普通成员命令分发天气用法", async
       milkyReply.respond({ message_seq: 81 });
     });
 }, 10_000);
+
+test("固定天气查询在连接重置后恢复，故障最多三次，429/Retry-After不重放", async () => {
+  let calls = 0;
+  const recovered = await fetchWeather("南山", signal, async () => {
+    calls++;
+    if (calls < 3) throw Object.assign(new Error("reset"), { code: "ECONNRESET" });
+    return Response.json({ status: 200, data: { internal: lookup } });
+  });
+  expect(calls).toBe(3);
+  expect(recovered).toHaveProperty("message", expect.stringContaining("多个同名地区"));
+  for (const [status, headers] of [[503, {}], [429, {}], [503, { "Retry-After": "10" }]] as const) {
+    calls = 0;
+    await fetchWeather("南山", signal, async () => { calls++; return new Response("", { status, headers }); });
+    expect(calls).toBe(status === 503 && !Object.keys(headers).length ? 3 : 1);
+  }
+  const stop = new AbortController(); calls = 0;
+  await fetchWeather("南山", stop.signal, async () => { calls++; stop.abort(); throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); });
+  expect(calls).toBe(1);
+});

@@ -1,3 +1,4 @@
+import { withReadRetries } from "@lotus-yunzai/http";
 type Game = "gs" | "sr";
 type Transport = (url: URL, init: RequestInit) => Promise<Response>;
 
@@ -70,7 +71,7 @@ async function readJson(response: Response, maximum: number, signal: AbortSignal
 }
 
 export async function readPublicGameSignature(game: Game, uid: string, signal: AbortSignal,
-  transport: Transport = fetch): Promise<PublicGameSignature> {
+  transport: Transport = fetch, readRetryGuard?: () => Promise<void>): Promise<PublicGameSignature> {
   if (game !== "gs" && game !== "sr") return { state: "unavailable", ttlSeconds: 120 };
   const { base, maximum, fallbackTtl } = endpoints[game];
   const unavailable = { state: "unavailable", ttlSeconds: fallbackTtl } as const;
@@ -79,7 +80,9 @@ export async function readPublicGameSignature(game: Game, uid: string, signal: A
   const address = endpoint.href;
   try {
     const active = AbortSignal.any([signal, AbortSignal.timeout(8_000)]);
-    const response = await transport(endpoint, {
+    await readRetryGuard?.();
+    const response = await withReadRetries(transport)(endpoint, {
+      readRetryGuard,
       method: "GET", credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: active,
       headers: { Accept: "application/json", "User-Agent": "Lotus-Yunzai (public game profile)" },
     });

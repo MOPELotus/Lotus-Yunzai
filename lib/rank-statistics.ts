@@ -1,3 +1,4 @@
+import { withoutReadRetries, withReadRetries } from "@lotus-yunzai/http";
 // Ark protocol reference e81b5ef9111294c17b2b489aee9a94e4ebc0c9c6. See rank-statistics.LICENSE.
 const endpoint = "https://ark.ivny.cn";
 const legacyVersion = "2.1.0";
@@ -94,7 +95,12 @@ export async function postArkQuery(route: "rank/specific" | "rank/data" | "rank/
   } = {}): Promise<RankResponse> {
   try {
     signal.throwIfAborted();
-    const response = await transport(`${endpoint}/${route}`, {
+    const readRoutes = new Set(["rank/specific", "rank/data", "rank/self", "rank/custom", "rank/custom/specific", "rank/stygian"]);
+    const readOnly = readRoutes.has(route) && (route !== "rank/data" || ("update" in query && query.update === 0));
+    const request = withReadRetries((target, init) => withoutReadRetries(() => transport(target.href, init)), {
+      canRetry: (target, method) => readOnly && method === "POST" && target.href === `${endpoint}/${route}`,
+    });
+    const response = await request(new URL(`${endpoint}/${route}`), {
       method: "POST", credentials: "omit", redirect: "error",
       headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify({ ...query, version: legacyVersion }),

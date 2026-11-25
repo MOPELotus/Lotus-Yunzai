@@ -2,5 +2,8 @@
   "name": "@lotus-yunzai/account",
   "private": true,
   "type": "module",
-  "exports": "./index.ts"
+  "exports": "./index.ts",
+  "dependencies": {
+    "@lotus-yunzai/http": "workspace:*"
+  }
 }

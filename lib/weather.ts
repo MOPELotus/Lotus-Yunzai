@@ -1,3 +1,4 @@
+import { withReadRetries } from "@lotus-yunzai/http";
 const matchingEndpoint = "https://wis.qq.com/city/matching";
 const weatherEndpoint = "https://i.news.qq.com/weather/common";
 const forecastTypes = "observe|forecast_1h|forecast_24h|index|alarm|limit|tips|rise";
@@ -167,7 +168,7 @@ function decodeWeather(area: Area, forecast: WeatherFields, cityAir?: WeatherFie
 async function request(endpoint: string, query: Record<string, string>, signal: AbortSignal, transport: WeatherTransport) {
   const url = new URL(endpoint);
   url.search = new URLSearchParams(query).toString();
-  const response = await transport(url, {
+  const response = await withReadRetries(transport)(url, {
     credentials: "omit", redirect: "error", signal,
     headers: { Accept: "application/json", Referer: "https://tianqi.qq.com/" },
   });

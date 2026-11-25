@@ -154,7 +154,9 @@ export function createPanelSignatureService(lock: AcquireRoleArchiveLock, {
         inflight.add(key);
         try {
           if (!active()) return;
-          const result = await readSignature(game, previous.uid, session.signal);
+          const result = await readSignature(game, previous.uid, session.signal, undefined, async () => {
+            if (!active()) throw new Error("好友会话已断开。");
+          });
           if (!active()) return;
           const matched = result.state === "ready" &&
             timingSafeEqual(Buffer.from(previous.digest, "hex"), Buffer.from(digest(result.signature.trim()), "hex"));

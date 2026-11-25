@@ -1,4 +1,5 @@
 import { normalizeProfileRoleArtworkUrl } from "./role-artwork-url.ts";
+import { withoutReadRetries, withReadRetries } from "@lotus-yunzai/http";
 
 type ArtworkTransport = (url: URL, init: RequestInit) => Promise<Response>;
 type Size = readonly [width: number, height: number];
@@ -90,6 +91,7 @@ async function responseImage(response: Response, signal: AbortSignal): Promise<B
     if (size?.every((side) => side > 0 && side <= maxSide)) return data;
   } finally {
     signal.removeEventListener("abort", stop);
+    await reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
 }
@@ -98,7 +100,15 @@ async function fetchArtwork(url: string, signal: AbortSignal, transport: Artwork
   if (signal.aborted || activeRequests >= maxConcurrent) return;
   activeRequests++;
   try {
-    const response = await transport(new URL(url), {
+    let image: Buffer | undefined;
+    const request = withReadRetries((target, init) => withoutReadRetries(async () => {
+      const response = await transport(target, init);
+      // Keep the bounded binary stream inside the retry attempt as well as
+      // the connection. Invalid images return undefined and are never retried.
+      if (response.ok) image = await responseImage(response, signal);
+      return response;
+    }));
+    await request(new URL(url), {
       method: "GET",
       headers: { Accept: "image/png, image/jpeg, image/webp" },
       credentials: "omit",
@@ -106,7 +116,7 @@ async function fetchArtwork(url: string, signal: AbortSignal, transport: Artwork
       referrerPolicy: "no-referrer",
       signal,
     });
-    return await responseImage(response, signal);
+    return image;
   } catch {
     return;
   } finally {
