@@ -1,0 +1,1 @@
+{"description":"旧版荷花一键迁移工作进程的阶段与错误提示。","messages":{"preparing":"准备迁移环境","ready":"准备完成，等待旧机器人交接","stopping":"停止旧机器人","migrating":"迁移账号和业务数据","initializing":"初始化运行环境","starting":"启动荷花云崽","completed":"迁移完成","failed":"迁移失败","unsafe":"迁移目录或状态文件不安全","identity":"旧机器人进程身份不匹配","timeout":"等待操作超时","version":"Bun 版本不符合要求","command":"命令执行失败","recovery":"恢复旧机器人失败"}}
