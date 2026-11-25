@@ -18,7 +18,8 @@ test("旧国际服代理只隧道转发 HoYoLAB 核验和签到域名，失败�
     if (!address || typeof address === "string") throw new Error("代理测试监听地址无效。");
     const transport = hoyoTransportForBot(`http://fixture:proxy-password@127.0.0.1:${address.port}`);
     const official = ["passport-api-sg.hoyolab.com", "passport-api-us.hoyolab.com", "passport-api-eu.hoyolab.com",
-      "api-account-os.hoyolab.com", "sg-act-public-api.hoyolab.com"];
+      "api-account-os.hoyolab.com", "sg-act-public-api.hoyolab.com", "sg-public-api.hoyolab.com",
+      "sg-act-nap-api.hoyolab.com", "bbs-api-os.hoyolab.com"];
     await Promise.all(official.map(async host => {
       const response = transport(new URL(`https://${host}/`), {
         headers: { Cookie: "fixture-only=never-visible-in-connect" }, signal: AbortSignal.timeout(1_500),

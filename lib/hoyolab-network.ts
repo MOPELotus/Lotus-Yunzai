@@ -8,6 +8,9 @@ const internationalOrigins = new Set([
   "https://sg-act-public-api.hoyolab.com",
   "https://sg-hk4e-api.hoyolab.com",
   "https://sg-hkrpg-api.hoyolab.com",
+  "https://sg-public-api.hoyolab.com",
+  "https://sg-act-nap-api.hoyolab.com",
+  "https://bbs-api-os.hoyolab.com",
 ]);
 
 function parseProxy(address: unknown): URL | undefined {
