@@ -573,3 +573,55 @@ device: { id: note-device, fp: note-fp }
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("本人便笺命令将国际服角色核验及查询交给注入传输，国服参数保持原样", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lotus-note-transport-"));
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  const domestic = { uid: "123456789", region: "cn_gf01", game_biz: "hk4e_cn" };
+  try {
+    await writeFile(join(directory, "42-2.yaml"), JSON.stringify({ profile: { id: 2 }, user: { qq: "42" },
+      account: { stuid: "62", stoken: "fixture", cookie: "ltoken=domestic-fixture",
+        current_uid: { gs: domestic.uid, zzz: overseasNote.selectedUid }, game_roles: { gs: [domestic] } },
+      device: { id: "fixture-device", fp: "fixture-fp" },
+      games: { os: { verified_account_id: overseasNote.accountId, verified_realm: overseasNote.realm,
+        verified_activity_cookie: overseasNote.cookie, lang: "zh-cn" } },
+    }));
+    globalThis.fetch = Object.assign(async () => { throw new Error("业务必须使用注入传输"); },
+      { preconnect: originalFetch.preconnect });
+    const transport: HoyoTransport = async (url, init) => {
+      calls.push(url.href);
+      const headers = new Headers(init.headers);
+      expect(init.credentials).toBe("omit");
+      expect(init.redirect).toBe("error");
+      if (url.hostname === "api-account-os.hoyolab.com") {
+        expect(headers.get("Cookie")).toBe(overseasNote.cookie);
+        expect(url.searchParams.get("game_biz")).toBe("nap_global");
+        return Response.json({ retcode: 0, data: { list: [overseasNoteRole] } });
+      }
+      if (url.hostname === "sg-act-public-api.hoyolab.com") {
+        expect(headers.get("Cookie")).toBe(overseasNote.cookie);
+        expect(url.search).toBe("?role_id=1300000002&server=prod_gf_jp");
+        return Response.json({ retcode: 0, data: { ...overseasNoteRole, energy: zzzEnergy } });
+      }
+      expect(url.href).toBe("https://api-takumi-record.mihoyo.com/game_record/app/genshin/api/dailyNote?role_id=123456789&server=cn_gf01");
+      expect(headers.get("Cookie")).toBe("ltoken=domestic-fixture");
+      expect(headers.get("x-rpc-device_id")).toBe("fixture-device");
+      expect(headers.get("x-rpc-device_fp")).toBe("fixture-fp");
+      expect(headers.get("DS")).toMatch(/^\d+,[^,]+,[a-f0-9]{32}$/u);
+      return Response.json({ retcode: 0, data: gsResponse });
+    };
+    const registry = new CommandRegistry();
+    registry.registerModule(dailyNoteCommands(directory, new AbortController().signal, transport));
+    const context: MessageEvent = { post_type: "message", message_type: "private", isPrivate: true, isGroup: false,
+      isMaster: false, self_id: 51, user_id: 42, msg: "", message: "", raw_message: "", reply: () => true,
+      privateCredentialSignal: new AbortController().signal };
+    for (const msg of ["#绝区零体力2", "#体力2"]) {
+      expect(await registry.dispatchFallback({ ...context, msg, message: msg, raw_message: msg }, () => true, () => false)).toEqual([]);
+    }
+    expect(calls).toHaveLength(3);
+    expect(calls[0]).toStartWith("https://api-account-os.hoyolab.com/");
+    expect(calls[1]).toStartWith("https://sg-act-public-api.hoyolab.com/");
+    expect(calls[2]).toStartWith("https://api-takumi-record.mihoyo.com/");
+  } finally { globalThis.fetch = originalFetch; await rm(directory, { recursive: true, force: true }); }
+});

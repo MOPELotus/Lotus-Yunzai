@@ -138,9 +138,10 @@ function textReply(groups: DailyNoteCardModel["groups"]) {
   })).join("\n\n");
 }
 
-export function dailyNoteCommands(directory: string | undefined, signal: AbortSignal): CommandModule {
+export function dailyNoteCommands(directory: string | undefined, signal: AbortSignal,
+  transport: Parameters<typeof createProfileHoyoClient>[1] = fetch): CommandModule {
   const profiles = createProfileStore(directory);
-  const client = createProfileHoyoClient(profiles);
+  const client = createProfileHoyoClient(profiles, transport);
   return {
     name: "@lotus-yunzai/daily-note",
     commands: {},

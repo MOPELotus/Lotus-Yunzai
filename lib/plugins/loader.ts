@@ -279,6 +279,7 @@ export async function loadPlugins(
       registerOfficialVideoTask?(cron: string, run: () => Promise<void>): () => Promise<void>;
       notifyMasters(reply: MessageReply, signal?: AbortSignal): Promise<void>;
     };
+    readonly hoyoTransport?: Parameters<typeof import("@lotus-yunzai/hoyo-client").createProfileHoyoClient>[1];
     readonly zzzPanelRankRoles?: ZzzPanelRankRoleReader;
     readonly zzzReminderRuntime?: import("../../plugins/zzz/challenge-reminder-runtime.ts").ZzzReminderRuntime;
     readonly profileLikeImages?: {
@@ -482,6 +483,7 @@ export async function loadPlugins(
           ...(guidesSchedule && { guidesSchedule }),
           ...(memeRuntime && { memeRuntime }),
           ...(mediaRuntime && { mediaRuntime }),
+          ...(zzz && options.hoyoTransport && { hoyoTransport: options.hoyoTransport }),
           ...(zzzPanelRankRoles && { zzzPanelRankRoles }),
           ...(zzzReminderRuntime && { zzzReminderRuntime }),
         })) : published.default;

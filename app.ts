@@ -3092,9 +3092,10 @@ if (import.meta.main) {
       accounts.commands[`#配置${id === 1 ? "" : id}`]!("", {
         message_type, self_id, user_id, group_id, isMaster, inlineImageByteLimit, groupActivitySignal, privateCredentialSignal,
       });
+    const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
     commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
-      viewProfile, undefined, { transport: hoyoTransportForBot(botConfig.proxyAddress) }));
-    commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal));
+      viewProfile, undefined, { transport: hoyoTransport }));
+    commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal, hoyoTransport));
     commands.registerModule(legacyAnniversaryCommands(root, Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal));
     commands.registerModule(gachaExpectationCommands(calculateGachaPulls, sampleGachaCharacterReturns));
     const checkinAudit = createCheckinAudit(fileURLToPath(new URL("data/audit/checkin.jsonl", root)), undefined,
@@ -3113,7 +3114,6 @@ if (import.meta.main) {
     }));
     const checkinScheduleStore = createCheckinScheduleStore(fileURLToPath(new URL("data/schedules/", root)),
       legacyLotusDirectories.map(id => ({ id, directory: fileURLToPath(new URL(`plugins/${id}/data/schedules/`, root)) })));
-    const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
     const generatedDevices = createGeneratedDeviceRefresh(checkinProfiles, { transport: hoyoTransport,
       signal: AbortSignal.any([lifecycle.signal, handoffSession.signal]) });
     if (!probingUpdate) {
@@ -4182,6 +4182,7 @@ if (import.meta.main) {
           }
         },
       },
+      hoyoTransport,
       async zzzPanelRankRoles(source, options) {
         const { roles } = await zzzRankClient.openHoYoLabZzzCheckin(source, options);
         return { roles };
