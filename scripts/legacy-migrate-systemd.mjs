@@ -37,7 +37,7 @@ function environment(old, options, target, bun, readyFile, manager) {
   return { contents, excluded };
 }
 
-async function userManagerEnvironment(env, uid, io) {
+export async function userManagerEnvironment(env, uid, io) {
   if (io.userManagerEnvironment) return io.userManagerEnvironment(env, uid);
   const runtime = `/run/user/${uid}`, bus = join(runtime, 'bus');
   const directory = await lstat(runtime).catch(() => undefined), socket = await lstat(bus).catch(() => undefined);

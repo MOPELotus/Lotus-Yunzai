@@ -15,7 +15,7 @@ function environment({ cgroup, service = {}, pm2 = false, dump = [] }) {
   const files = { [`/proc/${old.pid}/cgroup`]: cgroup,
     ...(pm2 && { '/fixture/pm2-home/dump.pm2': JSON.stringify(dump) }) };
   const calls = [];
-  const io = { capture: async (command, args) => {
+  const io = { userManagerEnvironment: async env => ({...env,XDG_RUNTIME_DIR:'/fixture/runtime',DBUS_SESSION_BUS_ADDRESS:'unix:path=/fixture/runtime/bus'}), capture: async (command, args) => {
     calls.push([command, ...args]);
     if (command === '/fixture/pm2') return JSON.stringify([{ pm_id: 2, pid: old.pid, name: 'old-bot',
       pm2_env: { pm_cwd: old.cwd, pm_exec_path: '/fixture/old/app.js' } }]);
@@ -60,6 +60,43 @@ test('same-user dedicated bot service is detected without editing the unit', asy
   assert.match(plan.inspectCommand, /^systemctl --user show bot\.service/u);
 });
 
+test('user unit inspection restores verified same-UID bus when the old service environment has none', async () => {
+  const x=environment({cgroup:'0::/user.slice/user-1000.slice/user@1000.service/app.slice/bot.service\n'});
+  x.io.userManagerEnvironment=async(env,uid)=>{
+    assert.equal(uid,process.getuid());assert.equal(env.XDG_RUNTIME_DIR,undefined);
+    return {...env,XDG_RUNTIME_DIR:'/verified/runtime',DBUS_SESSION_BUS_ADDRESS:'unix:path=/verified/runtime/bus'};
+  };
+  x.io.capture=async(_,args,options)=>{
+    assert.ok(args.includes('--user'));assert.equal(options.env.DBUS_SESSION_BUS_ADDRESS,'unix:path=/verified/runtime/bus');
+    return `MainPID=${old.pid}\nExecStart=/usr/bin/node app.js\nRestart=always\nUnitFileState=enabled`;
+  };
+  assert.equal((await inspectLegacyBoot(x.snapshot,{env:{}},x.io,{read:x.read})).status,'handoff-required');
+});
+test('unavailable bus or failed show for an actual cgroup business unit blocks before handoff', async () => {
+  for(const noBus of [true,false]){
+    const x=environment({cgroup:'0::/user.slice/user-1000.slice/user@1000.service/app.slice/bot.service\n'});
+    if(noBus)x.io.userManagerEnvironment=async()=>{throw Error('no bus')};
+    else x.io.capture=async()=>{throw Error('denied')};
+    const plan=await inspectLegacyBoot(x.snapshot,{env:{}},x.io,{read:x.read});
+    assert.equal(plan.status,'blocked');assert.equal(plan.unit,'bot.service');assert.equal(plan.reason,'unverified-old-service');
+  }
+});
+test('missing user bus does not block inspecting an actual system unit',async()=>{
+  const x=environment({cgroup:'0::/system.slice/bot.service\n',service:{MainPID:String(old.pid),ExecStart:'node app.js',Restart:'always',UnitFileState:'enabled'}});
+  x.io.userManagerEnvironment=async()=>{throw Error('no bus')};
+  assert.equal((await inspectLegacyBoot(x.snapshot,{env:{}},x.io,{read:x.read})).status,'handoff-required');
+});
+test('unreadable extra PM2 units outside the old process cgroup are recorded without blocking',async()=>{
+  const x=environment({pm2:true,dump:[{name:'old-bot',pm_cwd:old.cwd,pm_exec_path:'/fixture/old/app.js'}],cgroup:'0::/user.slice/user-1000.slice/session-5.scope\n'});
+  const original=x.io.capture;
+  x.io.capture=async(command,args)=>{
+    if(command==='/fixture/pm2')return original(command,args);
+    if(args.includes('list-unit-files'))return 'pm2-other.service enabled enabled';
+    throw Error('denied');
+  };
+  const plan=await inspectLegacyBoot(x.snapshot,{env:{}},x.io,{read:x.read});
+  assert.equal(plan.status,'not-configured');assert.deepEqual(plan.unverifiedUnits,['pm2-other.service','pm2-other.service']);
+});
 test('a dedicated wrapper service is identified by verified MainPID rather than its script name', async () => {
   const x = environment({ cgroup: '0::/system.slice/start-wrapper.service\n', service: {
     MainPID: String(old.pid), ExecStart: '/fixture/launch-bot.sh', Restart: 'always', UnitFileState: 'disabled',

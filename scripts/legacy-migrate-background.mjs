@@ -1,5 +1,6 @@
 import { readFile, mkdir, lstat, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { userManagerEnvironment } from './legacy-migrate-systemd.mjs';
 
 const catalog = JSON.parse(await readFile(new URL('../i18n/legacy-migrate/zh-CN.json', import.meta.url), 'utf8')).messages;
 const text = key => catalog[key] || key;
@@ -53,7 +54,10 @@ export async function inspectLegacyBoot(old, options, io, { read = readFile } = 
   const userCgroup = cgroup.includes('/user.slice/') && !cgroup.includes('/system.slice/');
   const units = [...new Set([...cgroup.matchAll(/(?:^|\/)([A-Za-z0-9_.@:\\-]+\.service)(?=\/|\n|$)/gu)].map(match => match[1]))]
     .filter(unit => !/^(?:user@\d+|session[-@].*|ssh|sshd|systemd[-@].*)\.service$/u.test(unit))
-    .map(unit => ({ unit, user: userCgroup }));
+    .map(unit => ({ unit, user: userCgroup, owned: true }));
+  const managerEnvironment = async user => user
+    ? userManagerEnvironment(old.env || options.env, process.getuid(), io)
+    : old.env || options.env;
   let persistedOldPm2 = false;
   let pm2Home;
   const unverifiedUnits = [];
@@ -81,7 +85,7 @@ export async function inspectLegacyBoot(old, options, io, { read = readFile } = 
       try {
         const output = await io.capture('systemctl', [...(user ? ['--user'] : []), 'list-unit-files', 'pm2*.service',
           '--state=enabled,enabled-runtime', '--no-legend', '--no-pager'],
-        { ...options, env: old.env || options.env, signal: AbortSignal.timeout(5_000) });
+        { ...options, env: await managerEnvironment(user), signal: AbortSignal.timeout(5_000) });
         for (const line of output.split(/\r?\n/u)) {
           const match = /^([A-Za-z0-9_.@:\\-]+\.service)\s+enabled(?:-runtime)?(?:\s|$)/u.exec(line);
           if (match && !units.some(candidate => candidate.unit === match[1] && candidate.user === user)) units.push({ unit: match[1], user });
@@ -89,16 +93,19 @@ export async function inspectLegacyBoot(old, options, io, { read = readFile } = 
       } catch { options.signal?.throwIfAborted(); }
     }
   }
-  for (const { unit, user } of units) {
+  for (const { unit, user, owned } of units) {
     let properties;
     try {
       properties = parseShow(await io.capture('systemctl', [...(user ? ['--user'] : []), 'show', unit,
         '--property=MainPID', '--property=Restart', '--property=ExecStart', '--property=UnitFileState', '--property=Environment',
         '--property=WorkingDirectory', '--property=ControlGroup', '--property=Type', '--property=FragmentPath', '--property=User', '--no-pager'],
-      { ...options, env: old.env || options.env, signal: AbortSignal.timeout(5_000) }));
+      { ...options, env: await managerEnvironment(user), signal: AbortSignal.timeout(5_000) }));
+      if (!properties.MainPID || !properties.ExecStart || !properties.UnitFileState) throw Error(text('systemd_identity'));
     } catch {
       options.signal?.throwIfAborted();
       unverifiedUnits.push(unit);
+      if (owned) return { status: 'blocked', newAutostartConfigured: false, unit, scope: user ? 'user' : 'system',
+        reason: 'unverified-old-service', unverifiedUnits, message: `${text('systemd_preflight')} ${unit}` };
       continue;
     }
     const activeRestart = properties.Restart && properties.Restart !== 'no';
