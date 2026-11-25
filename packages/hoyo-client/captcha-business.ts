@@ -1,4 +1,5 @@
 import { createHash, randomInt } from "node:crypto";
+import { setTimeout as wait } from "node:timers/promises";
 import type { Game } from "@lotus-yunzai/account";
 import { getDefaultCaptchaSolver, type CaptchaChallenge, type CaptchaEvent, type CaptchaProof } from "./captcha.ts";
 import type { HoyoTransport } from "./credentials.ts";
@@ -156,8 +157,31 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
     const headers = businessHeaders(target, overseas, url.search.slice(1), encoded, route.kind === "bbs");
     if (route.kind === "bbs" && options.verificationCookie) headers.set("Cookie", options.verificationCookie());
-    const response = await transport(url, { method: body === undefined ? "GET" : "POST", headers, body: encoded,
-      signal: deadline, redirect: "error", credentials: "omit", referrerPolicy: "no-referrer" });
+    // Creating a challenge is a read. Never retry proof submissions or account writes here.
+    const attempts = body === undefined ? 3 : 1;
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      await guard();
+      deadline.throwIfAborted();
+      try {
+        response = await transport(url, { method: body === undefined ? "GET" : "POST", headers, body: encoded,
+          signal: deadline, keepalive: false, redirect: "error", credentials: "omit", referrerPolicy: "no-referrer" });
+      } catch (error) {
+        await guard();
+        if (deadline.aborted || attempt + 1 === attempts) throw error;
+        await wait(250 * (attempt + 1), undefined, { signal: deadline });
+        continue;
+      }
+      const gatewayGone = response.status === 410 && /^text\/html(?:\s*;|$)/iu.test(response.headers.get("Content-Type") ?? "");
+      if (gatewayGone && attempt + 1 < attempts) {
+        await response.body?.cancel().catch(() => undefined);
+        response = undefined;
+        await wait(250 * (attempt + 1), undefined, { signal: deadline });
+        continue;
+      }
+      break;
+    }
+    if (!response) throw new HoyoRequestError("transport", "验证码业务接口连接失败。");
     if (!response.ok || response.redirected || (response.url && response.url !== url.href)) {
       await response.body?.cancel().catch(() => undefined);
       throw new HoyoRequestError("http", "验证码业务接口请求未完成。", response.status);

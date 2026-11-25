@@ -158,7 +158,7 @@ account:
   stuid: "42"
   game_roles: { sr: [{ uid: "${profile.role.uid}", region: prod_gf_cn, game_biz: hkrpg_cn }] }
   current_uid: { sr: "${profile.role.uid}" }
-device: { id: "account-device-${id}" }
+device: { id: "account-device-${id}", fp: "fixture-existing-fp" }
 `);
     await writeProfile(1, "other-profile");
     await writeProfile(2, "old-profile");
@@ -288,4 +288,31 @@ test("简易战绩用旧字段补足空译名、出战时间和关卡名", () =>
     } },
   } }], parseChallengeQuery("*上期简易混沌")!, () => undefined);
   expect(result?.floors).toMatchObject([{ title: "关底", stars: 0, nodes: [{ time: "2026.11.02 10:15", buff: "原增益：原说明" }] }]);
+});
+
+
+test("独立挑战入口补查询指纹，网关重试不放宽账号异常", async () => {
+  const missing = { ...profile, device: { ...profile.device, id: "sr-challenge-fp-regression", fp: "" } };
+  let reads = 0;
+  let issues = 0;
+  const options = { kinds: ["hall"], period: "current", simple: true } as const;
+  const result = await readStarRailChallenge(missing, async (url, init) => {
+    if (url.pathname.endsWith("getFp")) {
+      issues++;
+      return Response.json({ retcode: 0, data: { code: 200, device_fp: "123456789abcd" } });
+    }
+    expect(new Headers(init.headers).get("x-rpc-device_fp")).toBe("123456789abcd");
+    if (++reads === 1) return new Response("gone", { status: 410, headers: { "Content-Type": "text/html" } });
+    return Response.json({ retcode: 0, data: { role_id: profile.role.uid } });
+  }, options);
+  expect(result.records).toHaveLength(1);
+  expect(issues).toBe(1);
+  expect(reads).toBe(2);
+  expect(missing.device.fp).toBe("");
+  let calls = 0;
+  await expect(readStarRailChallenge(profile, async () => {
+    calls++;
+    return Response.json({ retcode: 10041 });
+  }, options)).rejects.toMatchObject({ reason: "account" });
+  expect(calls).toBe(1);
 });

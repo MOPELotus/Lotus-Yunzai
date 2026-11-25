@@ -1,6 +1,8 @@
 // Battle record request contract adapted from MOPELotus/Lotus-ReFactor eaf7675
 // services/starRailChallenge/service.js.
 import { createHash, randomInt } from "node:crypto";
+import { setTimeout as wait } from "node:timers/promises";
+import { addRecordFingerprint } from "./record-fingerprint.ts";
 import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -76,7 +78,8 @@ function apiError(status: number, retcode: number | undefined, challenge: boolea
   const subject = "星铁挑战战绩";
   const code = status === 401 || status === 429 ? "http" : "api";
   if (status === 429) return new GameRecordRequestError(subject, "rate-limited", code, status, retcode);
-  if (challenge || (retcode !== undefined && [1034, 10035, 10041].includes(retcode))) {
+  if (retcode === 10041) return new GameRecordRequestError(subject, "account", code, status, retcode);
+  if (challenge || (retcode !== undefined && [1034, 10035].includes(retcode))) {
     return new GameRecordRequestError(subject, "risk", code, status, retcode);
   }
   if (status === 401 || (retcode !== undefined && [-100, 10001, 10101, 10103].includes(retcode))) {
@@ -133,15 +136,27 @@ export async function readStarRailChallenge(source: ProfileRequestContext, trans
     }
     const headers = requestHeaders(source, source.account.cookie, endpoint.searchParams);
     await guard();
+    await addRecordFingerprint(headers, transport, deadline, guard);
     const diagnostics = observeCnRead(path, "GET", signal, timeout);
-    let response: Response;
-    try {
-      response = await diagnostics.read(() =>
-        transport(endpoint, { method: "GET", headers, credentials: "omit", redirect: "error", signal: deadline }));
-    } catch {
-      await guard();
-      throw interrupted();
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await guard();
+      try {
+        response = await diagnostics.read(() =>
+          transport(endpoint, { method: "GET", headers, credentials: "omit", redirect: "error", signal: deadline }));
+        if (response.status === 410 && /^text\/html(?:\s*;|$)/iu.test(response.headers.get("Content-Type") ?? "") && attempt < 2) {
+          await response.body?.cancel().catch(() => undefined);
+          response = undefined;
+          await wait(250 * (attempt + 1), undefined, { signal: deadline });
+          continue;
+        }
+        break;
+      } catch {
+        await guard();
+        if (attempt === 2) throw interrupted();
+      }
     }
+    if (!response) throw interrupted();
     if (response.redirected || (response.url && response.url !== endpoint.href) ||
         (!response.ok && response.status !== 401 && response.status !== 429)) {
       void response.body?.cancel().catch(() => undefined);

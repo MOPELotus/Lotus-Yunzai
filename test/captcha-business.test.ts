@@ -256,3 +256,26 @@ test("较大的正常战绩响应保留原读取能力，限频回执不触发�
     throw new GameRecordRequestError("fixture", "risk", "api", 200, 1034);
   }, { game: "gs" })).rejects.toMatchObject({ reason: "risk" });
 }, { async run() { throw new Error("must not solve"); } }));
+
+
+test("创建挑战可重试 HTML 410，提交校验仍只发送一次", async () => scoped(async () => {
+  let creates = 0, submits = 0;
+  const client = createHoyoClient(async (url, init) => {
+    const headers = new Headers(init.headers);
+    if (url.pathname.endsWith("createGeetest")) {
+      expect(init.keepalive).toBe(false);
+      if (++creates === 1) return new Response("gateway", { status: 410, headers: { "Content-Type": "text/html" } });
+      return ok({ gt: "fixture-gt", challenge: "fresh" });
+    }
+    if (url.pathname.endsWith("verifyGeetest")) {
+      submits++;
+      return new Response("gateway", { status: 410, headers: { "Content-Type": "text/html" } });
+    }
+    expect(headers.has("x-rpc-challenge")).toBe(false);
+    return Response.json({ retcode: 10035 });
+  });
+  const [result] = await client.fetchDailyNotes([source]);
+  expect(result?.status).toBe("rejected");
+  expect(creates).toBe(2);
+  expect(submits).toBe(1);
+}));
