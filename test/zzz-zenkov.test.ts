@@ -81,3 +81,31 @@ test("两条原迷宫 GET 各签 lang、uid、region，使用同档设备且不�
   expect(paths).toEqual(["/event/game_record_zzz/api/zzz/zenkov_abstract_info", "/event/game_record_zzz/api/zzz/zenkov_detail"]);
   expect(guarded).toBe(4);
 });
+
+
+test("未解锁迷宫的空累计统计保持缺失，合法零与非空坏值仍严格区分", () => {
+  const locked = {
+    collect_total_value: "", big_red_num: "", millions_evacuations: "", refresh_time: 7200,
+    abyss_duty: null, abyss_unlock: false, season_unlock: false, season_data: null,
+    map_list: [], max_rank: 0, is_show_percent: false, collection_data: null,
+  };
+  expect(normalizeZzzZenkov(locked, identity, "summary")).toMatchObject({
+    kind: "summary", seasonUnlocked: false, weeklyRemaining: 7200,
+    carryValue: undefined, zGrade: undefined, millionEvacuations: undefined,
+    season: undefined, duty: undefined, maps: [], rank: undefined, medals: undefined, goods: undefined,
+  });
+  // 解锁状态不代表累计统计必定已提供，旧期/部分响应同样不应虚构零值。
+  expect(normalizeZzzZenkov({ ...locked, season_unlock: true }, identity, "summary"))
+    .toMatchObject({ seasonUnlocked: true, zGrade: undefined, millionEvacuations: undefined });
+  expect(normalizeZzzZenkov({ ...locked, big_red_num: "0", millions_evacuations: 0 }, identity, "summary"))
+    .toMatchObject({ zGrade: 0, millionEvacuations: 0 });
+  for (const field of ["big_red_num", "millions_evacuations"] as const) {
+    for (const value of [" ", "abc", "1.5", "-1", -1, 1.5, 1_000_000_000, {}, []]) {
+      expect(() => normalizeZzzZenkov({ ...locked, [field]: value }, identity, "summary")).toThrow(HoyoRequestError);
+    }
+  }
+  for (const bad of [{ uid: "87654321" }, { region: "prod_qd_cn" }, { game_biz: "hk4e_cn" },
+    { map_list: {} }, { collection_data: [] }, { refresh_time: "" }, { max_rank: "" }]) {
+    expect(() => normalizeZzzZenkov({ ...locked, ...bad }, identity, "summary")).toThrow(HoyoRequestError);
+  }
+});

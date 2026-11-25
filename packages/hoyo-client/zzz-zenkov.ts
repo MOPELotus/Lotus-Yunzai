@@ -208,8 +208,9 @@ export function normalizeZzzZenkov(input: unknown, identity: Identity, kind: Zzz
   const weeklyRemaining = count(data.refresh_time, "本周剩余时间");
   const duty = progress(data.abyss_duty, "duty");
   const carryValue = money(data.collect_total_value);
-  const zGrade = count(data.big_red_num, "Z级贵重物品");
-  const millionEvacuations = count(data.millions_evacuations, "百万撤离");
+  // 官方概况未提供累计统计时返回空串；保留缺失语义，不将其当作实际零值。
+  const zGrade = count(data.big_red_num === "" ? undefined : data.big_red_num, "Z级贵重物品");
+  const millionEvacuations = count(data.millions_evacuations === "" ? undefined : data.millions_evacuations, "百万撤离");
   const collected = object(data.collection_data, "珍品图鉴");
   const medals = collection(collected?.medal_data, "medal_icon");
   const goods = collection(collected?.goods_data, "goods_icon");
