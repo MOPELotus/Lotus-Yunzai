@@ -106,7 +106,7 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
   const logFile = await open(join(dirname(statePath), 'worker.log'), constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW, 0o600);
   const io = { execute, capture, identity: processIdentity, kill: (pid, sig) => process.kill(pid, sig), sleep, prepareBun,
     restore: async old => {
-      const child = spawn(old.execPath, old.argv, { cwd: old.cwd, env: process.env, detached: true,
+      const child = spawn(old.execPath, old.argv, { cwd: old.cwd, env: old.env || process.env, detached: true,
         stdio: ['ignore', logFile.fd, logFile.fd] });
       await new Promise((done, reject) => { child.once('spawn', done); child.once('error', reject); });
       child.unref(); return child.pid;
@@ -134,7 +134,10 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
     const actual = await io.identity(old.pid);
     if (!actual || actual.zombie || actual.execPath !== old.execPath || actual.cwd !== old.cwd ||
         JSON.stringify(actual.argv) !== JSON.stringify(old.argv) || old.startTimeTicks && actual.startTimeTicks !== old.startTimeTicks) throw Error(text('identity'));
+    if (old.env !== undefined && (!old.env || typeof old.env !== 'object' || Array.isArray(old.env) ||
+        Object.values(old.env).some(value => typeof value !== 'string'))) throw Error(text('identity'));
     old = { ...old, startTimeTicks: actual.startTimeTicks };
+    oldOptions.env = old.env || originalEnvironment;
     for (const name of ['config', 'data', 'backup']) if (await exists(join(target, name))) throw Error(text('unsafe'));
     if (old.pm2 && (!Number.isSafeInteger(Number(old.pm2.id)) || Number(old.pm2.id) < 0 || typeof old.pm2.cli !== 'string')) throw Error(text('identity'));
     await state({ phase, oldHost: old, workerPid: process.pid, target, log: join(dirname(statePath), 'worker.log'), handoffApproved: false });
@@ -164,7 +167,7 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
     await stage('stopping-old', 'stopping');
     if (!await alive()) throw Error(text('identity'));
     if (old.pm2) {
-      const entries = JSON.parse(await io.capture(old.pm2.cli, ['jlist'], { cwd: source, env: originalEnvironment }));
+      const entries = JSON.parse(await io.capture(old.pm2.cli, ['jlist'], { cwd: source, env: oldOptions.env }));
       const registered = entries.find(entry => String(entry.pm_id) === String(old.pm2.id));
       if (registered?.pid !== old.pid || registered.pm2_env?.status !== 'online') throw Error(text('identity'));
     }
@@ -190,7 +193,7 @@ export async function runLegacyMigration({ source, statePath, target = root, sig
         if (await alive()) recovery = 'old-still-running';
         else if (old.pm2) {
           await io.execute(old.pm2.cli, ['restart', String(old.pm2.id)], oldOptions);
-          const rows = JSON.parse(await io.capture(old.pm2.cli, ['jlist'], { cwd: old.cwd, env: originalEnvironment }));
+          const rows = JSON.parse(await io.capture(old.pm2.cli, ['jlist'], { cwd: old.cwd, env: oldOptions.env }));
           const record = rows.find(row => String(row.pm_id) === String(old.pm2.id));
           if (record?.pm2_env?.status !== 'online' || !await io.identity(record.pid)) throw Error(text('recovery'));
           recovery = 'old-restored';

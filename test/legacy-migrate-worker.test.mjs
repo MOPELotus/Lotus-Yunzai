@@ -129,3 +129,22 @@ test('新端清除旧LOTUS覆盖，旧PM2恢复保留原环境', () => fixture(a
     if (previous === undefined) delete process.env.LOTUS_PROFILE_DIR; else process.env.LOTUS_PROFILE_DIR = previous;
   }
 }));
+test('旧进程恢复使用私有环境快照，而非已清理的worker环境', () => fixture(async x => {
+  await updateMigrationState(x.statePath, { oldHost: { ...x.old, env: { NODE_OPTIONS: '--old-option', PM2_HOME: '/fixture/old-pm2' }, pm2: { id: 8, cli: '/fake/pm2' } } });
+  let running = true;
+  x.dependencies.identity = async pid => running ? { ...x.old, pid } : null;
+  x.dependencies.capture = async (_, __, options) => {
+    assert.equal(options.env.NODE_OPTIONS, '--old-option');
+    return JSON.stringify([{ pm_id: 8, pid: x.old.pid, pm2_env: { status: 'online' } }]);
+  };
+  x.dependencies.execute = async (command, args, options) => {
+    if (command === '/fake/pm2') {
+      assert.equal(options.env.PM2_HOME, '/fixture/old-pm2');
+      if (args[0] === 'stop') running = false;
+      if (args[0] === 'restart') running = true;
+    }
+    if (args[1] === 'bootstrap') throw Error('fixture failure');
+  };
+  await assert.rejects(runLegacyMigration(x, x.dependencies));
+  assert.equal(JSON.parse(await readFile(x.statePath, 'utf8')).recovery, 'old-restored');
+}));
