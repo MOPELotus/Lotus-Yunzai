@@ -4917,7 +4917,8 @@
     "web.miyoushe.app.text_faa93dadc4": "查看商品详情",
     "web.miyoushe.app.text_fd7147a900": "已到开放时间，请刷新官方库存",
     "web.miyoushe.app.text_fff0472ba2": "已兑完",
-    "lib.migration-media-config.invalid_cli_setting": "合伙人 CLI 乐评配置 {field} 无效，请修正后重新迁移。"
+    "lib.migration-media-config.invalid_cli_setting": "合伙人 CLI 乐评配置 {field} 无效，请修正后重新迁移。",
+    "scripts.migrate.old_schedule_policy": "迁移暂存使用旧日程策略，请保留原暂存备份并重新准备迁移。"
   },
   "parameters": {
     "app.text_242958f459": {

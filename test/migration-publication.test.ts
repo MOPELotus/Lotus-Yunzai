@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { lockFile, managedHostLockPath, managedStartupLockPath } from "../lib/file-lock.ts";
 import { move, writeJournal } from "../lib/filesystem-transaction.ts";
 import { publishMigrationPayload, recoverMigrationPublicationForStartup } from "../lib/migration-publication.ts";
+import { linkHostPackages } from "./host-fixture.ts";
 import { activateUpdate } from "../lib/update-activation.ts";
 
 let fixture: string | undefined;
@@ -204,6 +205,9 @@ test.skipIf(!Bun.which("git") || process.platform === "win32")("launcher recover
     if ((await readdir("plugins")).some(name => name !== "genshin")) process.exit(8);
   `);
   await symlink(fileURLToPath(new URL("../lib/", import.meta.url)), join(root, "lib"), "dir");
+  await linkHostPackages(root);
+  await mkdir(join(root, "i18n"), { recursive: true });
+  await copyFile(new URL("../i18n/zh-CN.json", import.meta.url), join(root, "i18n/zh-CN.json"));
   await copyFile(new URL("../scripts/launcher.ts", import.meta.url), join(root, "scripts", "launcher.ts"));
   const launcher = Bun.spawn([process.execPath, "--no-env-file", "scripts/launcher.ts", "init"], {
     cwd: root, stdout: "ignore", stderr: "inherit",

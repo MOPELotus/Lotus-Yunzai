@@ -35,7 +35,7 @@ test.skipIf(!Bun.which("git"))("迁移从旧绝区零配置保留显式关闭、
     const updateNotice = { settings: { update_notice: true, update_notice_cron: "0 0/10 * * * ?" }, deferred: false };
     expect(await migrateInstallation(source, target)).toMatchObject({ status: "published", zzzRecall, updateNotice });
     expect(Bun.YAML.parse(await readFile(join(target, "config/config/bot.yaml"), "utf8"))).toEqual({
-      update_time: 0, ...updateNotice.settings,
+      update_time: 0, update_cron: "0 30 0,12 * * *", ...updateNotice.settings,
     });
     const saved = join(target, "config/zzz-panel.yaml");
     expect(Bun.YAML.parse(await readFile(saved, "utf8"))).toEqual({ roleInterval: 310, buttons: false, interval: 60, recallMsg: 0 });

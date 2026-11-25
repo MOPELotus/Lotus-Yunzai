@@ -118,19 +118,19 @@ test("materializes omitted network defaults and replaces whole legacy sections b
   expect(await readFile(join(stage, "config/redis.yaml"), "utf8")).not.toContain("must-not-start");
 });
 
-test("removing inherited auth leaves old unauthenticated WebSocket and Webhook ingress deferred", async () => {
+test("removing inherited auth permits internal OneBot and defers unauthenticated Milky Webhook", async () => {
   const { source, stage } = await setup();
   await put(source, "config/default_config/server.yaml", { port: 0, auth: { Authorization: "Bearer discarded" } });
   await put(source, "config/config/server.yaml", { auth: null });
   await put(source, "config/default_config/milky.yaml", { enable: true, connection: "webhook", access_token: "discarded" });
   await put(source, "config/config/milky.yaml", { access_token: "" });
   expect(await stageLegacyNetworkConfig(source, stage)).toEqual({ groups: ["server"], deferred: [
-    "server.onebot.authorization", "milky.webhook.authorization",
+    "milky.webhook.authorization",
   ] });
   const settings = await readServerSettings(pathToFileURL(stage + "/"), {});
   expect(settings.http?.port).toBe(0);
   expect(settings.http?.auth.has("Authorization")).toBe(false);
-  expect(settings.oneBot).toBeUndefined();
+  expect(settings.oneBot?.port).toBe(0);
   expect(await Bun.file(join(stage, "config/milky.yaml")).exists()).toBe(false);
 });
 

@@ -236,11 +236,12 @@ test.skipIf(!Bun.which("git"))("一体化迁移发布已验证的配置、数据
   expect(result.coreConfig).toEqual({ files: 1, deferredOwners: { master: 0, masterQQ: 0 } });
   const migratedRoot = Bun.pathToFileURL(`${target}/`);
   expect((await readMasterPermissions(migratedRoot)).isMaster(99, 42)).toBe(true);
-  expect(result.networkConfig).toEqual({ groups: ["server", "milky"], deferred: ["server.onebot.authorization"] });
+  expect(result.networkConfig).toEqual({ groups: ["server", "milky"], deferred: [] });
   expect((await readServerSettings(migratedRoot, {})).http?.port).toBe(9123);
   expect((await readServerSettings(migratedRoot, { LOTUS_ONEBOT_TOKEN: "fixture" })).oneBot?.port).toBe(9123);
   const globalConfig = await readLotusGlobalConfig(migratedRoot);
   expect(globalConfig).toEqual({
+    netease_partner: { schedule: "0 30 1 * * ? *" },
     scheduler: { enable: false, mode: "fixed", fixed_time: "04:30" },
     permissions: { default_policy: "deny", users: { allow: ["42"], deny: [] } },
     coin_shop: { enable: false, panel_session_hours: 15 },
@@ -341,7 +342,6 @@ globalThis.fetch = (input, options) => {
     expect(backup.list).toEqual([expect.objectContaining({ id: ids[1] })]);
   }, 3_500, guard, async (root) => {
     for (const path of ["config", "data"]) await cp(join(directory, path), join(root, path), { recursive: true });
-    await symlink(fileURLToPath(new URL("../packages/", import.meta.url)), join(root, "packages"), "dir");
     await cp(new URL("../plugins/starrail/", import.meta.url), join(root, "plugins", "starrail"), {
       recursive: true, filter: path => !path.endsWith("/.git"),
     });
