@@ -86007,6 +86007,616 @@
       "sha256": "c53dea1fbc0966b18a503aa0d6706b860c5634ee0a9563ec6756c73bc1da7fc3"
     },
     {
+      "path": "resources/builtin/social/guides/img/background/AbyssTeams_bg.webp",
+      "bytes": 247720,
+      "sha256": "91c0cf654a0ea53481ff37b2a2918be77bc73ea6ca2553ccd2b65dc0d8811e56"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/background/AbyssUR_bg.webp",
+      "bytes": 246330,
+      "sha256": "4a2813d4468f06c27c99b049fb400a95efc690d344658cbeeb2b4b6adb10965b"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/七七.png",
+      "bytes": 8814,
+      "sha256": "b3a1443487149cf9d0cfc660b5eb589fd98ff1ead744f225cfb9dc71d08124e6"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/丝柯克.png",
+      "bytes": 9384,
+      "sha256": "9294caa69c2a9ac4857f12983e139fcc8b6289b6fb21e0ee799051058ac6bd05"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/丽莎.png",
+      "bytes": 9954,
+      "sha256": "22253e9da4f2bd57d70620e4dfb448be78b9d1e880f2194740f441d4525020b9"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/久岐忍.png",
+      "bytes": 9964,
+      "sha256": "521eb65b12b27651e276f7c646051de6db07680d10df373907106d695918d4c8"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/九条裟罗.png",
+      "bytes": 9099,
+      "sha256": "f30ae679c7d9db56886ef880ef6963bca3c8df7b54ad7b94ef764c54d2207fbf"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/云堇.png",
+      "bytes": 9770,
+      "sha256": "8dc0d5f9834d9c722fa93ccfdbaedeab2a75d9c4cd2041ff2d7410631ba4b1d4"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/五郎.png",
+      "bytes": 9724,
+      "sha256": "5ded4195359896b0942d44cf559992aaefa2ddbf6a4628407028e94fae822633"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/伊安珊.png",
+      "bytes": 11461,
+      "sha256": "7a729444fbb5e2cd23f787e03f6557b89bd1a949c13642c78f0e2e55d6ab781f"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/伊涅芙.png",
+      "bytes": 9362,
+      "sha256": "63e70759d57f54c477b3342876cace0076f19335111ccb65ed925df579fd171d"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/优菈.png",
+      "bytes": 9507,
+      "sha256": "01cd609424c75d43a78540c25ecd9af47cd4676e38e338421e1fdd6b972b5abf"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/八重神子.png",
+      "bytes": 9388,
+      "sha256": "9c4a56989f77e26775eeb26df202118ff8dbb52441f71aa4e77574b9af4ef4a3"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/兹白.png",
+      "bytes": 11342,
+      "sha256": "92a8a52d8a7c66c248a3558635a6599e0602f098986635fa3487b02c25ce4ba6"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/凝光.png",
+      "bytes": 8902,
+      "sha256": "65ce8c27cd8bca83abaedb4028f60c7a0a2e41c2d16f7d3f1799eafa53589bc8"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/凯亚.png",
+      "bytes": 9902,
+      "sha256": "762e6705c544f63ab5e9c66473094de4dc57d16da3e22a874747d71473d199d3"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/刻晴.png",
+      "bytes": 9266,
+      "sha256": "249e72aa9640d1d9c61d0eef194904d02cdd1859bf4d7ec5d02d317367345bdf"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/北斗.png",
+      "bytes": 10118,
+      "sha256": "06a0885fe18b9b43d630f9ebe7d5ae30c1c0d10103ec795023692f66fa2c3231"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/千织.png",
+      "bytes": 9639,
+      "sha256": "149928c4146bf77f6b45e59250a8c5390e824a706390ccd75ffc43d866b587f5"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/卡维.png",
+      "bytes": 9279,
+      "sha256": "7d25b938cb92c430ddcc0cf4388d085e9a9e0f424a54ac6c37d515b2e5c4178d"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/可莉.png",
+      "bytes": 9804,
+      "sha256": "427cc9b14413a2a076119679297b03b674b54f23b21c90510a614ff349688081"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/叶洛亚.png",
+      "bytes": 10013,
+      "sha256": "a6bce982326a245605dabed81bf2b692508c059b8271ce1e8ac57f564495619c"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/哥伦比娅.png",
+      "bytes": 9944,
+      "sha256": "4e9a7d3e523c4094a6835329564457a6e665412b5e662cebb8f8ca98a0a1bd63"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/嘉明.png",
+      "bytes": 10177,
+      "sha256": "5a78642355d8b60ae483b41f37ec86e0b84aabf336dfcdbe7debcfcc2308ab31"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/坎蒂丝.png",
+      "bytes": 10239,
+      "sha256": "5152933dac3640a7b88248dbee476333ec47f0e00d143421b84b2e3bc792566e"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/埃洛伊.png",
+      "bytes": 8986,
+      "sha256": "6c8b7731d5e586d8204ba76e486f507b5ea29298e3d79f5759c1ebe61e5b3466"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/基尼奇.png",
+      "bytes": 9472,
+      "sha256": "a0d861e1969be235202d73e34b0c44b781bf39d52b7547138bd5360b0b75c3d8"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/塔利雅.png",
+      "bytes": 9074,
+      "sha256": "a504335ef86754ca59c8149851bc8ec9fdb7042b2b3a247dec7bf7599998b1f1"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/夏沃蕾.png",
+      "bytes": 9454,
+      "sha256": "f1a60a9bebef3cb42d8ce81adcd0aadc0efae3a9b5d1c2cb9189db8daefe89a2"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/夏洛蒂.png",
+      "bytes": 9266,
+      "sha256": "65bb53ea0f9f304629771f877e0686ea3b7d9b3916f37a92969fa63b8d6631bb"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/多莉.png",
+      "bytes": 10031,
+      "sha256": "3839d3b8e2985a801d74a2cf43f149f1e761cb2a727099870605f1c8b6a794c8"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/夜兰.png",
+      "bytes": 9972,
+      "sha256": "c3dbb0f2f0c2b5fc59146c1c100d895247a8055a8d0793883a45cf83a72c567b"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/奈芙尔.png",
+      "bytes": 9862,
+      "sha256": "635c2ba725f403a224b78e0c75fac8e514a2fb2a0777a2badb685a436eeadf29"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/奥黛塔.png",
+      "bytes": 11510,
+      "sha256": "4f212f06ed5acdd7e8e3cb5c89b11189b5838675d809ccd7d57abeeee066128f"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/妮露.png",
+      "bytes": 9534,
+      "sha256": "9bb26ea8492105d7cda4ee0521b961ddc570ba2bfb25d8b37c05f64e7143ceeb"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/娜维娅.png",
+      "bytes": 13257,
+      "sha256": "154c3cdf8b0a194cb12fab81afd1293137e677203390ab834a6160043260afc2"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/安柏.png",
+      "bytes": 9262,
+      "sha256": "1c5b611555c98022431a0479df73a1b1d7913e49f9af5f2d1dc5301984031b63"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/宵宫.png",
+      "bytes": 10703,
+      "sha256": "92247bf5b1680e8d80e1d0407dbd26b64a71a5af762b064c6ac0b8f154da290f"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/尼可.png",
+      "bytes": 11505,
+      "sha256": "91c9eeeebff28158e2a2c916fd16f33a41a12f676f4c47b260559f3a72e8ea36"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/布伦妮.png",
+      "bytes": 10472,
+      "sha256": "8b494ba7fd29a17317934ed66183b21e80a4048ee5d27ffc9d1f2badaeb425a5"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/希诺宁.png",
+      "bytes": 11413,
+      "sha256": "d7c4df8429241b3f80e096cb14384956d19c89a11694befac2c559885e4b5ac5"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/托马.png",
+      "bytes": 10101,
+      "sha256": "bfd2a6a8a538e3e17b32ba837c5a393ede6048334a529865686c1a5015ab2e9a"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/提纳里.png",
+      "bytes": 8238,
+      "sha256": "290720c8f9117f83bad5f6967905136a0aff677c2c3f53881204397ed5cc8434"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/旅行者.png",
+      "bytes": 10115,
+      "sha256": "28d8b5038106fe6cd000478e3f37f80396a132f8b516f947255e0f829ee9ce75"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/早柚.png",
+      "bytes": 9417,
+      "sha256": "5e739de51b425d4b0683cd0fb00f4903e7cb1486d9b1dd06ad0184b80af2be65"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/杜林.png",
+      "bytes": 9559,
+      "sha256": "6b58f4622c02799a0da8af618411d85ca78b1fd71aada31fa8090d197fd26cca"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/林尼.png",
+      "bytes": 8337,
+      "sha256": "f5d62bd357cece698abb4510003ffb7af025cd11d942fdd25340c0b4e664591c"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/枫原万叶.png",
+      "bytes": 10484,
+      "sha256": "354246c9b12fe3bc5c59a074efae4873651276db78bfcea3510acece56928443"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/柯莱.png",
+      "bytes": 9480,
+      "sha256": "a83e6b3505fef7b4cc9d43601f086f34b7e76b2e76789c33b896a8cd84e2f3d1"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/桑多涅.png",
+      "bytes": 9509,
+      "sha256": "329d1182b52e782832bc07de4d95e50214d08d2256e3c338dfd47fbb7d077a5d"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/梦见月瑞希.png",
+      "bytes": 9675,
+      "sha256": "bdcfdb3fcef71586731ab40408979ce767873b6f7df4f6f87e20f3eaf3daaa2b"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/欧洛伦.png",
+      "bytes": 10288,
+      "sha256": "603694db62a092c7f192ead43e03ef5ce2b8c6259deeedb734825cfb4a522a66"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/沃雅妮莎.png",
+      "bytes": 11568,
+      "sha256": "b7bf99eb196b077b9428fc9e80b9d4133fd20c200810a8fb1682d5f9fecb0d8f"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/法尔伽.png",
+      "bytes": 11131,
+      "sha256": "e664bdcc6b60b772f4e92afcb5ff01c45c557ba449fdb76a2464dfaf9d92cb6c"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/洛恩.png",
+      "bytes": 9137,
+      "sha256": "25633e1bbbfed21700de32275ecaee4b1191bad58379a5ce1597a12bb7840a61"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/流浪者.png",
+      "bytes": 10411,
+      "sha256": "411b873fe6433fc2d609cb613ef3db3ca7e24ecb39d6f0b79d91105784beb9e3"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/温迪.png",
+      "bytes": 9267,
+      "sha256": "3afeb285bbf8c8449aadfb7d828a260bbe6dccf76a324b1148ad9b3da18a4005"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/烟绯.png",
+      "bytes": 11023,
+      "sha256": "ce2007c75da5f43aa3add54d3cc4415af48d822efca408dbd9b1a9d324c40094"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/爱可菲.png",
+      "bytes": 9495,
+      "sha256": "ffb590402783939d5865bf72bc82b7c57685d4f7fc8ef60b755350913587be7b"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/爱诺.png",
+      "bytes": 9216,
+      "sha256": "998452428d7cc56d4d2b95924b212f000997f4d46275790c3421846f758faf94"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/玛薇卡.png",
+      "bytes": 11610,
+      "sha256": "750ba18920cb19258d291c251642d8852ffb4443eab98386fc252911beff931f"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/珊瑚宫心海.png",
+      "bytes": 9370,
+      "sha256": "a4d0cba648dcb729b2561163883dfff1b62a8fdca059ef296dad9d9efac4333f"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/珐露珊.png",
+      "bytes": 9443,
+      "sha256": "836e8dc5bc7646e2c1e956198d116a49bf4a27374cd7266f449dd89156eef537"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/班尼特.png",
+      "bytes": 8359,
+      "sha256": "f94b3141f2fc4014f17b24ce937de2e7f7eb486273197ba43aa992461c5f0fb1"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/琳妮特.png",
+      "bytes": 8956,
+      "sha256": "4b12f2473c956eb16dd4ed1ccab87ebd7f0117e91184d852f290659baabce45d"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/琴.png",
+      "bytes": 9770,
+      "sha256": "244e5b2a3838b41f788507d642a31b0fd976850be8c8b62189c1dbef3bf200fd"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/瑶瑶.png",
+      "bytes": 9979,
+      "sha256": "b582da210549617cc0105c4053aae9ecb8f9a2f6dec8726f20ca9687600e7c7d"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/瓦雷莎.png",
+      "bytes": 10688,
+      "sha256": "0c2cf4691d2117fbe5f9f713cf650fc92039404cb5edeffee6967162f5f9e232"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/甘雨.png",
+      "bytes": 9384,
+      "sha256": "b36f33b2d5b9888ec4d7d1479ac052db71acf0c808c13600233da8d0ba58b0ca"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/申鹤.png",
+      "bytes": 9258,
+      "sha256": "133741b410ce08d48d617c0869365996e4b0e2b2377694b4bec45e50463e52c6"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/白术.png",
+      "bytes": 8963,
+      "sha256": "96fc16a1ec809024fe0087c998ee6c67b0d4c00431a13b16be4cc3a46767b227"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/砂糖.png",
+      "bytes": 9837,
+      "sha256": "9b2fb466b73db8bc8636f485c1baa9ee7fa32743f0a098c10527dc8686b83007"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/神里绫人.png",
+      "bytes": 8987,
+      "sha256": "e7ebec5d77462227f5f915eed7c85d6e51d894167b244370737bacd0f6b96465"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/神里绫华.png",
+      "bytes": 10537,
+      "sha256": "4b73bcdc31735266c21af70d0df5abd14ee8bb89dc2111891989019c08ebaa27"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/米卡.png",
+      "bytes": 8543,
+      "sha256": "d8709f5d744520731290da57bbf1581de20b5b7ba68c74273b67597ed92618c3"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/纳西妲.png",
+      "bytes": 10252,
+      "sha256": "83544d0f5767a253710444c8d0d5f859f3fb2528beb3368946fd9cfb6d2238f8"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/绮良良.png",
+      "bytes": 9902,
+      "sha256": "ed7401855e37a3989c38befbeda1ee4160f5d5d1bdc6fcf695e865779822eafc"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/罗莎莉亚.png",
+      "bytes": 8992,
+      "sha256": "5ed79edb8af8a9e2d6df837914309913acf29d5b15dbc622902e81af0ad128ca"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/胡桃.png",
+      "bytes": 10694,
+      "sha256": "e82572ec2513e2335c6981fdb13f854d4c763f4eed9260dec3aa7c8428ebeb02"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/艾尔海森.png",
+      "bytes": 8250,
+      "sha256": "06ce93b58a6343ecc5459c5891cb871e0893a7b565d74bc990ea0bd8690373af"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/艾梅莉埃.png",
+      "bytes": 9662,
+      "sha256": "5403fda983297433434023af1089a20a508ff7ce1998ad2c216c130ad83d897c"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/芙宁娜.png",
+      "bytes": 10443,
+      "sha256": "36e33fbc7b6bd91bf08d22c6aae04562b79e7f6a7f6adc8525ed29148ea10a42"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/芭芭拉.png",
+      "bytes": 9926,
+      "sha256": "ac4e20b10fefc4cdef2d680d95bca1e26705a235acc0a80799403fc9a1be1167"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/茜特菈莉.png",
+      "bytes": 10423,
+      "sha256": "f32c0ceaae10436e50706f5d08d4147b04db5a57322cb9127b861942faa28cae"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/荒泷一斗.png",
+      "bytes": 10385,
+      "sha256": "fd234b47eb7d470cdb0b73e293d4c5074c47fb828d2fcc86260d1c1763b25ed1"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/莉奈娅.png",
+      "bytes": 10475,
+      "sha256": "366c8038aa033ec9c7567683f7f7ae0c676fd9751611ff02d1b845e8e34e13a9"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/莫娜.png",
+      "bytes": 9896,
+      "sha256": "8795249c4aea4e39469ece8d59fc19c52e69e1f6d6a2b16faff2fee8a602063b"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/莱依拉.png",
+      "bytes": 9264,
+      "sha256": "0380dce4d6c4971b4ef04a2cbbdf616c94ad4a4227b370dd154baa1ebbe2d161"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/莱欧斯利.png",
+      "bytes": 9765,
+      "sha256": "257c81ae4cc1ca3c623f491737a491d8be4ea2b13d92bed9347bb72e82a7e73f"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/菈乌玛.png",
+      "bytes": 9586,
+      "sha256": "16a0aa59cbb4af9838746f5ccca64ed59c1b6a1bf3cc0a476c91f9bd79a2f15a"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/菲林斯.png",
+      "bytes": 9425,
+      "sha256": "955df57c0f72b30f56a2a2dfab67da5222f0f4cb6f94f19738a333e215879573"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/菲米尼.png",
+      "bytes": 11461,
+      "sha256": "c5f519e9f5f39868eefbc1ea909a7206b92a6a74cd65ada4710d6b04796041af"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/菲谢尔.png",
+      "bytes": 9272,
+      "sha256": "ae254e3542bdd89f969de6a88ef3d498447d22884504be6fe005d4b9c8b48fdd"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/蓝砚.png",
+      "bytes": 10239,
+      "sha256": "ff0911fe2db7f28269911fb4a546e7b7352a8ef58109c1528d148c8749fd43a9"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/薇斯纳.png",
+      "bytes": 11779,
+      "sha256": "d496d8e732e1644614580154bc1f9223cd262accdb96473ae008fb4fd8fcc4df"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/行秋.png",
+      "bytes": 7646,
+      "sha256": "04f86284343ed23c31e53d5999d46cd91c3ea258f6de62054e7f9c2deb40c841"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/诺艾尔.png",
+      "bytes": 9435,
+      "sha256": "5c1bf8b3224a040db88a77da0ea169e6d879f283e9dfadd7ba32d4055f9361c5"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/赛索斯.png",
+      "bytes": 11141,
+      "sha256": "6da160e60ec15cf4ce754abec9771c30b501f37b1efc880f2962afeb65013fea"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/赛诺.png",
+      "bytes": 9766,
+      "sha256": "8af95d33073fcf4c069dadde7e651839595ac11c0cfa168b6beee7ca052a5531"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/辛焱.png",
+      "bytes": 10733,
+      "sha256": "8df7776c127196f079d8c776b0e9bc9c3ebe3cd452f11fa9c02d22e98908bee4"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/达达利亚.png",
+      "bytes": 9551,
+      "sha256": "f36653d5ea226507974f056837da026f85b7f4edd3ff2ebfbe6ee22037bd5f5b"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/迪卢克.png",
+      "bytes": 10516,
+      "sha256": "cf50288721a0035da2755f4c0de7cf5e5702076e7e024030e28b3c23e83b259b"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/迪奥娜.png",
+      "bytes": 9447,
+      "sha256": "5d36fbcd99267dea2228b1bf1dcc9d4a4e8fdaf2e4f1c556815378600f41dc6d"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/迪希雅.png",
+      "bytes": 9858,
+      "sha256": "6917589e2a7bddc25b69025b375f4821212f0c6aafcbf0f2f4122a731980a47a"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/那维莱特.png",
+      "bytes": 8703,
+      "sha256": "1e0a6de58ab5a9d440d237b0417a819f074ba4657612b4e6747d46eaf16e63a2"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/重云.png",
+      "bytes": 9078,
+      "sha256": "0e956a6bf638684db117cf9eebed1b85f3f050fef7135cec294a637fba2e0784"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/钟离.png",
+      "bytes": 8025,
+      "sha256": "f4a319e58b6ddd6be7244415d06431cbeb0f0ffa9eee54b4eb48efe6cf004eb5"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/闲云.png",
+      "bytes": 9541,
+      "sha256": "52b5420f2a64e571a3704d7b8ae51a7b37cdf52e5a48c32db75a8313906b8a0c"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/阿罗夏.png",
+      "bytes": 10272,
+      "sha256": "cb6b20a6dfa39675d4d86a7da1d4b7f909aa168a713ddc8a41e8baf2799efc5f"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/阿蕾奇诺.png",
+      "bytes": 9988,
+      "sha256": "0d06a5860379549ecb610a3345b7c52cc01e339c94f499e3dcb9598d347e10dd"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/阿贝多.png",
+      "bytes": 9511,
+      "sha256": "0d33d413d74e30f9141553bfaee5047044f50fa4b49d81a96fecfc25553b5d9b"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/雷泽.png",
+      "bytes": 9825,
+      "sha256": "714cb660174aa5c1d1f28f94db15bf86c0f42bb011fd5dffc10bf36517cd7c54"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/雷电将军.png",
+      "bytes": 11447,
+      "sha256": "063d6f9bd1252426b3afb4c663e02da64f48bc679964a080dd57d53f8d1b0acd"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/香菱.png",
+      "bytes": 9191,
+      "sha256": "ea8d1e8411d99bdf4980223f1c44a315217267bc5cad7a50f656cf190747e9f5"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/魈.png",
+      "bytes": 10365,
+      "sha256": "07d2f1624fdc28cc6189fd7bc3e14a023f080efd723b104370342fabf748838e"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/role/鹿野院平藏.png",
+      "bytes": 9488,
+      "sha256": "5d9a17178fc73a6b21d3960b52e884b448c903808b42423bc6736285d97151ad"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/separator/split10.png",
+      "bytes": 2332,
+      "sha256": "25f9330a254d4a1edd4363f38a4dd330ad5760849cca9314dec5d4e7e7ec84f9"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/separator/split100.png",
+      "bytes": 1936,
+      "sha256": "9e1bc6d8e20fdada98b3d2b74d2eb35095985196f109ea079e316072a2f63812"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/separator/split50.png",
+      "bytes": 2672,
+      "sha256": "b669ce2586b5e2717d029992b6120dd2774c60e91548ca8cfbd623d89f2510ac"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/separator/split75.png",
+      "bytes": 1841,
+      "sha256": "852d68167eb96815c0b8d77b4db7d804893aa77db75e63d2ffdb884917b78c81"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/separator/team_split.png",
+      "bytes": 1655,
+      "sha256": "1ac12a37c4064c7c1fbfd7f54aba8ea0b6712aaf81eb15b50e1eef42701844c9"
+    },
+    {
+      "path": "resources/builtin/social/guides/img/separator/word_split.png",
+      "bytes": 3643,
+      "sha256": "8b5fffbe95cd1851eb40df60044991f9d6890ecefb84521dace20b0c40f2189b"
+    },
+    {
       "path": "resources/builtin/social/licenses/mora-plugin-LICENSE",
       "bytes": 35149,
       "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
@@ -86123,8 +86733,8 @@
     },
     {
       "path": "resources/builtin/social/sources.json",
-      "bytes": 11389,
-      "sha256": "bc662e152d1c013e314210f57340faf2fe2da9576510dc0e316e2054214ceb7a"
+      "bytes": 53570,
+      "sha256": "e1dedbf59445a4df2c4739c5dda1a67e107053deaca511ce7d1049f2564e8caf"
     },
     {
       "path": "resources/builtin/social/yuki/fonts/OPSans.woff2",
