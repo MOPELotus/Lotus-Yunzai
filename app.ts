@@ -22,7 +22,7 @@ import { calculateGachaPulls } from "@lotus-yunzai/gacha/expectation";
 import { bbsCheckinForums, createProfileHoyoClient, isZzzGachaLinkMessage, type BbsCheckinForum } from "@lotus-yunzai/hoyo-client";
 import { RedeemCodeService } from "@lotus-yunzai/hoyo-client/redeem-preview";
 import { previewRedeemIdentity, submitPreviewCode } from "@lotus-yunzai/hoyo-client/redeem-submit";
-import { nativeImageRasterScale, setImageRenderPreset } from "@lotus-yunzai/skia";
+import { nativeImageRasterScale, setImageRenderPreset, setImageFooter } from "@lotus-yunzai/skia";
 import { renderDailyNoteReminderCard } from "@lotus-yunzai/skia/daily-note-reminder";
 import { closeStorage, connectStorage, readStorageCommand, storage } from "@lotus-yunzai/storage";
 import { accountCommands, isAccountLoginMutation, matchGameLoginRemoval, removeSelectedGameLogin } from "./lib/account-commands.ts";
@@ -2976,6 +2976,7 @@ if (import.meta.main) {
     const botConfig = withDefaultUpdateSchedule(await readLocalConfig(root, "bot"));
     panelTransfer = configurePanelTransfer(botConfig.panelTransfer, lifecycle.signal);
     setImageRenderPreset(botConfig.imageRenderPreset);
+    setImageFooter(botConfig.imageFooter);
     runtimeLogConfig = botConfig;
     installTerminalLogging(botConfig);
     const watchConfig = botConfig.file_watch !== false && !probingUpdate ? lifecycle.signal : undefined;

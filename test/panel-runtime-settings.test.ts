@@ -1,3 +1,4 @@
+import { parseImageFooter } from "../packages/skia/custom-footer.ts";
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -21,15 +22,15 @@ test("宿主运行设置沿用旧生效配置，忽略不相关字段并防止�
     const legacySource = "# 旧配置\nlog_level: WARN\nlog_object: {depth: 4, length: '90', breakLength: 20, sorted: true, getters: true}\nlog_align: Host\nplugin_load_timeout: '2.75'\ncache_group_member: 0\nmsg_type_count: '1'\nfile_to_url_time: '1.25'\nfile_to_url_times: 0 # 禁止下载\npanel_token: fixture\n";
     await writeFile(legacy, legacySource);
     const initial = await get();
-    expect(initial.fields).toHaveLength(13);
+    expect(initial.fields).toHaveLength(14);
     expect(initial.values).toEqual({
-      imageRenderPreset: "standard", log_level: "warn", log_length: 10_000, "/→#": true,
+      imageFooter: parseImageFooter(undefined), imageRenderPreset: "standard", log_level: "warn", log_length: 10_000, "/→#": true,
       log_object: { depth: 4, length: 90, breakLength: 20, sorted: true }, log_align: "Host", plugin_load_timeout: 2.75,
       cache_group_member: false, msg_type_count: true, file_watch: true, online_msg_exp: 1440,
       file_to_url_time: 1.25, file_to_url_times: 0,
     });
     expect(JSON.stringify(initial)).not.toContain("fixture");
-    const changes = { ...initial.values, imageRenderPreset: "low", "/→#": false, online_msg_exp: 0,
+    const changes = { ...initial.values, imageFooter: parseImageFooter({text:"fixture",color:"#333333",background:"#ffffff"}), imageRenderPreset: "low", "/→#": false, online_msg_exp: 0,
       log_object: false, log_align: "", plugin_load_timeout: 0.35 };
     expect((await put(initial.values, { ...changes, log_length: 32_001 })).status).toBe(400);
     expect((await put(initial.values, { ...changes, log_object: { depth: 11 } })).status).toBe(400);
@@ -40,6 +41,7 @@ test("宿主运行设置沿用旧生效配置，忽略不相关字段并防止�
     expect((await put(initial.values, { ...changes, file_to_url_time: Number.MAX_SAFE_INTEGER })).status).toBe(400);
     expect((await put(initial.values, { ...changes, file_to_url_times: 0.5 })).status).toBe(400);
     expect((await put(initial.values, { ...changes, panel_token: "" })).status).toBe(400);
+    expect((await put(initial.values, { ...changes, imageFooter: { ...changes.imageFooter, color: "url(secret)" } })).status).toBe(400);
     let checks = 0;
     expect((await put(initial.values, changes, () => ++checks === 1)).status).toBe(401);
     expect(await readFile(legacy, "utf8")).toBe(legacySource);

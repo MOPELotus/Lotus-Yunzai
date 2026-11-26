@@ -9,6 +9,8 @@ import { pathToFileURL } from "node:url";
 import type { PageGotoParams, Runtime, ScreenshotOptions } from "@pixel.js/shotium";
 import { translateTemplate, translateTemplateStyles } from "../i18n-templates.ts";
 
+import { appendCustomImageFooter } from "../../packages/skia/index.ts";
+
 interface TemplateCompiler {
   compile(source: string, options: { filename: string; cache?: boolean; loader?: (filename: string) => string }): (data: object) => string;
 }
@@ -113,11 +115,11 @@ export async function renderTemplate(data: TemplateData): Promise<Buffer[] | fal
           const result = await runtime.screenshotTiles({
             ...options, selector, tile: { height: data.multiPageHeight ?? 1600 },
           });
-          const images = result.tiles.map((tile) => tile.image);
+          const images = await Promise.all(result.tiles.map(async tile => tile.image ? appendCustomImageFooter(tile.image, data.scale ?? 1) : null));
           return images.length && images.every((image) => image !== null) ? images : false;
         }
         const result = await runtime.screenshot({ ...options, selector });
-        return result.image ? [result.image] : false;
+        return result.image ? [await appendCustomImageFooter(result.image, data.scale ?? 1)] : false;
       } catch (error) {
         if (selector === "body" || !(error instanceof Error) ||
             !error.message.includes("no element matches the selector")) throw error;

@@ -4957,7 +4957,9 @@
     "lib.update-command.progress.waiting": "正在准备候选版本，已耗时 {seconds} 秒。",
     "app.zzz-panel-cache-task": "绝区零面板缓存刷新",
     "app.gs-panel-cache-task": "原神面板缓存后台刷新",
-    "app.sr-panel-cache-task": "星铁面板缓存后台刷新"
+    "app.sr-panel-cache-task": "星铁面板缓存后台刷新",
+    "lib.panel-runtime-settings.footer-label": "模板图片页脚",
+    "lib.panel-runtime-settings.footer-hint": "使用 JSON 配置。text 支持换行，清空 text 即关闭；color 与 background 为十六进制颜色；fontSize 范围 8–32，lineHeight 范围字号–64，padding 范围 0–32；align 可选 left/center/right；bold 为布尔值。保存并重启后生效。"
   },
   "parameters": {
     "app.text_242958f459": {

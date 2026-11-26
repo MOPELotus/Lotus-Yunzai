@@ -1,6 +1,8 @@
 import { createTranslator as createTextTranslator } from "../i18n/index.ts";
 import messageCatalog from "./i18n/zh-CN.json";
 const $t = createTextTranslator("skia", messageCatalog.messages);
+import { getImageFooter, setImageFooter, layoutImageFooter, paintImageFooter } from "./custom-footer.ts";
+export { setImageFooter };
 import { prepareBuiltinFonts } from "./builtin-fonts.ts";
 import { Canvas, loadImage, type CanvasRenderingContext2D, type EngineDetails } from "skia-canvas";
 import { encodeBandedPng, ImageSizeLimitError } from "./banded-png.ts";
@@ -192,16 +194,36 @@ export function renderExactPng(width: number, height: number, draw: Draw, mode: 
 
 /** renderScale 声明画布尺寸与绘制回调已应用的倍率，默认按 4× 请求处理。 */
 export async function renderPng(width: number, height: number, draw: Draw, mode: RenderMode = "auto",
-  { allowHalfScale = false, renderScale = 4 }: { readonly allowHalfScale?: boolean; readonly renderScale?: number } = {}): Promise<PngRender> {
+  { allowHalfScale = false, renderScale = 4, footer = true }: { readonly allowHalfScale?: boolean; readonly renderScale?: number; readonly footer?: boolean } = {}): Promise<PngRender> {
   requirePositivePixels(width, height);
   if (!Number.isFinite(renderScale) || renderScale < 1 || renderScale > 4) {
     throw new RangeError($t("index.text_fd927083c4"));
   }
+  const config = getImageFooter();
+  let completeHeight = height;
+  let completeDraw: Draw = draw;
+  if (footer && config.text) {
+    prepareBuiltinFonts();
+    const metrics = new Canvas(1, 1);
+    metrics.gpu = mode !== "cpu";
+    const logicalWidth = width / renderScale;
+    const layout = layoutImageFooter(metrics.getContext("2d"), logicalWidth, config);
+    completeHeight += Math.ceil(layout.height * renderScale);
+    completeDraw = async context => {
+      context.save();
+      try { await draw(context); } finally { context.restore(); }
+      context.save();
+      try {
+        context.scale(renderScale, renderScale);
+        paintImageFooter(context, logicalWidth, height / renderScale, layout, config);
+      } finally { context.restore(); }
+    };
+  }
   const initialScale = Math.min(1, nativeImageRasterScale() / renderScale);
-  const renderAt = (scale: number) => renderByMode(Math.ceil(width * scale), Math.ceil(height * scale),
-    scale === 1 ? draw : context => {
+  const renderAt = (scale: number) => renderByMode(Math.ceil(width * scale), Math.ceil(completeHeight * scale),
+    scale === 1 ? completeDraw : context => {
       context.scale(scale, scale);
-      return draw(context);
+      return completeDraw(context);
     }, mode);
   try {
     return await renderAt(initialScale);
@@ -211,4 +233,16 @@ export async function renderPng(width: number, height: number, draw: Draw, mode:
     const reduced = await renderAt(initialScale / 2);
     return { ...reduced, reducedScaleReason: error.message };
   }
+}
+
+export function renderPngWithoutFooter(...args: Parameters<typeof renderPng>): Promise<PngRender> {
+  const [width, height, draw, mode, options] = args;
+  return renderPng(width, height, draw, mode, { ...options, footer: false });
+}
+
+export async function appendCustomImageFooter(bytes: Buffer, renderScale = 1): Promise<Buffer> {
+  if (!getImageFooter().text) return bytes;
+  const image = await loadImage(bytes);
+  const result = await renderPng(image.width, image.height, context => context.drawImage(image, 0, 0), "gpu", { renderScale });
+  return result.png;
 }

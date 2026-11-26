@@ -13,12 +13,15 @@ import { readPanelJson } from "./panel.ts";
 import { defaultPluginLoadMs, maxPluginLoadMs, parsePluginLoadMilliseconds } from "./plugin-load-progress.ts";
 import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 
+import { parseImageFooter, type ImageFooterConfig } from "../packages/skia/custom-footer.ts";
+
 const restart = $t("lib.panel-runtime-settings.text_d3d0842647");
 const reload = $t("lib.panel-runtime-settings.text_9550adf734");
 const slash = "/→#";
 const fields = [
   { key: "imageRenderPreset", label: $t("lib.panel-runtime-settings.text_fe562a50dd"), type: "select", hint: restart,
     options: [{ label: $t("lib.panel-runtime-settings.text_1724f1ad64"), value: "standard" }, { label: $t("lib.panel-runtime-settings.text_70f0fcd6b3"), value: "low" }] },
+  { key: "imageFooter", label: $t("lib.panel-runtime-settings.footer-label"), type: "json", hint: $t("lib.panel-runtime-settings.footer-hint") },
   { key: "log_level", label: $t("lib.panel-runtime-settings.text_0f8effe393"), type: "select", hint: reload,
     options: logLevels.map(value => ({ label: value, value })) },
   { key: "log_length", label: $t("lib.panel-runtime-settings.text_edd613ccd8"), type: "number", min: 1, max: 32_000, hint: restart },
@@ -41,6 +44,7 @@ const fields = [
 
 interface RuntimeValues {
   imageRenderPreset: "low" | "standard";
+  imageFooter: ImageFooterConfig;
   log_level: LogLevel;
   log_length: number;
   log_object: LogObject;
@@ -81,6 +85,7 @@ async function readValues(root: URL): Promise<RuntimeValues> {
   const { minutes, times } = fileShareDefaults(config);
   return {
     imageRenderPreset: config.imageRenderPreset === "low" ? "low" : "standard",
+    imageFooter: parseImageFooter(config.imageFooter) ?? parseImageFooter(undefined)!,
     log_level: isLogLevel(level) ? level : "info",
     log_length: Number.isSafeInteger(length) && length > 0 ? Math.min(length, 32_000) : 10_000,
     log_object: logObjectValue(config.log_object),
@@ -102,6 +107,7 @@ function parseValues(input: unknown): RuntimeValues | undefined {
       Object.keys(input).length !== fields.length || !fields.every(({ key }) => Object.hasOwn(input, key))) return;
   const values = input as Record<keyof RuntimeValues, unknown>;
   if ((values.imageRenderPreset !== "low" && values.imageRenderPreset !== "standard") ||
+      !parseImageFooter(values.imageFooter) || !isDeepStrictEqual(values.imageFooter, parseImageFooter(values.imageFooter)) ||
       !isLogLevel(values.log_level) || typeof values.log_length !== "number" || !Number.isSafeInteger(values.log_length) ||
       values.log_length < 1 || values.log_length > 32_000 ||
       !isDeepStrictEqual(values.log_object, logObjectValue(values.log_object)) ||
