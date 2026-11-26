@@ -284,6 +284,7 @@ export async function loadPlugins(
     };
     readonly hoyoTransport?: Parameters<typeof import("@lotus-yunzai/hoyo-client").createProfileHoyoClient>[1];
     readonly zzzPanelRankRoles?: ZzzPanelRankRoleReader;
+    readonly panelCacheRuntime?: import("../group-panel-cache.ts").PanelCacheRuntime;
     readonly zzzReminderRuntime?: import("../../plugins/zzz/challenge-reminder-runtime.ts").ZzzReminderRuntime;
     readonly profileLikeImages?: {
       readonly directory: string;
@@ -476,7 +477,8 @@ export async function loadPlugins(
         const zzz = builtIn && moduleName === "@lotus-yunzai/zzz";
         const zzzPanelRankRoles = zzz ? options.zzzPanelRankRoles : undefined;
         const zzzReminderRuntime = zzz ? options.zzzReminderRuntime : undefined;
-        const disconnect = notice?.disconnect ?? mediaRuntime?.disconnect ?? zzzReminderRuntime?.disconnect;
+        const panelCacheRuntime = builtIn && (moduleName === "@lotus-yunzai/genshin" || moduleName === "@lotus-yunzai/starrail") ? options.panelCacheRuntime : undefined;
+        const disconnect = notice?.disconnect ?? mediaRuntime?.disconnect ?? zzzReminderRuntime?.disconnect ?? panelCacheRuntime?.disconnect;
         const module = create ? await create(Object.freeze({ ...services, ...group,
           signal: disconnect ? AbortSignal.any([signal, disconnect]) : signal,
           ...(notice && { noticeGroups: notice.noticeGroups, whenNoticeActive: notice.whenNoticeActive }),
@@ -489,6 +491,7 @@ export async function loadPlugins(
           ...(zzz && options.hoyoTransport && { hoyoTransport: options.hoyoTransport }),
           ...(zzzPanelRankRoles && { zzzPanelRankRoles }),
           ...(zzzReminderRuntime && { zzzReminderRuntime }),
+          ...(panelCacheRuntime && { panelCacheRuntime }),
         })) : published.default;
         const { commands: handlers, aliases, fallback, fallbackFeatures, dispose, gachaUpdate, panelRebuild, atlasSchedule,
           nativeEvents } = record(module);

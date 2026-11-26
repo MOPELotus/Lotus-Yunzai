@@ -4,9 +4,14 @@ export async function loadGroupRankQqAvatars(accounts: readonly (string | number
   read = loadPublicQqAvatar) {
   const ids = [...new Set(accounts.filter(id => id !== undefined).map(String))].filter(id => /^[1-9]\d{0,15}$/u.test(id));
   const images = new Map<string, Buffer>();
-  await Promise.all(ids.map(async id => {
-    const image = await read(id, { signal }).catch(() => undefined);
-    if (image) images.set(id, image);
+  const pending = ids.values();
+  await Promise.all(Array.from({ length: Math.min(4, ids.length) }, async () => {
+    for (const id of pending) {
+      if (signal?.aborted) break;
+      let image = await read(id, { signal }).catch(() => undefined);
+      if (!image && !signal?.aborted) image = await read(id, { signal }).catch(() => undefined);
+      if (image) images.set(id, image);
+    }
   }));
   return images;
 }

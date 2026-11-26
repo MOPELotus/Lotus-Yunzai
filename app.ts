@@ -4186,6 +4186,10 @@ if (import.meta.main) {
         const { roles } = await zzzRankClient.openHoYoLabZzzCheckin(source, options);
         return { roles };
       },
+      panelCacheRuntime: probingUpdate ? undefined : {
+        disconnect: handoffSession.signal,
+        register: (game, run) => registerModuleTask($t(game === "gs" ? "app.gs-panel-cache-task" : "app.sr-panel-cache-task"), "0 0 * * * *", run, true),
+      },
       zzzReminderRuntime: probingUpdate ? undefined : {
         registerPanelCacheTask: run => registerModuleTask($t("app.zzz-panel-cache-task"), "0 0 * * * *", run, true),
         disconnect: handoffSession.signal,
