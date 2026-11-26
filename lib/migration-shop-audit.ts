@@ -303,11 +303,13 @@ export async function stageLegacyShopAudit(sourcePath: string, stagePath: string
     const activeTrackers = new Map<string, ReturnType<typeof trackerFrom>["fields"]>();
     for (const { fields, validOriginal } of trackers.values()) {
       signal?.throwIfAborted();
-      const bound = !preview && validOriginal && fields.confirmation && await binding(fields.qq, fields.profileId);
-      const verified = bound && bound.accountId === fields.accountId && bound.bindingStamp === fields.confirmation?.bindingStamp;
-      const { confirmation, ...raw } = fields;
-      const enabled = Boolean(verified && fields.enabled && !unknownAccounts.has(fields.accountId));
-      if (enabled) { activeTrackers.set(fields.id, fields); summary.activeTrackers++; }
+      const bound = !preview && validOriginal && await binding(fields.qq, fields.profileId);
+      const sameAccount = bound && bound.accountId === fields.accountId;
+      const { confirmation: originalConfirmation, ...raw } = fields;
+      const confirmation = originalConfirmation ?? (sameAccount ? { bindingStamp: bound.bindingStamp, at: Date.now() } : undefined);
+      const verified = sameAccount && bound.bindingStamp === confirmation?.bindingStamp;
+      const enabled = Boolean(verified && fields.enabled === true && !unknownAccounts.has(fields.accountId));
+      if (enabled) { activeTrackers.set(fields.id, { ...fields, confirmation }); summary.activeTrackers++; }
       else if (fields.enabled) {
         summary.paused++;
         reasons[preview ? "trackerPreview" : !validOriginal ? "trackerInvalid" : !verified ? "trackerBinding" : "trackerAccountPending"]++;
@@ -318,16 +320,18 @@ export async function stageLegacyShopAudit(sourcePath: string, stagePath: string
     for (const { plan, sessionExpected } of plans.values()) {
       signal?.throwIfAborted();
       if (plan.status === "unknown" || terminal.some(status => status === plan.status)) continue;
-      const bound = !preview && !sessionExpected && !plan.immediate && plan.bindingStamp && await binding(plan.qq, plan.profileId);
+      const bound = !preview && !sessionExpected && !plan.immediate && await binding(plan.qq, plan.profileId);
+      const bindingStamp = plan.bindingStamp ?? (bound && bound.accountId === plan.accountId ? bound.bindingStamp : undefined);
       const linked = plan.trackingId ? activeTrackers.get(plan.trackingId) : undefined;
       const reason = preview ? "preview" : sessionExpected || plan.immediate ? "sessionEnded"
-        : !bound || bound.accountId !== plan.accountId || bound.bindingStamp !== plan.bindingStamp ? "legacyBinding"
+        : !bound || bound.accountId !== plan.accountId || bound.bindingStamp !== bindingStamp ? "legacyBinding"
         : unknownProducts.has(`${plan.accountId}/${plan.goodsId}`) ? "accountPending"
         : (plan.type === 1 ? !plan.addressId : !plan.role) ? "missingTarget"
         : plan.trackingId && (!linked || linked.qq !== plan.qq || linked.profileId !== plan.profileId ||
-          linked.accountId !== plan.accountId || linked.confirmation?.bindingStamp !== plan.bindingStamp) ? "trackingInactive"
+          linked.accountId !== plan.accountId || linked.confirmation?.bindingStamp !== bindingStamp) ? "trackingInactive"
         : undefined;
       if (!reason) {
+        Object.assign(plan, { bindingStamp });
         plan.status = "scheduled";
         summary.activePlans++;
       } else {

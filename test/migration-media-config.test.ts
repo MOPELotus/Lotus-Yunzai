@@ -95,13 +95,8 @@ test("invalid CLI fields stop migration without silently selecting a different e
   }
 });
 
-test("Responses provider credentials retain their existing migration review policy", () => {
-  expect(projectLegacyMediaConfig({}, [{ netease_partner: { enable: true, review: {
-    mode: "responses", api_key: "synthetic-key", api_url: "https://fixture.invalid/v1/responses", model: "fixture-model",
-    max_chars: 100, timeout_ms: 5000,
-  } } }])).toEqual({ config: { netease_partner: { enable: false,
-    review: { mode: "disabled", max_chars: 100, timeout_ms: 5000 } } }, deferred: [
-    "netease_partner.enable", "netease_partner.review.api_key", "netease_partner.review.api_url",
-    "netease_partner.review.mode", "netease_partner.review.model",
-  ] });
+test("Responses review retains enabled state and provider settings during local migration", () => {
+  const review = { mode: "responses", api_key: "synthetic-key", api_url: "https://fixture.invalid/v1/responses", model: "fixture-model", max_chars: 100, timeout_ms: 5000 };
+  expect(projectLegacyMediaConfig({}, [{ netease_partner: { enable: true, review } }])).toEqual({ config: { netease_partner: { enable: true, review } }, deferred: [] });
+  expect(projectLegacyMediaConfig({}, [{ netease_partner: { enable: false, review } }]).config.netease_partner).toEqual({ enable: false, review });
 });

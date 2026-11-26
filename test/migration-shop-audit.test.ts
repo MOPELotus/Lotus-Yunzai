@@ -92,10 +92,10 @@ test("暂存按已知来源冻结旧商城写入，向原读取服务交付本�
     const oldPlanFile = ledger([
       purchase("1", "submitting", { attempts: 1, trackingId: "000000000000" }),
       purchase("2", "preparing", { attempts: 2, goodsId: "12" }),
-      purchase("3", "scheduled", { goodsId: "13" }),
+      purchase("3", "scheduled", { goodsId: "13", accountId: "884" }),
       purchase("4", "succeeded"),
       purchase("5", "failed"),
-    ], [tracking("0")]);
+    ], [tracking("0", { accountId: "884" })]);
     await put(source, join(old, shopPath), oldPlanFile);
     await put(source, join(old, previewPath), ledger([purchase("3", "scheduled")], [tracking("0")]));
     const audit = (source: string, time: string, qq = "42") => JSON.stringify({
@@ -168,4 +168,18 @@ test("暂存遇商城冲突、链接或目标已存在时拒绝覆盖，保留�
     await expect(stageLegacyShopAudit(source, stage)).rejects.toThrow("普通文件");
     await expect(stageLegacyShopAudit(source, source)).rejects.toThrow("必须分离");
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('migration preserves authorized same-account legacy tracking and pending reservations without manual re-enrollment',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'lotus-migration-shop-preserve-')),source=join(root,'source'),stage=join(root,'stage');
+ const profile=Bun.YAML.stringify({user:{qq:'42'},profile:{id:1},account:{stuid:'882',ltuid:'882',cookie:'account_id=882;cookie_token=fixture',stoken:'fixture-token'},device:{id:'fixture-device',fp:'fixture-fingerprint',bound:true}});
+ try{
+  await put(source,'data/users/42.yaml',profile);await put(stage,'data/users/42.yaml',profile);
+  await put(source,join(old,shopPath),ledger([purchase('1','scheduled',{opensAt:safeTime})],[tracking('1'),tracking('2',{enabled:false}),tracking('3',{confirmation:{bindingStamp:'0'.repeat(64),at:day}})]));
+  const report=await stageLegacyShopAudit(source,stage);expect(report.plans).toMatchObject({activeTrackers:1,activePlans:1});
+  const saved=JSON.parse(await readFile(join(stage,shopPath),'utf8'));const active=saved.trackers.find((x:{id:string})=>x.id==='000000000001');
+  expect(active).toMatchObject({enabled:true,maxPrice:200,spendLimit:400,role});expect(active.confirmation.bindingStamp).toMatch(/^[a-f0-9]{64}$/);expect(saved.plans[0]).toMatchObject({status:'scheduled',bindingStamp:active.confirmation.bindingStamp,opensAt:safeTime,attempts:0});
+  expect(saved.trackers.find((x:{id:string})=>x.id==='000000000002').enabled).toBe(false);
+  expect(saved.trackers.find((x:{id:string})=>x.id==='000000000003').enabled).toBe(false);
+ }finally{await rm(root,{recursive:true,force:true})}
 });
