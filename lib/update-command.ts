@@ -1,7 +1,7 @@
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
-import type { ManagedUpdateProgress } from "./managed-update-protocol.ts";
+import type { ManagedUpdateProgress, ManagedUpdateStatus } from "./managed-update-protocol.ts";
 import type { MessageEvent } from "./messages.ts";
 import { canManagePackages } from "./command-permissions.ts";
 import { parseUpdateTarget } from "./update-target.ts";
@@ -12,7 +12,7 @@ type RequestUpdate = (event: MessageEvent, requested: string | undefined, quiet:
 const command = /^#(全部)?(安?静)?(强制)?更新/u;
 const legacyStarRailWarpUpdate = /^#?(?:\*|星铁|星轨|穹轨|星穹|崩铁|星穹铁道|崩坏星穹铁道|铁道)抽卡(?:插件)?(强制)?更新$/u;
 const quietStatuses = new Set<ManagedUpdateProgress>(["checking", "building", "switching", "current"]);
-const replies: Readonly<Record<ManagedUpdateProgress, string>> = {
+const replies: Readonly<Record<ManagedUpdateStatus, string>> = {
   checking: $t("lib.update-command.text_4bfc24f08b"),
   building: $t("lib.update-command.text_029f28b6f1"),
   switching: $t("lib.update-command.text_96790a7d94"),
@@ -28,7 +28,15 @@ const replies: Readonly<Record<ManagedUpdateProgress, string>> = {
 };
 
 export function describeUpdateProgress(status: ManagedUpdateProgress): string {
-  return replies[status];
+  if (status.startsWith("waiting:")) return $t("lib.update-command.progress.waiting", { seconds: status.slice(8) });
+  if (status.startsWith("detail:")) {
+    const [, name, state] = status.split(":");
+    if (state === "checking" || state === "current" || state === "updating") {
+      return $t(`lib.update-command.progress.${state}`, { name });
+    }
+    return $t("lib.update-command.progress.detail", { name, status: replies[state as ManagedUpdateStatus] });
+  }
+  return replies[status as ManagedUpdateStatus];
 }
 
 function updatePrefix(message: string): RegExpExecArray | undefined {
@@ -92,8 +100,8 @@ export function createUpdateCommand(request: RequestUpdate) {
 
     let pending = Promise.resolve();
     const report = (status: ManagedUpdateProgress) => {
-      if (quiet && quietStatuses.has(status)) return;
-      const reply = force && status === "checking" ? $t("lib.update-command.text_0127364ac8") : replies[status];
+      if (quiet && (quietStatuses.has(status) || status.startsWith("detail:") || status.startsWith("waiting:"))) return;
+      const reply = force && status === "checking" ? $t("lib.update-command.text_0127364ac8") : describeUpdateProgress(status);
       pending = pending.then(async () => { await event.reply(reply); }).catch(() => undefined);
     };
     let sent: boolean;

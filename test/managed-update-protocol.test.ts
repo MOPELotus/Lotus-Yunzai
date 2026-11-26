@@ -154,6 +154,13 @@ test("托管更新校验请求 UUID 和有限状态码", () => {
   expect(isTerminalManagedUpdateProgress("failed")).toBe(true);
   expect(isTerminalManagedUpdateProgress("switching")).toBe(true);
   expect(isManagedUpdateProgress("arbitrary command output")).toBe(false);
+  for (const detail of ["detail:genshin:checking", "detail:media:updating", "detail:Lotus-Yunzai:current", "waiting:30"] as const) {
+    expect(isManagedUpdateProgress(detail)).toBe(true);
+    expect(isTerminalManagedUpdateProgress(detail)).toBe(false);
+  }
+  for (const invalid of ["detail:../secret:checking", "detail:name\n:current", "detail:name:unknown", "waiting:-1", "waiting:0", "waiting:1e3"]) {
+    expect(isManagedUpdateProgress(invalid)).toBe(false);
+  }
 });
 
 test("托管安装仅传目录短名和原会话，不能混用更新参数", () => {

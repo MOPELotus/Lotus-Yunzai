@@ -1,3 +1,4 @@
+import type { ManagedUpdateProgress } from "./managed-update-protocol.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -151,7 +152,7 @@ export async function installedIdentities(host: string, name: string, plugin: { 
 }
 
 export async function prepareUpdate(
-  root: URL, directories: PluginDirectories, requested?: string, signal?: AbortSignal, force = false,
+  root: URL, directories: PluginDirectories, requested?: string, signal?: AbortSignal, force = false, report?: (status: ManagedUpdateProgress) => void,
 ): Promise<UpdatePreflight> {
   signal?.throwIfAborted();
   let release: (() => Promise<void>) | undefined;
@@ -165,13 +166,19 @@ export async function prepareUpdate(
     if (query && (!plugin || !path)) return { status: "unavailable" };
     const external = plugin && !builtIns.has(plugin.name) ? plugin : undefined;
     const directory = external && path ? path : host;
+    report?.(`detail:${external?.name ?? "Lotus-Yunzai"}:checking`);
     const result = await fetchUpdateCandidate(directory, signal, force);
+    report?.(`detail:${external?.name ?? "Lotus-Yunzai"}:${result.status === "ready" ? "updating" : result.status}`);
     if ("release" in result) release = result.release;
     signal?.throwIfAborted();
     if (!("release" in result)) return { status: result.status };
-    if (result.status !== "ready") return { status: result.status };
+    if (result.status !== "ready") {
+      if (!external && result.status === "current") await reportTrackedPlugins(directory, result.current, result.current, report);
+      return { status: result.status };
+    }
     const inspected = await inspectCandidate(directory, result, external?.name, signal, force);
     if (inspected.status !== "ready") return inspected;
+    if (!external) await reportTrackedPlugins(directory, result.current, result.candidate, report);
     if (external) {
       const identities = new Set(inspected.identities);
       for (const [name, plugin] of directories) {
@@ -216,8 +223,23 @@ async function externalBinding(directory: string) {
   return dirty === undefined ? "unavailable" : dirty ? "dirty" : "unbound";
 }
 
+async function reportTrackedPlugins(directory: string, current: string, candidate: string,
+  report?: (status: ManagedUpdateProgress) => void) {
+  if (!report) return;
+  const git = createLocalGit();
+  if (!git) return;
+  const [before, after] = await Promise.all([readTree(git, directory, current), readTree(git, directory, candidate)]);
+  if (!before || !after) return;
+  for (const [path, entry] of after) {
+    const name = /^plugins\/([^/]+)$/u.exec(path)?.[1];
+    if (!name || entry.mode !== "160000") continue;
+    report(`detail:${name}:checking`);
+    report(`detail:${name}:${before.get(path)?.revision === entry.revision ? "current" : "updating"}`);
+  }
+}
+
 export async function prepareAllUpdates(
-  root: URL, directories: PluginDirectories, signal?: AbortSignal, force = false,
+  root: URL, directories: PluginDirectories, signal?: AbortSignal, force = false, report?: (status: ManagedUpdateProgress) => void,
 ): Promise<ReadyBatchUpdate | BlockedUpdate> {
   const releases = new Set<() => Promise<void>>();
   const release = async () => {
@@ -233,7 +255,9 @@ export async function prepareAllUpdates(
   try {
     signal?.throwIfAborted();
     const directory = await realpath(fileURLToPath(root));
+    report?.("detail:Lotus-Yunzai:checking");
     const result = await fetchUpdateCandidate(directory, signal, force);
+    report?.(`detail:Lotus-Yunzai:${result.status === "ready" ? "updating" : result.status}`);
     if ("release" in result) releases.add(result.release);
     signal?.throwIfAborted();
     if (!("release" in result)) return { status: result.status, target };
@@ -242,6 +266,7 @@ export async function prepareAllUpdates(
     const { current } = result;
     const selected = result.status === "ready";
     const candidate = selected ? result.candidate : current;
+    await reportTrackedPlugins(directory, current, candidate, report);
     const tracked = await trackedPluginNames(directory, current);
     const plugins = new Map<string, ReadyUpdate>();
     const candidateIdentities = new Map<string, readonly string[]>();
@@ -255,7 +280,9 @@ export async function prepareAllUpdates(
       signal?.throwIfAborted();
       if (binding === "unbound") continue;
       if (binding !== "bound") return { status: binding, target };
+      report?.(`detail:${name}:checking`);
       const result = await fetchUpdateCandidate(path, signal, force);
+      report?.(`detail:${name}:${result.status === "ready" ? "updating" : result.status}`);
       if ("release" in result) releases.add(result.release);
       signal?.throwIfAborted();
       if (!("release" in result)) return { status: result.status, target };

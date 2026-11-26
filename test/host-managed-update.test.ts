@@ -29,6 +29,10 @@ function git(root: string, ...args: string[]): string {
   return result.stdout.toString().trimEnd();
 }
 
+function isDetailedProgress(message: unknown) {
+  return typeof message === "string" && /^(?:正在(?:检查|更新) [\p{L}\p{N}._-]+。|[\p{L}\p{N}._-]+ 已是最新。|正在准备候选版本，已耗时 \d+ 秒。|[A-Za-z0-9._-]+：)/u.test(message);
+}
+
 function deadline<T>(promise: Promise<T>, description: string, delay = 5_000): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(description)), delay);
@@ -47,16 +51,18 @@ function gateway(endpoint: string, botId?: number) {
   });
   const closed = new Promise<void>((resolve) => socket.addEventListener("close", () => resolve(), { once: true }));
   const frames: Frame[] = [];
+  const progressFrames: Frame[] = [];
   let ready = Promise.withResolvers<void>();
   socket.addEventListener("message", ({ data }) => {
     const frame: Frame = JSON.parse(data);
     if (frame.echo) socket.send(JSON.stringify({ echo: frame.echo, status: "ok", retcode: 0, data: { message_id: 77 } }));
+    if (isDetailedProgress(frame.params?.message)) { progressFrames.push(frame); return; }
     frames.push(frame);
     ready.resolve();
   });
   let messageId = 0;
   return {
-    socket, opened, closed, frames,
+    socket, opened, closed, frames, progressFrames,
     async next(delay?: number) {
       if (!frames.length) await deadline(ready.promise, "未收到托管更新的 OneBot 回复。", delay);
       const frame = frames.shift()!;
@@ -1063,6 +1069,7 @@ function milkyUpdateGateway(token: string, botId: number) {
         user_id?: number; group_id?: number; message: { type: string; data: { text: string } }[];
       };
       expect(body.message).toEqual([{ type: "text", data: { text: expect.any(String) } }]);
+      if (isDetailedProgress(body.message[0]!.data.text)) return Response.json({ status: "ok", retcode: 0, data: { message_seq: ++receiptId, time } });
       frames.push({
         action: path.slice("/api/".length),
         params: { user_id: body.user_id, group_id: body.group_id, message: body.message[0]!.data.text },

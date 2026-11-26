@@ -4949,7 +4949,12 @@
     "lib.game-profile-commands.no-role": "未同步角色",
     "lib.game-profile-commands.no-profiles": "尚无登录档案，请先扫码登录。",
     "lib.game-profile-commands.list-help": "切换默认档案：#切换档案2、*切换档案2、%切换档案2。",
-    "lib.game-profile-commands.failed": "读取或切换档案失败，请重试。"
+    "lib.game-profile-commands.failed": "读取或切换档案失败，请重试。",
+    "lib.update-command.progress.checking": "正在检查 {name}。",
+    "lib.update-command.progress.updating": "正在更新 {name}。",
+    "lib.update-command.progress.current": "{name} 已是最新。",
+    "lib.update-command.progress.detail": "{name}：{status}",
+    "lib.update-command.progress.waiting": "正在准备候选版本，已耗时 {seconds} 秒。"
   },
   "parameters": {
     "app.text_242958f459": {

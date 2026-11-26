@@ -11,12 +11,12 @@ export function isGitRevision(value: string): boolean {
 export function createLocalGit(): LocalGit | undefined {
   const binary = Bun.which("git");
   if (!binary) return;
-  const signal = AbortSignal.timeout(1_500);
   return async (directory, args, allowEmpty = false) => {
     try {
+      const signal = AbortSignal.timeout(10_000);
       const task = Bun.spawn([binary, "--no-pager", "-c", "core.fsmonitor=false", "-c", `core.hooksPath=${devNull}`, ...args], {
         cwd: directory, stdin: "ignore", stdout: "pipe", stderr: "ignore", signal,
-        killSignal: "SIGKILL", maxBuffer: 512 * 1024,
+        killSignal: "SIGKILL", maxBuffer: 8 * 1024 * 1024,
         env: {
           PATH: process.env.PATH, LC_ALL: "C", GIT_OPTIONAL_LOCKS: "0", GIT_CONFIG_NOSYSTEM: "1",
           GIT_CONFIG_GLOBAL: devNull, GIT_NO_LAZY_FETCH: "1", GIT_ALLOW_PROTOCOL: "", GIT_NO_REPLACE_OBJECTS: "1",

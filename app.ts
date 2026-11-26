@@ -800,8 +800,9 @@ if (import.meta.main) {
       if (await reportOldMilkySupervisor(event)) return true;
       return submitManagedUpdate({ install: name, quiet: false, target, ...updatePluginSnapshot() }, (status) => {
         if (status === "current") report("exists");
-        else if (status !== "dirty" && status !== "ahead" && status !== "diverged") report(status);
-        else report("failed");
+        else if (status === "dirty" || status === "ahead" || status === "diverged") report("failed");
+        else if (status === "checking" || status === "building" || status === "switching" || status === "failed" ||
+            status === "busy" || status === "rejected" || status === "unavailable" || status === "storage-changed") report(status);
       });
     },
   });

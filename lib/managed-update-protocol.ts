@@ -42,7 +42,8 @@ export function encodeManagedUpdateRequest(request: ManagedUpdateRequest, schedu
 
 const progress = ["checking", "building", "switching", "busy", "current", "dirty", "ahead", "diverged",
   "rejected", "unavailable", "storage-changed", "failed"] as const;
-export type ManagedUpdateProgress = typeof progress[number];
+export type ManagedUpdateStatus = typeof progress[number];
+export type ManagedUpdateProgress = ManagedUpdateStatus | `detail:${string}:${ManagedUpdateStatus | "updating"}` | `waiting:${number}`;
 
 const knownProgress: ReadonlySet<string> = new Set(progress);
 const directoryName = /^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u;
@@ -174,9 +175,13 @@ export function isManagedUpdateRequestId(value: unknown): value is string {
 }
 
 export function isManagedUpdateProgress(value: unknown): value is ManagedUpdateProgress {
-  return typeof value === "string" && knownProgress.has(value);
+  if (typeof value !== "string") return false;
+  if (knownProgress.has(value)) return true;
+  if (/^waiting:[1-9]\d{0,4}$/u.test(value)) return true;
+  const match = /^detail:([\p{L}\p{N}][\p{L}\p{N}._-]{0,127}):([a-z-]+)$/u.exec(value);
+  return !!match && (match[2] === "updating" || knownProgress.has(match[2]!));
 }
 
 export function isTerminalManagedUpdateProgress(value: ManagedUpdateProgress): boolean {
-  return value !== "checking" && value !== "building";
+  return knownProgress.has(value) && value !== "checking" && value !== "building";
 }

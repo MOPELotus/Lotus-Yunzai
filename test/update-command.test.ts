@@ -304,3 +304,15 @@ test("IPC 不可用给出受管启动方式，异常不回显底层内容", asyn
   await failed.dispatch("#更新");
   expect(failed.replies).toEqual(["发送更新请求失败，请稍后重试。"]);
 });
+
+test("验证逐项非终态进度不提前结束更新以及安静模式无过程输出", async () => {
+  const statuses: ManagedUpdateProgress[] = ["checking", "detail:Lotus-Yunzai:checking", "detail:genshin:current",
+    "detail:media:updating", "building", "waiting:30", "switching"];
+  const normal = fixture((_e, _r, _q, report) => { for (const status of statuses) report(status); return true; });
+  await normal.dispatch("#全部更新");
+  expect(normal.replies).toEqual(["开始更新，正在检查。", "正在检查 Lotus-Yunzai。", "genshin 已是最新。",
+    "正在更新 media。", "正在准备候选版本。", "正在准备候选版本，已耗时 30 秒。", "正在切换到候选版本。"]);
+  const quiet = fixture((_e, _r, _q, report) => { for (const status of statuses) report(status); report("current"); return true; });
+  await quiet.dispatch("#全部安静更新");
+  expect(quiet.replies).toEqual([]);
+});

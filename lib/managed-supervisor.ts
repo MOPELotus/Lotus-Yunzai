@@ -142,8 +142,8 @@ export function createManagedSupervisor(directory: string, options: {
       const result = approved
         ? await preparePluginInstall(rootUrl, directories, approved, dirname(root), signal)
         : request.all
-        ? await prepareAllUpdates(rootUrl, directories, signal, request.force)
-        : await prepareUpdate(rootUrl, directories, request.requested, signal, request.force);
+        ? await prepareAllUpdates(rootUrl, directories, signal, request.force, report)
+        : await prepareUpdate(rootUrl, directories, request.requested, signal, request.force, report);
       if (result.status !== "ready") {
         if ("target" in result && typeof result.target === "string" && result.status !== "current" && !signal.aborted) {
           console.warn($t("lib.managed-supervisor.text_7c6f0646d4", { "value1": sanitizeRuntimeLog(result.target, 120), "status": result.status }));
@@ -154,7 +154,15 @@ export function createManagedSupervisor(directory: string, options: {
       ready = result;
       signal.throwIfAborted();
       report("building");
-      stage = await stageUpdate(rootUrl, directories, ready, dirname(root), signal);
+      const started = Date.now();
+      const heartbeat = setInterval(() => {
+        if (!request.quiet && active()) report(`waiting:${Math.floor((Date.now() - started) / 1000)}`);
+      }, 30_000);
+      try {
+        stage = await stageUpdate(rootUrl, directories, ready, dirname(root), signal);
+      } finally {
+        clearInterval(heartbeat);
+      }
       if (stopped || signal.aborted || current !== worker) return;
       const revision = ready.scope === "all" ? ready.host.candidate : ready.scope === "install" ? stage.revision : ready.candidate;
       const repositories = ready.scope === "all"
