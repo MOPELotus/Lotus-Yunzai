@@ -154,6 +154,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   const profiles = createProfileStore(directory);
   const client = makeClient(profiles, transport);
   const active = new Set<string>();
+  const batchUsers = new Set<string>();
   const activeOverseas = new Set<string>();
   const overseasDeviceId = crypto.randomUUID();
   const cloudDeviceId = crypto.randomUUID();
@@ -814,14 +815,64 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
   const commands: CommandModule = {
     name: "@lotus-yunzai/checkin", commands: {},
     async fallback(_message, context) {
+      if (context.normalizedMessage !== "#全部签到" && !manual.test(context.normalizedMessage)) return;
+      if (lifecycleSignal.aborted) return;
+      if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return $t("lib.game-checkin-commands.text_299c3dbb1f");
+      const connection = context.privateCredentialSignal;
+      const signal = connection ? AbortSignal.any([lifecycleSignal, connection]) : lifecycleSignal;
+      if (signal.aborted) return;
+      if (context.normalizedMessage === "#全部签到") {
+        const qq = String(context.user_id);
+        if (batchUsers.has(qq)) return $t("lib.game-checkin-commands.text_3a56a978d2");
+        batchUsers.add(qq);
+        try {
+          const ids = await profiles.listIds(qq);
+          if (signal.aborted) return;
+          let hasLoggedIn = false;
+          for (const profileId of ids) {
+            if (signal.aborted) return;
+            let transportFailed = false;
+            const reply = async (message: MessageReply) => {
+              try {
+                return await context.reply(message);
+              } catch (error) {
+                transportFailed = true;
+                throw error;
+              }
+            };
+            let message: MessageReply | undefined;
+            try {
+              const summary = await profiles.summary(qq, profileId);
+              if (signal.aborted) return;
+              if (!summary.loggedIn) continue;
+              hasLoggedIn = true;
+              const result = await runManual(qq, profileId, {
+                signal,
+                announceStart: () => reply($t("lib.game-checkin-commands.text_df8610f26e", { "profileId": profileId })),
+                notify: context.message_type === "private" ? reply : undefined,
+              });
+              message = result.reply;
+            } catch (error) {
+              if (transportFailed) throw error;
+              if (signal.aborted) return;
+              message = $t("lib.game-checkin-commands.text_009b08b3ab");
+            }
+            if (signal.aborted) return;
+            if (message !== undefined) await context.reply(message);
+          }
+          if (signal.aborted) return;
+          if (!hasLoggedIn) return $t("lib.game-checkin-commands.batch_empty");
+          return;
+        } finally {
+          batchUsers.delete(qq);
+        }
+      }
       const match = manual.exec(context.normalizedMessage);
       if (!match || lifecycleSignal.aborted) return;
       const profileId = Number(match[1] ?? 1);
       if (profileId > MAX_PROFILE_ID) return $t("lib.game-checkin-commands.text_3dd62228d2");
-      if (!context.user_id || !Number.isSafeInteger(context.user_id) || context.user_id < 1) return $t("lib.game-checkin-commands.text_299c3dbb1f");
-      const connection = context.privateCredentialSignal;
       const result = await runManual(String(context.user_id), profileId, {
-        signal: connection ? AbortSignal.any([lifecycleSignal, connection]) : lifecycleSignal,
+        signal,
         announceStart: () => context.reply($t("lib.game-checkin-commands.text_df8610f26e", { "profileId": profileId })),
         notify: context.message_type === "private" ? message => context.reply(message) : undefined,
       });

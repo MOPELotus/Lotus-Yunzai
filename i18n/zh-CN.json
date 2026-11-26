@@ -2291,6 +2291,7 @@
     "lib.game-character-aliases.text_e52e28be1e": "默认别名设置，不能删除。",
     "lib.game-character-aliases.text_ecf6afe234": "暂无{value1}自定义别名。",
     "lib.game-character-aliases.text_f212ecbec1": "角色别名配置已达到大小上限。",
+    "lib.game-checkin-commands.batch_empty": "暂无可签到的已登录档案，请使用 #登录列表 查看或管理档案。",
     "lib.game-checkin-commands.text_009b08b3ab": "无法读取签到档案。",
     "lib.game-checkin-commands.text_048e977ee4": "{label}：米游社角色查询未完成。",
     "lib.game-checkin-commands.text_053461ce86": "成功",
