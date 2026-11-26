@@ -67,6 +67,7 @@ import { checkinPlanCommands, checkinPlanNotice, checkinScheduleSettingCommands 
 import { checkinProfileCommands } from "./lib/checkin-profile-commands.ts";
 import { checkinRosterCommands } from "./lib/checkin-roster-commands.ts";
 import { checkinGroupRegistrationCommands } from "./lib/checkin-group-registration-commands.ts";
+import { checkinBatchRetryCommands } from "./lib/checkin-batch-retry-commands.ts";
 import { checkinBatchRefreshCommands } from "./lib/checkin-batch-refresh-commands.ts";
 import { checkinRegistrationCommands, checkinStatus, checkinStatusCommand, checkinUnregistration, unregisterCheckinCommand } from "./lib/checkin-registration-commands.ts";
 import { waitForCheckinNoticeTransport } from "./lib/checkin-notice-ready.ts";
@@ -3501,6 +3502,18 @@ if (import.meta.main) {
           },
         });
         checkinRuntime = runtime;
+        commands.registerModule(checkinBatchRetryCommands({
+          profiles: checkinProfiles, signal: lifecycle.signal,
+          async completedToday(qq, profileId) {
+            const plan = await checkinScheduleStore.read(checkinScheduleClock().date);
+            return plan?.entries.some(entry => entry.qq === qq && entry.profileId === profileId && entry.done && entry.ok === true) ?? false;
+          },
+          run: gameCheckin.runRegistered,
+          async deliver(qq, profileId, reply, revision) {
+            const result = await deliverCheckin(qq, profileId, reply, revision);
+            if (result.status !== "confirmed" && result.status !== "unknown") throw new Error();
+          },
+        }));
         commands.registerModule(checkinRegistrationCommands(profileDirectory, lifecycle.signal, {
           canRegister: canRegisterCheckin, addRegisteredProfile: runtime.addRegisteredProfile,
           viewProfile,

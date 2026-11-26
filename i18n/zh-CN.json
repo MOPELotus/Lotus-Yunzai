@@ -1143,6 +1143,10 @@
     "lib.uid-commands": {
       "description": "旧独立UID命令的停用提示与不保存绑定的公开UID临时查询",
       "source": "lib/uid-commands.ts"
+    },
+    "lib.checkin-batch-retry-commands": {
+      "description": "针对全体已注册自动签到档案，串行调用手动签到并写入账本。",
+      "source": "lib/checkin-batch-retry-commands.ts"
     }
   },
   "messages": {
@@ -4959,7 +4963,14 @@
     "app.gs-panel-cache-task": "原神面板缓存后台刷新",
     "app.sr-panel-cache-task": "星铁面板缓存后台刷新",
     "lib.panel-runtime-settings.footer-label": "模板图片页脚",
-    "lib.panel-runtime-settings.footer-hint": "JSON格式配置，沿用原图背景紧接Lotus-Yunzai署名下一行绘制（支持多行换行），不新增底色块、无background配置；text清空即关闭，color支持auto（依背景选黑白）或十六进制，fontSize为8-32，lineHeight为字号-64，padding为0-32，align支持left/center/right，bold为布尔值；保存并重启后生效。"
+    "lib.panel-runtime-settings.footer-hint": "JSON格式配置，沿用原图背景紧接Lotus-Yunzai署名下一行绘制（支持多行换行），不新增底色块、无background配置；text清空即关闭，color支持auto（依背景选黑白）或十六进制，fontSize为8-32，lineHeight为字号-64，padding为0-32，align支持left/center/right，bold为布尔值；保存并重启后生效。",
+    "lib.checkin-batch-retry-commands.denied": "仅主人可使用 #全部补签 指令。",
+    "lib.checkin-batch-retry-commands.busy": "已有批量补签任务正在执行，请等待完成后再试。",
+    "lib.checkin-batch-retry-commands.started": "已开始为全体已注册自动签到档案串行补签今日项目，明细将发往各用户原渠道，完成后向您汇总计数。",
+    "lib.checkin-batch-retry-commands.summary": "全部补签完成：共 {total} 个档案，本次成功 {success}，失败 {failed}，已成功跳过 {skipped}，执行中跳过 {busy}，通知失败 {notifyFailed}。",
+    "lib.checkin-batch-retry-commands.failed": "全部补签任务执行异常失败，请稍后重试或检查日志。",
+    "lib.checkin-batch-retry-commands.empty": "当前没有已注册的自动签到档案。",
+    "lib.checkin-batch-retry-commands.interrupted": "全部补签因跨日、服务停止或权限变更已中止，已完成部分已保留：共 {total} 个档案，本次成功 {success}，失败 {failed}，已成功跳过 {skipped}，执行中跳过 {busy}，通知失败 {notifyFailed}。"
   },
   "parameters": {
     "app.text_242958f459": {
@@ -7068,6 +7079,22 @@
     "lib.game-profile-commands.no-profiles": {},
     "lib.game-profile-commands.list-help": {},
     "lib.game-profile-commands.failed": {},
-    "app.zzz-panel-cache-task": {}
+    "app.zzz-panel-cache-task": {},
+    "lib.checkin-batch-retry-commands.summary": {
+      "total": "注册数",
+      "success": "成功",
+      "failed": "失败",
+      "skipped": "已签跳过",
+      "busy": "执行中跳过",
+      "notifyFailed": "通知失败"
+    },
+    "lib.checkin-batch-retry-commands.interrupted": {
+      "total": "注册数",
+      "success": "成功",
+      "failed": "失败",
+      "skipped": "已签跳过",
+      "busy": "执行中跳过",
+      "notifyFailed": "通知失败"
+    }
   }
 }

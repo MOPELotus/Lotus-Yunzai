@@ -854,6 +854,9 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
         ...(result.status === "complete" && { revision: result.revision }),
       };
     },
+    async runRegistered(qq: string, profileId: number, input: Parameters<typeof runManual>[2]) {
+      return runManual(qq, profileId, input);
+    },
     async runScheduled(qq: string, profileId: number, context: CheckinScheduledRunContext): Promise<CheckinRun> {
       const signal = AbortSignal.any([lifecycleSignal, context.signal]);
       return runProfile(qq, profileId, {
