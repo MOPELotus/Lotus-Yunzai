@@ -19,6 +19,6 @@ test("合并转发只在全部批次收到确切回执后通知调用者", async
       type: "forward", nodes: ["甲", "乙"], batchSize: 1,
       onDelivered() { events.push("delivered"); },
     });
-    expect(events).toEqual(["forward:甲", "forward:乙", outcome === "confirmed" ? "delivered" : "fallback"]);
+    expect(events).toEqual(["forward:甲", "forward:乙", ...(outcome === "unknown" ? [] : [outcome === "confirmed" ? "delivered" : "fallback"])]);
   }
 });

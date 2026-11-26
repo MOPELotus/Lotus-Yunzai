@@ -50,7 +50,7 @@ export async function sendBatchedImageForward({ batches, beforeSend }: BatchedIm
     try {
       if (!await forward(nodes)) return $t("forward-images.text_2922d95437", { "index": index });
     } catch {
-      return $t("forward-images.text_822ee89ef3", { "index": index });
+      return;
     }
   }
 }

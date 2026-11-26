@@ -1,3 +1,4 @@
+import { quietDeliveryNotices } from "./lib/quiet-delivery-notices.ts";
 import "./lib/i18n-preload.ts";
 import { createTranslator as createTextTranslator } from "./packages/i18n/index.ts";
 import messageCatalog from "./i18n/zh-CN.json";
@@ -2106,6 +2107,7 @@ if (import.meta.main) {
 
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     if (isGameSignatureInput(incoming)) return;
+    incoming = quietDeliveryNotices(incoming);
     let prepared = groupDispatch.prepare(incoming);
     const { event, allowNew } = prepared;
     const scope = allowNew && event.msg ? ownCheckinSession(event, []) : undefined;

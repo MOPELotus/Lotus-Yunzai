@@ -28,8 +28,8 @@ test("图鉴按协议逐批确认，明确失败或结果未知时停止且不�
       expect(replies).toEqual(["当前会话无法分段合并转发图片。"]);
     } else {
       expect(attempts).toEqual(["第 1 段", "第 2 段"]);
-      expect(replies).toHaveLength(1);
-      expect(replies[0]).toContain(outcome === "rejected" ? "未发送" : "未确认");
+      expect(replies).toHaveLength(outcome === "unknown" ? 0 : 1);
+      if (outcome === "rejected") expect(replies[0]).toContain("未发送");
     }
   }
 });

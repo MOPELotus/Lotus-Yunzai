@@ -1,3 +1,4 @@
+import { isUncertainDeliveryNotice } from "./quiet-delivery-notices.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -85,6 +86,7 @@ export type MessageFallback = (
 ) => CommandReply | undefined | Promise<CommandReply | undefined>;
 
 export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forward">, reply: CommandReply): Promise<void> {
+  if (isUncertainDeliveryNotice(reply)) return;
   if (Array.isArray(reply) && reply.length === 0) return;
   if (typeof reply !== "object" || reply === null || !("type" in reply)) {
     await event.reply(reply);
@@ -124,7 +126,6 @@ export async function sendCommandReply(event: Pick<MessageEvent, "reply" | "forw
       try {
         if (await (recall ? event.forward(nodes, reply.senderName, recall) : event.forward(nodes, reply.senderName))) continue;
       } catch {
-        await event.reply($t("lib.commands.text_f1baf57ee7"));
         return;
       }
     }
