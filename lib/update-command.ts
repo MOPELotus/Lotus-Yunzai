@@ -99,20 +99,27 @@ export function createUpdateCommand(request: RequestUpdate) {
     }
 
     let pending = Promise.resolve();
+    const enqueue = (message: string) => {
+      pending = pending.then(async () => {
+        await event.reply(message, false, { onDelivered: () => undefined });
+      }).catch(() => undefined);
+    };
     const report = (status: ManagedUpdateProgress) => {
       if (quiet && (quietStatuses.has(status) || status.startsWith("detail:") || status.startsWith("waiting:"))) return;
       const reply = force && status === "checking" ? $t("lib.update-command.text_0127364ac8") : describeUpdateProgress(status);
-      pending = pending.then(async () => { await event.reply(reply); }).catch(() => undefined);
+      enqueue(reply);
     };
     let sent: boolean;
     try {
       sent = await request(event, requested || undefined, quiet, report, all, force);
     } catch {
-      await event.reply($t("lib.update-command.text_8ec36d4e0b"));
+      enqueue($t("lib.update-command.text_8ec36d4e0b"));
+      await pending;
       return;
     }
     if (!sent) {
-      await event.reply($t("lib.update-command.text_60901977ce"));
+      enqueue($t("lib.update-command.text_60901977ce"));
+      await pending;
       return;
     }
     await pending;
