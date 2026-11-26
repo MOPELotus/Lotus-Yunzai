@@ -399,3 +399,25 @@ test("日末任务补跑当天待处理的社区与游戏，不启动普通签�
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('existing plans retry only unsent notices without regenerating times or repeating uncertain sends',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'lotus-notice-retry-'));
+ const store=createCheckinScheduleStore(directory),at=Date.parse('2026-11-27T00:01:00+08:00'),{tomorrow}=checkinScheduleClock(at);
+ const generated=generateCheckinSchedulePlan({date:tomorrow,now:at,config:{},profiles:['10001','10002','10003'].map(qq=>({qq,profileId:1,enabled:true}))});
+ const plan={...generated,entries:generated.entries.map((e,i)=>({...e,notified:i===0,...(i===1?{noticeAttemptedAt:checkinScheduleClock(at).iso}:{})}))};
+ await store.update(tomorrow,()=>({plan,result:undefined}));
+ let reads=0;const sent:string[]=[],signal=new AbortController(),notice=Promise.withResolvers<void>();
+ const runtime=createCheckinScheduleRuntime({store,signal:signal.signal,now:()=>at,config:{run_due_cron:'0 0 0 2 1 *'},listProfiles:async()=>{reads++;return[]},runProfile:async()=>{throw Error('unexpected sign')},onNotice:async entry=>{sent.push(entry.qq);notice.resolve();return{status:'confirmed'}}});
+ const timers=spyOn(globalThis,'setTimeout');
+ try{
+  runtime.start();const startup=timers.mock.calls.find(([,ms])=>ms===60_000)?.[0];expect(startup).toBeFunction();startup!();await notice.promise;await runtime.stop();
+  const after=await store.read(tomorrow);expect(reads).toBe(0);expect(sent).toEqual(['10003']);expect(after?.generatedAt).toBe(plan.generatedAt);expect(after?.entries.map(x=>x.time)).toEqual(plan.entries.map(x=>x.time));expect(after?.entries[1]?.noticeAttemptedAt).toBeDefined();expect(after?.entries[2]?.notified).toBe(true);
+ }finally{timers.mockRestore();signal.abort();await runtime.stop();await rm(directory,{recursive:true,force:true})}
+});
+
+test('plan generation completes before readiness while first notification waits for gateway',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'lotus-notice-first-send-')),store=createCheckinScheduleStore(directory),signal=new AbortController();
+ const ready=Promise.withResolvers<boolean>(),waiting=Promise.withResolvers<void>();let delivered=0;
+ const runtime=createCheckinScheduleRuntime({store,signal:signal.signal,config:{},listProfiles:async()=>[{qq:'10001',profileId:1,enabled:true}],runProfile:async()=>{throw Error('unexpected sign')},noticeReady:async()=>{waiting.resolve();return ready.promise},onNotice:async()=>{delivered++;return{status:'confirmed'}}});
+ try{const pending=runtime.generateTomorrow();await waiting.promise;expect(delivered).toBe(0);ready.resolve(true);await pending;expect(delivered).toBe(1);}finally{signal.abort();await runtime.stop();await rm(directory,{recursive:true,force:true})}
+});

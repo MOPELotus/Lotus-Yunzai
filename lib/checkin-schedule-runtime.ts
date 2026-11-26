@@ -56,13 +56,14 @@ function dailySecond(rule: string) {
 }
 
 export function createCheckinScheduleRuntime({
-  store, config: initial, listProfiles, signal, runProfile, onComplete, onNotice, now = Date.now, startupCatchUpDelayMs = 60_000,
+  store, config: initial, listProfiles, signal, runProfile, onComplete, onNotice, noticeReady, now = Date.now, startupCatchUpDelayMs = 60_000,
 }: Runner & {
   readonly store: Store;
   readonly config: CheckinScheduleConfig;
   readonly listProfiles: () => Promise<readonly CheckinScheduleProfile[]>;
   readonly signal: AbortSignal;
   readonly onNotice?: PlanNotice;
+  readonly noticeReady?: (signal: AbortSignal) => Promise<boolean>;
   readonly now?: () => number;
   readonly startupCatchUpDelayMs?: number;
 }) {
@@ -84,6 +85,8 @@ export function createCheckinScheduleRuntime({
 
   async function notifyPlanned(plan: CheckinSchedulePlan, snapshot: CheckinScheduleConfig, late: boolean, force = false) {
     if (!canRun(snapshot, force) || !onNotice) return;
+    if (noticeReady && !await noticeReady(signal)) return;
+    if (!canRun(snapshot, force)) return;
     return notifyCheckinPlan(store, plan, (slot, date) => onNotice(slot, date, late, async () => {
       if (!canRun(snapshot, force)) return false;
       const clock = checkinScheduleClock(now());
@@ -116,11 +119,19 @@ export function createCheckinScheduleRuntime({
   function prepare(snapshot: CheckinScheduleConfig, at: number, scheduled: boolean): Promise<TomorrowPlan | undefined> | undefined {
     const { tomorrow } = checkinScheduleClock(at);
     if (!canRun(snapshot) || checkinScheduleClock(now()).tomorrow !== tomorrow ||
-        (prepared?.date === tomorrow && prepared.config === snapshot)) return;
+        (scheduled && prepared?.date === tomorrow && prepared.config === snapshot)) return;
     const pending = forcedPlan ?? preparation;
     if (pending) return scheduled ? pending.catch(() => undefined).then(() => prepare(snapshot, at, true)) : pending;
     preparation = (async () => {
-      if (!scheduled && await store.read(tomorrow)) return;
+      if (!scheduled) {
+        const existing = await store.read(tomorrow);
+        if (!canRun(snapshot) || checkinScheduleClock(now()).tomorrow !== tomorrow) return;
+        if (existing) {
+          if (snapshot.random?.notify_before === false) return;
+          const notices = await notifyPlanned(existing, snapshot, false);
+          return { plan: existing, notices };
+        }
+      }
       return prepareTomorrow(await listProfiles(), snapshot, at, scheduled ? "scheduled" : "catch-up");
     })().catch(() => {
       if (canRun(snapshot)) console.warn($t("lib.checkin-schedule-runtime.text_d70b331634"));
@@ -128,7 +139,6 @@ export function createCheckinScheduleRuntime({
     }).finally(() => { preparation = undefined; });
     return preparation;
   }
-
   function catchUp() {
     const at = now();
     const threshold = dailySecond(planJob?.rule ?? normalizeCron(config.plan_generate_cron) ?? planCron);

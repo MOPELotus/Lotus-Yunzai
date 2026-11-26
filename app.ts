@@ -69,6 +69,7 @@ import { checkinRosterCommands } from "./lib/checkin-roster-commands.ts";
 import { checkinGroupRegistrationCommands } from "./lib/checkin-group-registration-commands.ts";
 import { checkinBatchRefreshCommands } from "./lib/checkin-batch-refresh-commands.ts";
 import { checkinRegistrationCommands, checkinStatus, checkinStatusCommand, checkinUnregistration, unregisterCheckinCommand } from "./lib/checkin-registration-commands.ts";
+import { waitForCheckinNoticeTransport } from "./lib/checkin-notice-ready.ts";
 import { createCheckinScheduleRuntime } from "./lib/checkin-schedule-runtime.ts";
 import { createCheckinScheduleStore } from "./lib/checkin-schedule-store.ts";
 import { checkinScheduleClock, type CheckinScheduleConfig } from "./lib/checkin-schedule-plan.ts";
@@ -3466,6 +3467,8 @@ if (import.meta.main) {
           config: (config ?? {}) as CheckinScheduleConfig,
           listProfiles: checkinProfiles.listCheckinProfiles,
           signal: lifecycle.signal,
+          noticeReady: signal => waitForCheckinNoticeTransport({ signal, available: () =>
+            groups.checkinNotifications().length > 0 || Boolean(milkyOnline?.checkinNotify && !milkyOnline.signal.aborted) }),
           runProfile: (entry, scope) => gameCheckin.runScheduled(entry.qq, entry.profileId, scope),
           async onComplete(entry, result, attempt) {
             if (!result.reply || !result.revision || lifecycle.signal.aborted) return;
