@@ -105,33 +105,33 @@ test("群榜只取本群主动展示的摘要，查榜期间离群或切档不�
     await observe(44);
     expect(await ranking.query("#胡桃排行", scope(42), load)).toContain("本群暂无");
     await observe(42);
-    expect(await ranking.query("#胡桃排行", scope(42), load)).toMatchObject({ type: "forward" });
+    expect(await ranking.query("#胡桃排行", scope(42), load)).toMatchObject({ type: "image" });
     expect(exposed).toEqual(["100123456"]);
     const file = join(directory, "onebot", "99", "77", "42.json");
     const encoded = await readFile(file, "utf8");
     expect(encoded).not.toMatch(/attrIds|properties|cookie|nickname|stoken/);
     await cp(file, join(directory, "onebot", "99", "78", "42.json"));
-    expect(await ranking.query("#胡桃排行", scope(42, 78), load)).toMatchObject({ type: "forward" });
+    expect(await ranking.query("#胡桃排行", scope(42, 78), load)).toMatchObject({ type: "image" });
     expect(exposed).toEqual(["100123457"]);
     expect(await ranking.query("#胡桃排行", scope(42, 77, 98), load)).toContain("本群暂无");
     expect(await ranking.query("#胡桃排行", scope(42, 77, 99, "milky"), load)).toContain("本群暂无");
     await observe(43);
-    expect(await ranking.query("#胡桃圣遗物评分排行", scope(42), load)).toMatchObject({ type: "forward" });
+    expect(await ranking.query("#胡桃圣遗物评分排行", scope(42), load)).toMatchObject({ type: "image" });
     expect(exposed).toEqual(["100123457", "100123456"]);
-    expect(await ranking.query("#胡桃双暴排行", scope(42), load)).toMatchObject({ type: "forward" });
+    expect(await ranking.query("#胡桃双暴排行", scope(42), load)).toMatchObject({ type: "image" });
     expect(exposed).toEqual(["100123457", "100123456"]);
-    expect(await ranking.query("#胡桃词条排行", scope(42), load)).toMatchObject({ type: "forward" });
+    expect(await ranking.query("#胡桃词条排行", scope(42), load)).toMatchObject({ type: "image" });
     expect(exposed).toEqual(["100123457", "100123456"]);
     phase = "leave";
     expect(await ranking.query("#胡桃排行", scope(42), load)).toContain("群成员或档案已变化");
     phase = undefined;
-    expect(await ranking.query("#胡桃排行", scope(42), load)).toMatchObject({ type: "forward" });
+    expect(await ranking.query("#胡桃排行", scope(42), load)).toMatchObject({ type: "image" });
     expect(exposed).toEqual(["100123456"]);
     departed = undefined;
     phase = "change";
     expect(await ranking.query("#胡桃排行", scope(42), load)).toContain("群成员或档案已变化");
     phase = undefined;
-    expect(await ranking.query("#胡桃排行", scope(42), load)).toMatchObject({ type: "forward" });
+    expect(await ranking.query("#胡桃排行", scope(42), load)).toMatchObject({ type: "image" });
     expect(exposed).toEqual(["100123456"]);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -163,7 +163,7 @@ test("删除面板立即撤回旧榜，随后展示新角色时只计删除后�
   try {
     await ranking.observe(context, 2, role, avatar, theme, 1000, verify);
     await ranking.observe(otherGroup, 2, role, avatar, theme, 1000, verify);
-    expect(await ranking.query("#胡桃双暴排行", context, load)).toMatchObject({ type: "forward" });
+    expect(await ranking.query("#胡桃双暴排行", context, load)).toMatchObject({ type: "image" });
     const markersBefore = await ranking.listMarkers(context, 2, role, [avatar.id, otherAvatar.id]);
     expect(markersBefore?.markers.get(avatar.id)?.rank).toBe(1);
     expect(await markersBefore?.validate()).toBe(true);
@@ -176,7 +176,7 @@ test("删除面板立即撤回旧榜，随后展示新角色时只计删除后�
     await ranking.observe(context, 2, role, otherAvatar, theme, 2500, verify);
     displayed = otherAvatar;
     expect(await ranking.query("#胡桃双暴排行", context, load)).toContain("未取得该角色 1 个");
-    expect(await ranking.query("#芙宁娜双暴排行", context, load)).toMatchObject({ type: "forward" });
+    expect(await ranking.query("#芙宁娜双暴排行", context, load)).toMatchObject({ type: "image" });
     const markersAfter = await ranking.listMarkers(context, 2, role, [avatar.id, otherAvatar.id]);
     expect([...markersAfter?.markers.keys() ?? []]).toEqual([otherAvatar.id]);
     discardDuringRender = true;
@@ -239,7 +239,7 @@ test("刷新所有本群已登记 UID，失效或未展示不使用旧分，榜�
       await ranking.observe(context(qq, qq === 46 ? 78 : 77), 1, role(qq), observed, theme, 1000, async () => {});
     }
     await ranking.observe(context(42), 2, role(42), avatar, theme, 1100, async () => {});
-    expect(await ranking.query("#胡桃圣遗物排行", context(42), load)).toMatchObject({ type: "forward" });
+    expect(await ranking.query("#胡桃圣遗物排行", context(42), load)).toMatchObject({ type: "image" });
     expect(seen.sort()).toEqual([role(42).uid, role(43).uid, role(44).uid, role(45).uid]);
     expect(ranked).toEqual([role(43).uid, role(42).uid]);
     expect(summary).toContain("可排名 2 个，未取得该角色 1 个，未登录或刷新失败 1 个");

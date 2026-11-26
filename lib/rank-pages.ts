@@ -12,5 +12,5 @@ export async function renderRankPages<T>(rows: readonly T[],
     nodes.push({ type: "image", file: image.png });
   }
   signal.throwIfAborted();
-  return nodes.length ? { type: "forward" as const, nodes } : undefined;
+  return nodes.length === 1 ? nodes[0] : nodes.length ? { type: "forward" as const, nodes } : undefined;
 }

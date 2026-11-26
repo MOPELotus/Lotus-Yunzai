@@ -10,7 +10,9 @@ test("ranking forwards every row in pages of thirty with continuous offsets", as
    expect(pagination.total).toBe(Math.ceil(size/30));
    pages.push([...page]);return {png:Buffer.from(String(page[0]))};
   },new AbortController().signal);
-  expect(reply?.type).toBe("forward");expect(reply?.nodes.length).toBe(Math.ceil(size/30));
+  expect(reply?.type).toBe(size <= 30 ? "image" : "forward");
+  if (reply?.type === "forward") expect(reply.nodes.length).toBe(Math.ceil(size/30));
+  else expect(reply?.file).toEqual(Buffer.from("1"));
   expect(pages.flat()).toEqual(rows);expect(pages.every(p=>p.length<=30)).toBe(true);
  }
 });
