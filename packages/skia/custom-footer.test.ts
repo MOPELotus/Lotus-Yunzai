@@ -5,6 +5,9 @@ import type { CanvasRenderingContext2D } from 'skia-canvas';
 test('footer config is bounded, plain text, strict, and isolated from caller mutation',()=>{
  const defaults=parseImageFooter(undefined)!;
  expect(defaults.text).toBe('');
+ expect(defaults.color).toBe('auto');
+ expect('background' in defaults).toBe(false);
+ expect('background' in parseImageFooter({text:'fixture',background:'#18233b'})!).toBe(false);
  for(const value of [{unknown:1},{text:'x'.repeat(2001)},{text:'\n'.repeat(20)},{text:'a\u0000'},{color:'url(x)'},{background:'transparent'},{fontSize:7},{fontSize:33},{lineHeight:2},{padding:-1},{align:'top'},{bold:1}])expect(parseImageFooter(value)).toBeUndefined();
  expect(parseImageFooter({text:'a\r\nb\t🐱'})?.text).toBe('a\nb\t🐱');
  const config={...defaults,text:'fixture'};setImageFooter(config);config.text='changed';const copy=getImageFooter();copy.text='changed';expect(getImageFooter().text).toBe('fixture');setImageFooter(undefined);

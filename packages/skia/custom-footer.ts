@@ -1,4 +1,5 @@
 import type { CanvasRenderingContext2D } from "skia-canvas";
+import { brandTextColor } from "./brand-color.ts";
 import { builtinFontFallback } from "./builtin-fonts.ts";
 
 export interface ImageFooterConfig {
@@ -7,7 +8,6 @@ export interface ImageFooterConfig {
   lineHeight: number;
   padding: number;
   color: string;
-  background: string;
   align: "left" | "center" | "right";
   bold: boolean;
 }
@@ -19,12 +19,11 @@ const defaults: Readonly<ImageFooterConfig> = Object.freeze({
   fontSize: 14,
   lineHeight: 22,
   padding: 12,
-  color: "#ffffff",
-  background: "#18233b",
+  color: "auto",
   align: "center",
   bold: false,
 });
-const keys = new Set(Object.keys(defaults));
+const keys = new Set([...Object.keys(defaults), "background"]);
 const hex = /^#(?:[a-f\d]{3}|[a-f\d]{6})$/i;
 let current: ImageFooterConfig = { ...defaults };
 
@@ -37,7 +36,9 @@ export function parseImageFooter(value: unknown): ImageFooterConfig | undefined 
     if (Reflect.ownKeys(value).some(key => typeof key !== "string" || !keys.has(key))) {
       return undefined;
     }
-    const config = { ...defaults, ...value };
+    const { background: legacyBackground, ...fields } = value as Record<string, unknown>;
+    if (legacyBackground !== undefined && (typeof legacyBackground !== "string" || !hex.test(legacyBackground))) return undefined;
+    const config = { ...defaults, ...fields } as ImageFooterConfig;
     if (typeof config.text !== "string" || config.text.length > 4000) return undefined;
     config.text = config.text.replace(/\r\n/g, "\n");
     if (config.text.length > 2000 || config.text.split("\n").length > 20) return undefined;
@@ -50,8 +51,7 @@ export function parseImageFooter(value: unknown): ImageFooterConfig | undefined 
     if (!Number.isInteger(config.padding) || config.padding < 0 || config.padding > 32) {
       return undefined;
     }
-    if (typeof config.color !== "string" || !hex.test(config.color) ||
-        typeof config.background !== "string" || !hex.test(config.background)) return undefined;
+    if (typeof config.color !== "string" || (config.color !== "auto" && !hex.test(config.color))) return undefined;
     if (config.align !== "left" && config.align !== "center" && config.align !== "right") {
       return undefined;
     }
@@ -133,15 +133,15 @@ export function paintImageFooter(
     : config.align === "right" ? w - padding : w / 2;
   ctx.save();
   try {
-    ctx.fillStyle = config.background;
-    ctx.fillRect(0, top, w, layout.height);
     setFont(ctx, config);
     ctx.textBaseline = "top";
     ctx.textAlign = config.align;
-    ctx.fillStyle = config.color;
+    ctx.fillStyle = config.color === "auto" ? "#fff" : config.color;
     if (available <= 0) return;
     for (let i = 0; i < Math.min(layout.lines.length, 2000); i++) {
-      ctx.fillText(layout.lines[i]!, x, top + padding + i * config.lineHeight, available);
+      const y = top + padding + i * config.lineHeight;
+      ctx.fillStyle = config.color === "auto" ? brandTextColor(ctx, layout.lines[i]!, x, y, available) : config.color;
+      ctx.fillText(layout.lines[i]!, x, y, available);
     }
   } finally {
     ctx.restore();

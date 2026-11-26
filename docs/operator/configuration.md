@@ -215,36 +215,34 @@ disableAdopt:
 - **仅限好友私聊的敏感入口**：明文录入 Cookie 与云游戏 Token、绝区零 `#绝区零获取抽卡链接`（直接返回带完整 `authkey` 授权参数的链接）、移除游戏登录，以及所有面板文件导入导出和跨机器人数据交换仍仅限好友私聊，不可在群聊中使用。
 
 
-### 模板图片自定义页脚
+## 模板图片页脚（imageFooter）
 
-在管理面板「内置设置」的「宿主运行设置」中找到「模板图片页脚」字段即可配置。配置保存在 `config/bot.yaml` 的 `imageFooter` 字段中（旧版目录布局为 `config/config/bot.yaml`）。
+可在面板 **内置设置 -> 模板图片页脚** 中配置，或修改 `config/bot.yaml`（旧版为 `config/config/bot.yaml`）中的 `imageFooter` 字段，保存并重启后生效。
 
-该功能会在模板图片底部追加自定义页脚，保留原有署名和来源，不改变原图、缩略图及表情动画。
+页脚内容沿用原图背景，紧接原有 `Lotus-Yunzai` 署名下一行绘制，支持多行换行；不新增底色块，也不提供 `background` 配置。将 `text` 清空即可关闭。
 
-#### 字段说明
+### 字段说明
 
-- `text`：页脚文本，支持换行，默认为空（留空即关闭）；限制不超过 2000 字符且最多 20 行
-- `color`：文字颜色，十六进制颜色值
-- `background`：背景颜色，十六进制颜色值
-- `fontSize`：字号，整数，范围 `8`–`32`
-- `lineHeight`：行高，整数，范围 `fontSize`–`64`
-- `padding`：内边距，整数，范围 `0`–`32`
-- `align`：对齐方式，可选 `left`、`center`、`right`
-- `bold`：是否加粗，布尔值（`true` / `false`）
+`imageFooter` 使用 JSON 格式，支持以下字段：
 
-#### 配置示例
+- `text`（string）：页脚自定义文本，支持多行换行；为空时关闭页脚。
+- `color`（string）：文字颜色，默认 `"auto"`（依背景自动选择黑白），也支持十六进制颜色值（如 `#333333`）。
+- `fontSize`（number）：字体大小，范围 `8` 至 `32`。
+- `lineHeight`（number）：行高，范围 `fontSize` 至 `64`。
+- `padding`（number）：内边距，范围 `0` 至 `32`。
+- `align`（string）：对齐方式，可选 `"left"`、`"center"`、`"right"`。
+- `bold`（boolean）：是否加粗，可选 `true` 或 `false`。
+
+### 配置示例
 
 ```json
 {
   "text": "自定义说明",
-  "color": "#333333",
-  "background": "#ffffff",
-  "fontSize": 14,
-  "lineHeight": 20,
+  "color": "auto",
+  "fontSize": 12,
+  "lineHeight": 18,
   "padding": 8,
   "align": "center",
   "bold": false
 }
 ```
-
-保存配置后需重启生效。

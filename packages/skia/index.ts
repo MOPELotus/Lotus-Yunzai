@@ -1,6 +1,7 @@
 import { createTranslator as createTextTranslator } from "../i18n/index.ts";
 import messageCatalog from "./i18n/zh-CN.json";
 const $t = createTextTranslator("skia", messageCatalog.messages);
+import { captureFooterDrawing } from "./footer-drawing.ts";
 import { getImageFooter, setImageFooter, layoutImageFooter, paintImageFooter } from "./custom-footer.ts";
 export { setImageFooter };
 import { prepareBuiltinFonts } from "./builtin-fonts.ts";
@@ -100,9 +101,16 @@ function createSurface(width: number, height: number, mode: "gpu" | "cpu") {
   }
 }
 
-async function render(width: number, height: number, draw: Draw, mode: "gpu" | "cpu"): Promise<PngRender> {
-  const { canvas, context } = createSurface(width, height, mode);
+async function render(width: number, height: number, draw: Draw, mode: "gpu" | "cpu", cropHeight?: () => number | undefined): Promise<PngRender> {
+  let { canvas, context } = createSurface(width, height, mode);
   await draw(context);
+  const croppedHeight = cropHeight?.();
+  if (Number.isSafeInteger(croppedHeight) && croppedHeight! > 0 && croppedHeight! < height) {
+    const cropped = createSurface(width, croppedHeight!, mode);
+    cropped.context.drawCanvas(canvas, 0, 0);
+    canvas = cropped.canvas;
+    height = croppedHeight!;
+  }
   if (width > singleSurfaceDimension || height > singleSurfaceDimension) {
     // Keep the full drawing coordinate space, then replay the recorded drawing on bounded surfaces.
     const png = await encodeBandedPng(width, height, readBands(canvas, width, height, mode));
@@ -134,17 +142,17 @@ async function withBackend<T extends object>(
   }
 }
 
-function renderByBackend(width: number, height: number, draw: Draw, mode: RenderMode): Promise<PngRender> {
-  return withBackend(mode, (backend) => render(width, height, draw, backend));
+function renderByBackend(width: number, height: number, draw: Draw, mode: RenderMode, cropHeight?: () => number | undefined): Promise<PngRender> {
+  return withBackend(mode, (backend) => render(width, height, draw, backend, cropHeight));
 }
 
-function renderByMode(width: number, height: number, draw: Draw, mode: RenderMode): Promise<PngRender> {
+function renderByMode(width: number, height: number, draw: Draw, mode: RenderMode, cropHeight?: () => number | undefined): Promise<PngRender> {
   if (width > maxImageDimension || height > maxImageDimension || width > Math.floor(maxImagePixels / height)) {
     throw new ImageSizeLimitError($t("index.text_d4b5f4ba17"));
   }
-  if (width <= singleSurfaceDimension && height <= singleSurfaceDimension) return renderByBackend(width, height, draw, mode);
+  if (width <= singleSurfaceDimension && height <= singleSurfaceDimension) return renderByBackend(width, height, draw, mode, cropHeight);
   // GPU readbacks for oversized cards use one set of bounded surfaces at a time per process.
-  const next = pendingBandedRender.then(() => renderByBackend(width, height, draw, mode));
+  const next = pendingBandedRender.then(() => renderByBackend(width, height, draw, mode, cropHeight));
   pendingBandedRender = next.then(() => {}, () => {});
   return next;
 }
@@ -202,20 +210,24 @@ export async function renderPng(width: number, height: number, draw: Draw, mode:
   const config = getImageFooter();
   let completeHeight = height;
   let completeDraw: Draw = draw;
+  let drawnHeight: number | undefined;
   if (footer && config.text) {
     prepareBuiltinFonts();
     const metrics = new Canvas(1, 1);
     metrics.gpu = mode !== "cpu";
     const logicalWidth = width / renderScale;
     const layout = layoutImageFooter(metrics.getContext("2d"), logicalWidth, config);
-    completeHeight += Math.ceil(layout.height * renderScale);
+    completeHeight += Math.ceil((layout.height + 4) * renderScale);
     completeDraw = async context => {
+      const captured = captureFooterDrawing(context, width, height, completeHeight - height);
       context.save();
-      try { await draw(context); } finally { context.restore(); }
+      try { await draw(context); } finally { context.restore(); captured.restore(); }
+      const top = (captured.brandBottom() ?? height) / renderScale + 4;
+      drawnHeight = Math.max(height, Math.ceil((top + layout.height) * renderScale));
       context.save();
       try {
         context.scale(renderScale, renderScale);
-        paintImageFooter(context, logicalWidth, height / renderScale, layout, config);
+        paintImageFooter(context, logicalWidth, top, layout, config);
       } finally { context.restore(); }
     };
   }
@@ -224,7 +236,7 @@ export async function renderPng(width: number, height: number, draw: Draw, mode:
     scale === 1 ? completeDraw : context => {
       context.scale(scale, scale);
       return completeDraw(context);
-    }, mode);
+    }, mode, () => drawnHeight === undefined ? undefined : Math.ceil(drawnHeight * scale));
   try {
     return await renderAt(initialScale);
   } catch (error) {
@@ -238,11 +250,4 @@ export async function renderPng(width: number, height: number, draw: Draw, mode:
 export function renderPngWithoutFooter(...args: Parameters<typeof renderPng>): Promise<PngRender> {
   const [width, height, draw, mode, options] = args;
   return renderPng(width, height, draw, mode, { ...options, footer: false });
-}
-
-export async function appendCustomImageFooter(bytes: Buffer, renderScale = 1): Promise<Buffer> {
-  if (!getImageFooter().text) return bytes;
-  const image = await loadImage(bytes);
-  const result = await renderPng(image.width, image.height, context => context.drawImage(image, 0, 0), "gpu", { renderScale });
-  return result.png;
 }

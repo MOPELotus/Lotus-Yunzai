@@ -4959,7 +4959,7 @@
     "app.gs-panel-cache-task": "原神面板缓存后台刷新",
     "app.sr-panel-cache-task": "星铁面板缓存后台刷新",
     "lib.panel-runtime-settings.footer-label": "模板图片页脚",
-    "lib.panel-runtime-settings.footer-hint": "使用 JSON 配置。text 支持换行，清空 text 即关闭；color 与 background 为十六进制颜色；fontSize 范围 8–32，lineHeight 范围字号–64，padding 范围 0–32；align 可选 left/center/right；bold 为布尔值。保存并重启后生效。"
+    "lib.panel-runtime-settings.footer-hint": "JSON格式配置，沿用原图背景紧接Lotus-Yunzai署名下一行绘制（支持多行换行），不新增底色块、无background配置；text清空即关闭，color支持auto（依背景选黑白）或十六进制，fontSize为8-32，lineHeight为字号-64，padding为0-32，align支持left/center/right，bold为布尔值；保存并重启后生效。"
   },
   "parameters": {
     "app.text_242958f459": {
