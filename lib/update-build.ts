@@ -9,10 +9,12 @@ const inheritedVariable = /^(?:LANG|LANGUAGE|LC_[A-Z_]+|TZ|(?:HTTP|HTTPS|ALL|NO)
 
 export async function runUpdateProcess(
   directory: string, env: NodeJS.ProcessEnv, command: string[], timeout: number, signal?: AbortSignal,
+  diagnostic?: (result: { code: number; timedOut: boolean; stderr: string }) => void,
 ): Promise<boolean> {
   signal?.throwIfAborted();
   const child = Bun.spawn(command, {
-    cwd: directory, env, stdin: "ignore", stdout: "ignore", stderr: "ignore", detached: true,
+    cwd: directory, env, stdin: "ignore", stdout: "ignore",
+    stderr: diagnostic ? "pipe" : "ignore", detached: true,
   });
   function stop() {
     try {
@@ -27,15 +29,52 @@ export async function runUpdateProcess(
     }
   }
 
-  const deadline = setTimeout(stop, timeout);
-  signal?.addEventListener("abort", stop, { once: true });
+  let timedOut = false;
+  const retained = new Uint8Array(diagnostic ? 64 * 1024 : 0);
+  let retainedLength = 0;
+  const drained = (async () => {
+    if (!diagnostic || !child.stderr) return;
+    const reader = child.stderr.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const length = Math.min(value.byteLength, retained.length - retainedLength);
+        if (length > 0) {
+          retained.set(value.subarray(0, length), retainedLength);
+          retainedLength += length;
+        }
+      }
+    } catch {
+      // Diagnostic capture is best effort.
+    } finally {
+      reader.releaseLock();
+    }
+  })();
+  const completed = Promise.all([child.exited, drained]);
+  let rejectAbort!: (reason?: unknown) => void;
+  const aborted = new Promise<never>((_, reject) => { rejectAbort = reject; });
+  function onAbort() {
+    stop();
+    rejectAbort(signal!.reason);
+  }
+  const deadline = setTimeout(() => {
+    timedOut = true;
+    stop();
+  }, timeout);
+  signal?.addEventListener("abort", onAbort, { once: true });
   try {
-    const code = await child.exited;
+    if (signal?.aborted) onAbort();
+    const [code] = await Promise.race([completed, aborted]);
     signal?.throwIfAborted();
+    diagnostic?.({
+      code, timedOut,
+      stderr: new TextDecoder().decode(retained.subarray(0, retainedLength)),
+    });
     return code === 0;
   } finally {
     clearTimeout(deadline);
-    signal?.removeEventListener("abort", stop);
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 

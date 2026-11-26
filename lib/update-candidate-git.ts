@@ -4,7 +4,7 @@ const $t = createTextTranslator("core", messageCatalog.messages);
 import { realpath } from "node:fs/promises";
 import { devNull } from "node:os";
 import { resolve } from "node:path";
-import { runUpdateProcess } from "./update-build.ts";
+import { runUpdateFetch } from "./update-fetch-retry.ts";
 import { sanitizeRuntimeLog } from "./runtime-logs.ts";
 import { createLocalGit, gitHead, isGitCheckout, isGitRevision, type LocalGit } from "./local-git.ts";
 
@@ -85,7 +85,7 @@ async function fetchUpstream(
   const git = Bun.which("git");
   if (!git) return false;
   try {
-    return await runUpdateProcess(directory, {
+    return await runUpdateFetch(directory, {
       PATH: process.env.PATH, LC_ALL: "C", GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: "1",
       GIT_ALLOW_PROTOCOL: "file:git:http:https:ssh", GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1",
       GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0", SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK,
@@ -95,7 +95,7 @@ async function fetchUpstream(
       "-c", "fetch.writeCommitGraph=false", "-c", "fetch.bundleURI=", "-c", "transfer.bundleURI=false",
       "fetch", "--atomic", "--quiet", "--no-tags", "--no-prune", "--no-prune-tags", "--no-recurse-submodules",
       "--no-write-fetch-head", "--no-auto-gc", "--refmap=", "--upload-pack=git-upload-pack", "--",
-      upstream.remote, `${upstream.merge}:${ref}`], 45_000, signal);
+      upstream.remote, `${upstream.merge}:${ref}`], signal);
   } catch {
     signal?.throwIfAborted();
     return false;
