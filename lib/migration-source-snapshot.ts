@@ -1,8 +1,9 @@
 import { constants, type Stats } from "node:fs";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, open, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readlink, realpath, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { MigrationSourceFileError } from "./migration-files.ts";
+import { prepareMigrationFilesystemSync } from "./migration-filesystem-sync.ts";
 
 export const migrationSourceSnapshotVersion = 1;
 const archivePath = "backup/migration-source";
@@ -39,6 +40,7 @@ export async function stageMigrationSourceSnapshot(sourcePath: string, stagePath
   await mkdir(destination, { mode: 0o700 });
   const entries: Entry[] = [];
   const snapshots = new Map<string, Stats>();
+  let flush: (() => Promise<void>) | undefined;
   let bytes = 0, files = 0;
   async function visit(path: string) {
     signal?.throwIfAborted();
@@ -74,7 +76,7 @@ export async function stageMigrationSourceSnapshot(sourcePath: string, stagePath
             offset += bytesRead;
           }
           if (!same(info, await input.stat())) throw new MigrationSourceFileError("changed");
-          await output.sync();
+          if (!flush) await output.sync();
         } finally { await output.close(); }
         entries.push({ path, kind: "file", bytes: info.size, sha256: hash.digest("hex") });
         bytes += info.size; files++;
@@ -83,6 +85,7 @@ export async function stageMigrationSourceSnapshot(sourcePath: string, stagePath
     if (!same(info, await lstat(inputPath))) throw new MigrationSourceFileError("changed");
   }
   try {
+    flush = await prepareMigrationFilesystemSync(destination, signal);
     for (const scope of ["config", "data"]) {
       const info = await lstat(join(source, scope)).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== "ENOENT") throw error;
@@ -93,8 +96,18 @@ export async function stageMigrationSourceSnapshot(sourcePath: string, stagePath
       signal?.throwIfAborted();
       if (!same(info, await lstat(join(source, path)))) throw new MigrationSourceFileError("changed");
     }
-    await writeFile(join(destination, "manifest.json"), JSON.stringify({ version: migrationSourceSnapshotVersion, entries }) + "\n",
-      { mode: 0o600, flag: "wx", signal });
+    const manifest = await open(join(destination, "manifest.json"), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    try {
+      await manifest.writeFile(JSON.stringify({ version: migrationSourceSnapshotVersion, entries }) + "\n", { signal });
+      if (!flush) await manifest.sync();
+    } finally { await manifest.close(); }
+    if (flush) {
+      await flush();
+      for (const [path, info] of snapshots) {
+        signal?.throwIfAborted();
+        if (!same(info, await lstat(join(source, path)))) throw new MigrationSourceFileError("changed");
+      }
+    }
     const unresolved = entries.filter(entry => entry.kind === "symlink" || entry.kind === "special")
       .map(entry => ({ path: entry.path, kind: entry.kind }));
     return { version: migrationSourceSnapshotVersion, path: archivePath, files, bytes, unresolved };

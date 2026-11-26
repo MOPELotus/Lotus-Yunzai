@@ -6,6 +6,7 @@ import { lstat, open, readdir, realpath, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { lockFile, managedHostLockPath, managedStartupLockPath } from "./file-lock.ts";
 import { exists, move, removeJournal, syncDirectory, writeJournal } from "./filesystem-transaction.ts";
+import { prepareMigrationFilesystemSync } from "./migration-filesystem-sync.ts";
 import { isManagedLegacyScript, isManagedPluginDirectory } from "./managed-update-protocol.ts";
 import { createLocalGit } from "./local-git.ts";
 import { recoverUpdateActivation } from "./update-activation.ts";
@@ -124,13 +125,13 @@ async function readEntry(path: string, root: string) {
   }
 }
 
-async function syncPayload(path: string, device: number) {
+async function syncPayload(path: string, device: number, synchronize = true) {
   const expected = await lstat(path);
   if (expected.dev !== device) throw new Error($t("lib.migration-publication.text_ad34ed886a"));
   if (expected.isSymbolicLink()) return;
   if (expected.isDirectory()) {
-    for (const name of await readdir(path)) await syncPayload(join(path, name), device);
-    await syncDirectory(path);
+    for (const name of await readdir(path)) await syncPayload(join(path, name), device, synchronize);
+    if (synchronize) await syncDirectory(path);
     return;
   }
   const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
@@ -139,7 +140,7 @@ async function syncPayload(path: string, device: number) {
     if (!opened.isFile() || opened.dev !== expected.dev || opened.ino !== expected.ino || opened.size !== expected.size) {
       throw new Error($t("lib.migration-publication.text_0da8919e01"));
     }
-    await handle.sync();
+    if (synchronize) await handle.sync();
   } finally {
     await handle.close();
   }
@@ -325,6 +326,7 @@ export async function publishMigrationPayload(
       const paths = [...names.filter(isScope), ...(plugins?.paths ?? [])];
       if (!paths.length) throw new Error($t("lib.migration-publication.text_24c111c051"));
       const state: PublishedEntry[] = [];
+      const flush = await prepareMigrationFilesystemSync(stage);
       for (const path of paths) {
         if (await exists(join(root, path))) throw new Error($t("lib.migration-publication.text_dea49b7ed8", { "path": path }));
         const payload = join(stage, path);
@@ -333,8 +335,12 @@ export async function publishMigrationPayload(
         const script = original.isFile() && isPluginPath(path) && isManagedLegacyScript(path);
         if (script && original.nlink !== 1) throw new Error($t("lib.migration-publication.text_ad00c373ab"));
         const physical = script ? { dev: original.dev, ino: original.ino, kind: "file" as const } : identity(original);
-        await syncPayload(payload, target.dev);
+        await syncPayload(payload, target.dev, flush === undefined);
         state.push({ path, ...physical });
+      }
+      if (flush) {
+        await flush();
+        for (const path of paths) await syncPayload(join(stage, path), target.dev, false);
       }
       await syncDirectory(stage);
       const entry: PublicationEntry = { version: 1, target, stage: { path: stage, ...staged }, state, committed: false,

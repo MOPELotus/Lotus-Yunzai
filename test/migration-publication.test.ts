@@ -68,6 +68,39 @@ async function assertEmptyState(root: string) {
   for (const path of paths) await expect(lstat(join(root, path))).rejects.toMatchObject({ code: "ENOENT" });
 }
 
+test.skipIf(process.platform !== "linux" || !Bun.which("git") || !Bun.which("sync"))("publication-syncfs-failure", async () => {
+  const { parent, root, stage } = await setup();
+  const bin = join(parent, "bin"), counter = join(parent, "counter"), realSync = Bun.which("sync")!;
+  await mkdir(bin);
+  await writeFile(join(bin, "sync"), `#!/bin/sh\nprintf x >> '${counter}'\nif [ "$(wc -c < '${counter}')" -gt 1 ]; then exit 9; fi\nexec '${realSync}' "$@"\n`, { mode: 0o755 });
+  const previous = process.env.PATH;
+  process.env.PATH = bin + ":" + previous;
+  try {
+    await expect(publishMigrationPayload(root, stage)).rejects.toThrow("EIO");
+    expect(await readFile(counter, "utf8")).toBe("xx");
+    await assertEmptyState(root);
+    await assertState(stage);
+    await expect(lstat(join(parent, ".target.lotus-migration-pending.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(join(parent, ".target.lotus-migration-applied.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  } finally { if (previous === undefined) delete process.env.PATH; else process.env.PATH = previous; }
+  expect((await publishMigrationPayload(root, stage)).status).toBe("published");
+  await assertState(root);
+});
+
+test.skipIf(process.platform !== "linux" || !Bun.which("git"))("publication-syncfs-unavailable", async () => {
+  const { parent, root, stage } = await setup();
+  const bin = join(parent, "bin"), counter = join(parent, "counter");
+  await mkdir(bin);
+  await writeFile(join(bin, "sync"), `#!/bin/sh\nprintf x >> '${counter}'\nexit 64\n`, { mode: 0o755 });
+  const previous = process.env.PATH;
+  process.env.PATH = bin + ":" + previous;
+  try {
+    expect((await publishMigrationPayload(root, stage)).status).toBe("published");
+    expect(await readFile(counter, "utf8")).toBe("x");
+    await assertState(root);
+  } finally { if (previous === undefined) delete process.env.PATH; else process.env.PATH = previous; }
+});
+
 test.skipIf(!Bun.which("git"))("publishes one staged batch and reuses the same completion receipt", async () => {
   const { root, stage, source } = await setup();
   const rootBefore = await lstat(root);

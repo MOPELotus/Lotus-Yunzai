@@ -5,7 +5,7 @@ import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, readdir, readlink, realpath, rename, rm, symlink, type FileHandle } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { spawn } from "node:child_process";
+import { prepareMigrationFilesystemSync } from "../migration-filesystem-sync.ts";
 import { lockFile } from "../file-lock.ts";
 import { isManagedPluginDirectory } from "../managed-update-protocol.ts";
 import { planMigration, withinInstallation, type LegacyMigrationPlan } from "./migration-plan.ts";
@@ -102,27 +102,6 @@ async function syncDirectory(path: string) {
   }
 }
 
-async function deferredFilesystemSync(path: string, signal?: AbortSignal) {
-  if (process.platform !== "linux") return;
-  const executable = Bun.which("sync", { PATH: process.env.PATH });
-  if (!executable) return;
-  const flush = async () => {
-    signal?.throwIfAborted();
-    const directory = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn(executable, ["-f", "/proc/self/fd/3"], {
-          stdio: ["ignore", "ignore", "ignore", directory.fd], signal,
-        });
-        child.once("error", reject);
-        child.once("exit", code => code === 0 ? resolve() : reject(new Error($t("lib.plugins.legacy-backup-stage.text_d1d56492cd"))));
-      });
-    } finally { await directory.close(); }
-    signal?.throwIfAborted();
-  };
-  try { await flush(); return flush; }
-  catch { signal?.throwIfAborted(); return; }
-}
 
 async function transferTree(source: string, destination: string, copy: boolean, signal?: AbortSignal, deferredSync = false) {
   signal?.throwIfAborted();
@@ -216,7 +195,7 @@ export async function stageLegacyPluginBackup(plan: LegacyMigrationPlan, staging
     const current = await optionalStat(destination);
     if (current && !current.isDirectory()) throw collision();
     temporary = current ? undefined : await mkdtemp(join(backup, ".lotus-plugins-"));
-    const flush = temporary ? await deferredFilesystemSync(temporary, signal) : undefined;
+    const flush = temporary ? await prepareMigrationFilesystemSync(temporary, signal, () => new Error($t("lib.plugins.legacy-backup-stage.text_d1d56492cd"))) : undefined;
     for (const { path, kind } of archive) {
       const source = await checkedPath(plan.source, path);
       const input = await lstat(source);
