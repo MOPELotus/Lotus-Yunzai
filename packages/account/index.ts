@@ -1170,10 +1170,22 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       return { revision, wallets: [...wallets, ...international] };
     },
     async setCheckinEnabled(qq: string, id: number, expectedRevision: string, enabled: boolean,
-      signal?: AbortSignal, canCommit?: () => boolean, nickname?: ProfileNickname) {
+      signal?: AbortSignal, canCommit?: () => boolean, nickname?: ProfileNickname, groupId?: number) {
       if (typeof enabled !== "boolean") invalidCheckinSettings();
+      if (groupId !== undefined && (!Number.isSafeInteger(groupId) || groupId < 1)) invalidCheckinSettings();
       const result = await updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
         if (enabled && !state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
+        if (enabled && groupId !== undefined) {
+          const profile = record(document.profile);
+          const notify = record(profile.notify);
+          const groups = Array.isArray(notify.fallback_groups) ? notify.fallback_groups : [];
+          if (!groups.some((value) => accountId(value) === String(groupId))) {
+            return {
+              ...document, enabled,
+              profile: { ...profile, notify: { ...notify, fallback_groups: [...groups, String(groupId)] } },
+            };
+          }
+        }
         return state.summary.enabled === enabled ? document : { ...document, enabled };
       }, signal, undefined, canCommit, enabled ? nickname : undefined);
       return { enabled, ...result };

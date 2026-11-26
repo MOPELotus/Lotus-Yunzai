@@ -124,7 +124,9 @@ export function checkinRegistrationCommands(directory: string | undefined, signa
         if (!state.loggedIn) return $t("lib.checkin-registration-commands.text_76720712c8", { "profileId": profileId });
         if (signal.aborted) return;
         const updated = await profiles.setCheckinEnabled(qq, profileId, state.revision, true,
-          signal, undefined, () => checkinSettingsNickname(context));
+          signal, undefined, () => checkinSettingsNickname(context),
+          context.message_type === "group" && typeof context.group_id === "number"
+            && Number.isSafeInteger(context.group_id) && context.group_id > 0 ? context.group_id : undefined);
         saved = true;
         const current = await profiles.checkinSettings(qq, profileId);
         if (signal.aborted) return;

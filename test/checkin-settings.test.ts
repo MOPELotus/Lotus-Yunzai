@@ -263,3 +263,49 @@ test("崩坏3签到沿用关闭缺省与独立的旧区服角色黑名单", asyn
     });
   }, { ...fixture, games: { cn: { ...fixture.games.cn, honkai3rd: { black_list: ["123456"] } } } });
 });
+
+import { checkinRegistrationCommands } from "../lib/checkin-registration-commands.ts";
+import type { MessageFallbackContext } from "../lib/commands.ts";
+
+test("group registration atomically enables and preserves notification settings; duplicates remain idempotent", async () => {
+  await withProfile(async (store, path) => {
+    const before = await store.checkinSettings(qq, 2);
+    const saved = await store.setCheckinEnabled(qq, 2, before.revision, true, undefined, undefined, undefined, 700);
+    const expected = { ...fixture, enabled: true, profile: { ...fixture.profile, notify: { fallback_groups: ["123", "700"] } } };
+    expect(Bun.YAML.parse(await readFile(path, "utf8"))).toEqual(expected);
+    const again = await store.setCheckinEnabled(qq, 2, saved.revision, true, undefined, undefined, undefined, 700);
+    expect(again).toMatchObject({ changed: false, revision: saved.revision });
+    const added = await store.setCheckinEnabled(qq, 2, again.revision, true, undefined, undefined, undefined, 800);
+    expect((await store.checkinSettings(qq, 2)).notify.fallbackGroups).toEqual([123, 700, 800]);
+    await store.setCheckinEnabled(qq, 2, added.revision, false, undefined, undefined, undefined, 900);
+    expect((await store.checkinSettings(qq, 2)).notify.fallbackGroups).toEqual([123, 700, 800]);
+  });
+});
+
+test("group fallback respects stale revisions and cancellation without partial writes", async () => {
+  await withProfile(async (store, path) => {
+    const before = await store.checkinSettings(qq, 2), original = await readFile(path, "utf8");
+    await expect(store.setCheckinEnabled(qq, 2, before.revision, true, undefined, () => false, undefined, 700)).rejects.toThrow();
+    expect(await readFile(path, "utf8")).toBe(original);
+    for (const invalid of [0, -1, NaN, 1.5]) await expect(store.setCheckinEnabled(qq, 2, before.revision, true, undefined, undefined, undefined, invalid)).rejects.toThrow();
+    const saved = await store.setCheckinEnabled(qq, 2, before.revision, true);
+    await expect(store.setCheckinEnabled(qq, 2, before.revision, true, undefined, undefined, undefined, 700)).rejects.toMatchObject({ code: "changed" });
+    expect((await store.checkinSettings(qq, 2)).revision).toBe(saved.revision);
+    expect((await store.checkinSettings(qq, 2)).notify.fallbackGroups).toEqual([123]);
+  });
+});
+for (const message_type of ["group", "private"] as const) test(`personal ${message_type} registration captures only actual group context`, async () => {
+  await withProfile(async (store, _path, directory) => {
+    let scheduled = 0;
+    const command = checkinRegistrationCommands(directory, new AbortController().signal, {
+      canRegister: () => true, async addRegisteredProfile() { scheduled++; }, viewProfile: () => "fixture",
+    });
+    const context = { message_type, group_id: 700, user_id: Number(qq), self_id: 12, isMaster: false, isBotMaster: () => false,
+      normalizedMessage: "#注册自动签到2", reply: () => true } satisfies MessageFallbackContext;
+    expect(await command.fallback?.(context.normalizedMessage, context)).toBe("fixture");
+    const result = await store.checkinSettings(qq, 2);
+    expect(result.enabled).toBe(true);
+    expect(result.notify.fallbackGroups).toEqual(message_type === "group" ? [123, 700] : [123]);
+    expect(scheduled).toBe(1);
+  });
+});
