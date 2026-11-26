@@ -85272,6 +85272,336 @@
       "sha256": "0ba8580ab6a50d6339088b49a24e3a3a520405d278bff40e4a5f3943e330e45d"
     },
     {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral01.webp",
+      "bytes": 7278,
+      "sha256": "3a902aff478e5c06c24f9b84ab192b72635a741c9242d2dbfac403be4d60c6f3"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral05.webp",
+      "bytes": 6096,
+      "sha256": "d0868dd7c2c09b3ed107da404e0b8b448e47a5740efcaa03d3062696032bddbf"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral09.webp",
+      "bytes": 6944,
+      "sha256": "0e162a52b3a38dad081f4b2f608b708b0dcb6c30888e4281821b0018cc74a83b"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral10.webp",
+      "bytes": 5298,
+      "sha256": "327225b973ff123275c41ed7173abb0f320a6d3eacc848ba24ca81431b2e85c5"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral11.webp",
+      "bytes": 6450,
+      "sha256": "7398416fa75b10a26965a67a43db4aacbfa85e5b8cb6271f9422be53f682977c"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral12.webp",
+      "bytes": 6030,
+      "sha256": "ab815667ef2954daa136f59a2da61e011d5f7efd87e70d4d566f9663dff23f65"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral13.webp",
+      "bytes": 5450,
+      "sha256": "60d0e89640c39bf7d47f6a8fd6232af794d8570138bdd92f9981c4c6d8f4b8ff"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral14.webp",
+      "bytes": 7626,
+      "sha256": "69a4a2a85eef5b483cbc55c442c4a10929c66086dfc5d0f5a06c9d75bef8a083"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral15.webp",
+      "bytes": 4986,
+      "sha256": "ef48a0214eecbedddbdc260489d99a5ea015ece0f5f8b565ac6180704a8e680b"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral16.webp",
+      "bytes": 5224,
+      "sha256": "b1b85349b68bbd93516714b6e8dfa6d20acfdfbff456ff935ec40a17f7b776e7"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral1601.webp",
+      "bytes": 6698,
+      "sha256": "9c28bbaf23b272046e57999cb825b94d79d1492d41bf1bc90402e1c21d1cdd64"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral1611.webp",
+      "bytes": 6554,
+      "sha256": "c48a4685c8f6ae24bcfdfeb273d2c7debce67c6c5985e834f239f5ba61b8a994"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral1631.webp",
+      "bytes": 6946,
+      "sha256": "00bd717e3238f169c8bcbb0c19feb51956e74ea40922d22869e0f3478c35c0ac"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral1641.webp",
+      "bytes": 6674,
+      "sha256": "28be6055c7d6f6188adfcdbf0df1eec6e272f72daa520589b63577f96b5b59e9"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral1651.webp",
+      "bytes": 6446,
+      "sha256": "f3cb54395c122aea983adda969908451db1edf82c53a0b8d26112435900cc8c3"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral1661.webp",
+      "bytes": 7184,
+      "sha256": "f2edf4bff330091b57112604d6e861146c704a323788a5b433721c35f82abcfe"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral17.webp",
+      "bytes": 6946,
+      "sha256": "7784bb2f3bcd9800d8695c52da42e7411345ba7a2fe54f135d0fa80bf0657e0a"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral18.webp",
+      "bytes": 6826,
+      "sha256": "0723e9360bd007ac50c02d8a8a6e998d703dcce8e1c126eb8aaffc1f0c9360c9"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral20.webp",
+      "bytes": 6232,
+      "sha256": "6f2e8e2dca7efd3763e489cc981986edc449e146c2dd6c1ba2cd1a525a479375"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral21.webp",
+      "bytes": 5806,
+      "sha256": "e44e94d70c758b36feaff4fb4969966827f2dfc827bd56d16a2fb3af42c5bf00"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral22.webp",
+      "bytes": 6524,
+      "sha256": "7ba2e2cb2b8d653b3dda88536c94ec3e64707d40be0bfd3fc5d44e0bbaa7d17f"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral23.webp",
+      "bytes": 6428,
+      "sha256": "e5d8641a0dd758ee35fec82c148adb82d5d3c02e5b567f366450bfed40a94b3d"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral24.webp",
+      "bytes": 5396,
+      "sha256": "188c714bce2910e885884a70a33d7310691dd8fec1dbe5962757577c5c299631"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral25.webp",
+      "bytes": 6550,
+      "sha256": "fba05fb23a75fcae07f5cfd26b1fba44d576aae6d0f14537b2a6a35d4bfd8f61"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral26.webp",
+      "bytes": 5264,
+      "sha256": "07687ce9313b65ac1490ea4e1138b5a7881b60c58b86e403f7ceca4728ed67c7"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral27.webp",
+      "bytes": 6510,
+      "sha256": "14d9a29e72052e2daa43aa6177bc491b639d8f7947ab58a5835557b12e740908"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral28.webp",
+      "bytes": 7324,
+      "sha256": "f569fde06e6a56b8914e3607ee782317cc2e11ed4f56fa106f5dc70359a6e1eb"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral29.webp",
+      "bytes": 6564,
+      "sha256": "accf9814720fcd4e052a9e8b6e40a9f6ce8a7b98fad80485ada1ae74e761404e"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral30.webp",
+      "bytes": 5658,
+      "sha256": "53714995fee1eb6b71a43500a73633556e26bb8dff2c86560bdfcaffcde2c626"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral31.webp",
+      "bytes": 6084,
+      "sha256": "7e009c93c03fcc98235b141e2ed0368f2668879a050609f3343f797238cc53bb"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral32.webp",
+      "bytes": 6736,
+      "sha256": "491eaebd51487bef4d6e49ce6f6455d6973f5b11808c8e00eb07786cb7eae66e"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral35.webp",
+      "bytes": 6292,
+      "sha256": "4ba3870b58d80b0025432f8477c97ccf7050e00afab5c5dd5e5f208709b60ac7"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral36.webp",
+      "bytes": 6402,
+      "sha256": "a1dd0c5ee79140c46421a7b9005304ab06d34cc20b0f3afd5dd1e685ee83633e"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral37.webp",
+      "bytes": 6312,
+      "sha256": "345dd4fd00b295dbd2a18cc35b24e6ae3f70e43b1e118ee74a71a7c6a90c33e2"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral38.webp",
+      "bytes": 7874,
+      "sha256": "cacf096046c7fff5f5aa22753c326e0f63ffe1ffadd9fbd76af5447a135ce3e2"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral39.webp",
+      "bytes": 6304,
+      "sha256": "943c09445c46d82d90de7893a741cf208faae039f2f3051ff04e4e3e3a3dfd8b"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral40.webp",
+      "bytes": 7000,
+      "sha256": "8f6fd7494e332bac4bf5020bfc7e5fd165a10412d2d993f285f9628ceb7f2b24"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral41.webp",
+      "bytes": 6354,
+      "sha256": "3a6a402ac29073986e8f140169b4ce10c77f7361fa22eafff25e8be5fa56dbb0"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral42.webp",
+      "bytes": 5986,
+      "sha256": "db1f98c631f8cde23da3c6100cd949abbd1d17039c807672cddfcd95ed5f3b89"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral43.webp",
+      "bytes": 6490,
+      "sha256": "d058871b0ab83208b7be0f0c7a11fb5a613f9a8d86bcecd45dff50b658f3d84c"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral44.webp",
+      "bytes": 6674,
+      "sha256": "0921899b7da49a7fdc7e12817d0515b3e4d7555bb2457ba45d20fa5eb4f89751"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral45.webp",
+      "bytes": 5416,
+      "sha256": "a40c9886f33bef140fa1b987f24365aafdb663366337632029cf623466fc276e"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral46.webp",
+      "bytes": 5642,
+      "sha256": "369598dce286782a6e915b7fb0562fede93521de45ad7756ba8f8632bd93cb76"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral47.webp",
+      "bytes": 5922,
+      "sha256": "c2468ed52d9c902ad65d77dce967dbcf1cb18b9c6fe36b2abcc971aba345cbed"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral48.webp",
+      "bytes": 5718,
+      "sha256": "f26ef126197b632a25f650091f3bc62c8fdd948de6014b24b5ac369ef09067a2"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral49.webp",
+      "bytes": 6956,
+      "sha256": "3e0c1cb3dac25f0ab05a4bd470cf6b0e67c6e94e949b705675cf11da3374cec2"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral50.webp",
+      "bytes": 6720,
+      "sha256": "99016f64eedfc44f14512d26ee1e0662fb756326668f6fcacd657f991a4316f1"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral51.webp",
+      "bytes": 6640,
+      "sha256": "e279b4c3a1a2232b71807cfbf9334f37a5c3748e247781fa4e5be1780bc02cbc"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral52.webp",
+      "bytes": 6980,
+      "sha256": "3c8df6da3a34acc9d4ae370351216db764e385b0131502cc911d17d60e43259f"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral53.webp",
+      "bytes": 6736,
+      "sha256": "7bd3471b071e04f382bcf9a3970d1b5bacd6ab7fe7b1d54893d3df03af83efb4"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral54.webp",
+      "bytes": 6796,
+      "sha256": "c507c21c63c27b93e43b95db80d15be5a69bf7e9c15f046aeb44c87078b3e8d4"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral55.webp",
+      "bytes": 6322,
+      "sha256": "a4cb39139904275c74b97deadec2561900be4eea9e8717d6d39511c64771a8d8"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral56.webp",
+      "bytes": 6858,
+      "sha256": "ae0341dba2fff0cb1c7b806ca27b69a51f4ad24b6cb80a37c20b1b6990895b00"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral57.webp",
+      "bytes": 6406,
+      "sha256": "a48b93c96169de4834bd791e276f8a057652f89c4444ac53f555b768fa342ec0"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral58.webp",
+      "bytes": 6402,
+      "sha256": "9d60e59ee43d6318527ca31c6212e0c07b9e0890af8bc7ef431eae214b6ad9d8"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral59.webp",
+      "bytes": 5980,
+      "sha256": "c598884c202e18df2d78d2d20c4619b019e33ae23f6fd154a2911fa8ad4cb70e"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral60.webp",
+      "bytes": 7592,
+      "sha256": "67abd3380e3c38004a388f36a804ee90f7b617ea5737cddedbb451edbd05a90d"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral61.webp",
+      "bytes": 5850,
+      "sha256": "70f194480530c0d0cc599f673a7ed6362a3b3507fbaed082e5b57bd70fe5c65e"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral62.webp",
+      "bytes": 5578,
+      "sha256": "f1055c8177f00dc07f3f6cdb05f9f30baed14ee93e133991567aed80b1a9f521"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral63.webp",
+      "bytes": 6598,
+      "sha256": "523f57cc0153edc639549da1ed20b5e94587c2377c9266c7abc71eff94622806"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral64.webp",
+      "bytes": 6892,
+      "sha256": "c408a18ef267e7e83cedb2f53405d1642b96b14525fcefb9a367efa13f295375"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral65.webp",
+      "bytes": 6694,
+      "sha256": "8fda1c1318356b53e8514ba1d0e4d2acddb1252b4138b3f9c56b9b87d08d95cb"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral66.webp",
+      "bytes": 6974,
+      "sha256": "abe32c3c12b3b4b0d2041e0769486fc24a7c275cf4724dffae464ff992d09596"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral67.webp",
+      "bytes": 6408,
+      "sha256": "303817c06242e1f8c659c966145f9719bdff311267b247ba7308adde2f22f044"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral68.webp",
+      "bytes": 6834,
+      "sha256": "ebcfd7d3fd924690a44d862442e3934fc086a3168f62f6c10e450bf678bf6d5c"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/role_general/SOURCES.json",
+      "bytes": 15297,
+      "sha256": "f9412d00cd2df9d20006c25652b501a80b63c298a1fa9518f2cf4f75ad9e85c6"
+    },
+    {
       "path": "resources/builtin/games/zzz/map/AnomalyData.json",
       "bytes": 2337,
       "sha256": "978817880384e2ea78fc52d6a293b867e836518ffb757fc4f94a803dca750a76"
