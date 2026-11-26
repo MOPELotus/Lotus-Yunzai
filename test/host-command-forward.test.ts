@@ -11,7 +11,6 @@ const images = [
   { type: "image", data: { file: "base64://AQID" } },
   { type: "image", data: { file: "base64://BAUG" } },
 ];
-const unconfirmed = "合并转发结果未确认，请在聊天中核对。";
 
 interface Frame {
   readonly action: string;
@@ -195,9 +194,8 @@ test("宿主通过当前 OneBot 会话按顺序发送现代与 V3 指令的合�
 
     await Bun.sleep(1_050);
     bot.receipt(await forward("private"), "ok", 1);
-    expect(await bot.next()).toMatchObject({ action: "send_msg", params: {
-      user_id: 42, message: unconfirmed,
-    } });
+    await Bun.sleep(80);
+    expect(bot.frames).toEqual([]);
 
     bot.command("#文字夹具", "private");
     expect(await bot.next()).toMatchObject({ action: "send_msg", params: { user_id: 42, message: plain } });
@@ -314,7 +312,8 @@ test("宿主通过 Milky 在群聊和私聊发送现代与 V3 指令的合并转
     for (const segment of [text(title), ...segments]) await next(true, [segment]);
     mode = "unknown";
     await forward(false, "#旧公共转发");
-    await next(false, [text(unconfirmed)]);
+    await Bun.sleep(80);
+    expect(calls.frames).toEqual([]);
     await command("#文字夹具", false);
     await next(false, [text(plain)]);
     mode = "accepted";
@@ -331,7 +330,8 @@ test("宿主通过 Milky 在群聊和私聊发送现代与 V3 指令的合并转
     });
     mode = "unknown";
     await forward(false, "#定时撤回转发");
-    await next(false, [text(unconfirmed)]);
+    await Bun.sleep(80);
+    expect(calls.frames).toEqual([]);
     await Bun.sleep(100);
     expect(calls.frames).toEqual([]);
     host.kill();

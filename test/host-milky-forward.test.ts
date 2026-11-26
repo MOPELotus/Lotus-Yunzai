@@ -173,14 +173,11 @@ test("Milky 更新日志只在明确拒绝合并转发时回退正文", async ()
         const body = segment.data.messages[1]!.segments[0]!.data.text;
         expect(body).toContain(subject);
         expect(body).not.toContain(dummySecret);
-        if (receipt !== "confirmed") {
-          const expectedReply = receipt === "rejected"
-            ? `${title}\n\n${body}`
-            : "更新日志转发结果未确认，请在聊天中核对。";
-          expect(await mock.next()).toEqual({ group_id: groupId, message: [{ type: "text", data: { text: expectedReply } }] });
+        if (receipt === "rejected") {
+          expect(await mock.next()).toEqual({ group_id: groupId, message: [{ type: "text", data: { text: `${title}\n\n${body}` } }] });
         }
         await Bun.sleep(80);
-        expect(mock.sent).toHaveLength(before + (receipt === "confirmed" ? 1 : 2));
+        expect(mock.sent).toHaveLength(before + (receipt === "rejected" ? 2 : 1));
       }
     } finally {
       if (host.exitCode === null && host.signalCode === null) host.kill();
