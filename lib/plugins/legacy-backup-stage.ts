@@ -5,6 +5,7 @@ import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, readdir, readlink, realpath, rename, rm, symlink, type FileHandle } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { spawn } from "node:child_process";
 import { lockFile } from "../file-lock.ts";
 import { isManagedPluginDirectory } from "../managed-update-protocol.ts";
 import { planMigration, withinInstallation, type LegacyMigrationPlan } from "./migration-plan.ts";
@@ -12,6 +13,7 @@ import { planMigration, withinInstallation, type LegacyMigrationPlan } from "./m
 const blockSize = 128 * 1024;
 const sourceChanged = () => new Error($t("lib.plugins.legacy-backup-stage.text_376ba5efee"));
 const collision = () => new Error($t("lib.plugins.legacy-backup-stage.text_e49757f4fe"));
+const archivedName = (name: string) => name !== "node_modules" && name !== ".git";
 
 async function optionalStat(path: string) {
   try {
@@ -44,7 +46,7 @@ async function readBlock(handle: FileHandle, buffer: Buffer, length: number, pos
   return count;
 }
 
-async function transferFile(source: string, destination: string, info: Stats, copy: boolean, signal?: AbortSignal) {
+async function transferFile(source: string, destination: string, info: Stats, copy: boolean, signal?: AbortSignal, deferredSync = false) {
   const readFlags = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW;
   const input = await open(source, readFlags);
   try {
@@ -81,7 +83,7 @@ async function transferFile(source: string, destination: string, info: Stats, co
           throw new Error($t("lib.plugins.legacy-backup-stage.text_762d2ef8b5"));
         }
         await output.chmod(fileMode(info));
-        await output.sync();
+        if (!deferredSync) await output.sync();
       }
     } finally {
       await output.close();
@@ -100,7 +102,29 @@ async function syncDirectory(path: string) {
   }
 }
 
-async function transferTree(source: string, destination: string, copy: boolean, signal?: AbortSignal) {
+async function deferredFilesystemSync(path: string, signal?: AbortSignal) {
+  if (process.platform !== "linux") return;
+  const executable = Bun.which("sync", { PATH: process.env.PATH });
+  if (!executable) return;
+  const flush = async () => {
+    signal?.throwIfAborted();
+    const directory = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(executable, ["-f", "/proc/self/fd/3"], {
+          stdio: ["ignore", "ignore", "ignore", directory.fd], signal,
+        });
+        child.once("error", reject);
+        child.once("exit", code => code === 0 ? resolve() : reject(new Error($t("lib.plugins.legacy-backup-stage.text_d1d56492cd"))));
+      });
+    } finally { await directory.close(); }
+    signal?.throwIfAborted();
+  };
+  try { await flush(); return flush; }
+  catch { signal?.throwIfAborted(); return; }
+}
+
+async function transferTree(source: string, destination: string, copy: boolean, signal?: AbortSignal, deferredSync = false) {
   signal?.throwIfAborted();
   const info = await lstat(source);
   const existing = copy ? undefined : await optionalStat(destination);
@@ -109,11 +133,11 @@ async function transferTree(source: string, destination: string, copy: boolean, 
 
   if (info.isDirectory()) {
     if (copy) await mkdir(destination, { mode: 0o700 });
-    const names = (await readdir(source)).sort();
-    if (!copy && !isDeepStrictEqual(names, (await readdir(destination)).sort())) throw collision();
+    const names = (await readdir(source)).filter(archivedName).sort();
+    if (!copy && !isDeepStrictEqual(names, (await readdir(destination)).filter(archivedName).sort())) throw collision();
     for (const name of names) {
       await verifySource(source, info);
-      await transferTree(join(source, name), join(destination, name), copy, signal);
+      await transferTree(join(source, name), join(destination, name), copy, signal, deferredSync);
     }
     if (copy) {
       const folder = await open(destination, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
@@ -123,7 +147,7 @@ async function transferTree(source: string, destination: string, copy: boolean, 
           throw new Error($t("lib.plugins.legacy-backup-stage.text_2afd7ae6be"));
         }
         await folder.chmod(fileMode(info));
-        await folder.sync();
+        if (!deferredSync) await folder.sync();
       } finally {
         await folder.close();
       }
@@ -134,7 +158,7 @@ async function transferTree(source: string, destination: string, copy: boolean, 
     if (copy) await symlink(target, destination);
     else if (target !== await readlink(destination)) throw collision();
   } else if (info.isFile()) {
-    await transferFile(source, destination, info, copy, signal);
+    await transferFile(source, destination, info, copy, signal, deferredSync);
   } else {
     throw new Error($t("lib.plugins.legacy-backup-stage.text_902f4a0150"));
   }
@@ -192,17 +216,24 @@ export async function stageLegacyPluginBackup(plan: LegacyMigrationPlan, staging
     const current = await optionalStat(destination);
     if (current && !current.isDirectory()) throw collision();
     temporary = current ? undefined : await mkdtemp(join(backup, ".lotus-plugins-"));
+    const flush = temporary ? await deferredFilesystemSync(temporary, signal) : undefined;
     for (const { path, kind } of archive) {
       const source = await checkedPath(plan.source, path);
       const input = await lstat(source);
       if (kind === "directory" ? !input.isDirectory() : !input.isFile()) throw sourceChanged();
       const output = await checkedPath(temporary ?? backup, path, temporary !== undefined);
-      await transferTree(source, output, temporary !== undefined, signal);
+      await transferTree(source, output, temporary !== undefined, signal, flush !== undefined);
       if (temporary) await syncDirectory(dirname(output));
     }
     if (temporary) {
       for (const { path } of archive) {
         await transferTree(await checkedPath(plan.source, path), await checkedPath(temporary, path), false, signal);
+      }
+      if (flush) {
+        await flush();
+        for (const { path } of archive) {
+          await transferTree(await checkedPath(plan.source, path), await checkedPath(temporary, path), false, signal);
+        }
       }
     }
     await confirmPlan();

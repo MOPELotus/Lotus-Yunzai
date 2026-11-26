@@ -42,6 +42,10 @@ async function setup() {
 test.skipIf(!Bun.which("git"))("stages policy denials and private data, preserves modes, and repeats without overwriting", async () => {
   const { root, source, target, staging, denied, secrets } = await setup();
   await put(join(denied, ".git"), "gitdir: ../../outside-worktree\n");
+  await put(join(denied, "node_modules/dep/index.js"), "export default 1");
+  await put(join(denied, "data/cache/.git/objects/fixture"), "git-object");
+  await put(join(denied, "data/cache/value.json"), '{"value":1}');
+  await put(join(denied, "package-lock.json"), '{"lockfileVersion":3}');
   const plan = await planMigration(source, target);
   const archive = join(staging, "backup/plugins");
   expect(await stageLegacyPluginBackup(plan, staging)).toEqual({ status: "published", archived: 1, directory: archive });
@@ -51,7 +55,12 @@ test.skipIf(!Bun.which("git"))("stages policy denials and private data, preserve
   expect((await stat(copied)).mode & 0o7777).toBe((await stat(secrets)).mode & 0o7777);
   expect((await stat(dirname(copied))).mode & 0o7777).toBe((await stat(dirname(secrets))).mode & 0o7777);
   expect(await readlink(join(archive, "genshin/external.yaml"))).toBe(join(root, "outside.yaml"));
-  expect(await readFile(join(archive, "genshin/.git"), "utf8")).toBe("gitdir: ../../outside-worktree\n");
+  await expect(lstat(join(archive, "genshin/.git"))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(lstat(join(archive, "genshin/node_modules"))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(lstat(join(archive, "genshin/data/cache/.git"))).rejects.toMatchObject({ code: "ENOENT" });
+  expect(await readFile(join(archive, "genshin/data/cache/value.json"), "utf8")).toBe('{"value":1}');
+  expect(await readFile(join(archive, "genshin/package-lock.json"), "utf8")).toBe('{"lockfileVersion":3}');
+  expect(await readFile(join(denied, ".git"), "utf8")).toBe("gitdir: ../../outside-worktree\n");
   expect(await readFile(join(denied, "package.json"), "utf8")).toBe('{"name":"yunzai-genshin"}');
   expect(await readFile(join(source, "plugins/compatible/index.js"), "utf8")).toContain("must not run");
   const inode = (await stat(copied)).ino;
@@ -90,4 +99,43 @@ test.skipIf(!Bun.which("git") || !Bun.which("mkfifo"))("discards interrupted cop
   expect((await stageLegacyPluginBackup(plan, staging)).status).toBe("published");
   expect(await readFile(join(backup, "plugins/genshin/config/settings.yaml"), "utf8")).toBe("mode: existing\r\n");
   expect(await readFile(join(backup, ".lotus-plugins-interrupted/plugins/genshin/config/copy.part"), "utf8")).toBe("incomplete");
+});
+
+test.skipIf(process.platform !== "linux" || !Bun.which("git") || !Bun.which("sync"))("linux-syncfs-failure", async () => {
+  const { root, source, target, staging, secrets } = await setup();
+  const plan = await planMigration(source, target);
+  const bin = join(root, "bin");
+  await mkdir(bin);
+  const counter = join(root, "counter");
+  const executable = join(bin, "sync");
+  const realSync = Bun.which("sync")!;
+  await writeFile(executable, `#!/bin/sh\nprintf x >> '${counter}'\nif [ "$(wc -c < '${counter}')" -gt 1 ]; then exit 9; fi\nexec '${realSync}' "$@"\n`, { mode: 0o755 });
+  const previousPath = process.env.PATH;
+  process.env.PATH = bin + ":" + previousPath;
+  try {
+    expect(Bun.which("sync", { PATH: process.env.PATH })).toBe(executable);
+    await expect(stageLegacyPluginBackup(plan, staging)).rejects.toThrow();
+    expect(await readFile(counter, "utf8")).toBe("xx");
+    expect(await readdir(join(staging, "backup"))).toEqual([]);
+    expect(await readFile(secrets, "utf8")).toBe("mode: existing\r\n");
+  } finally { process.env.PATH = previousPath; }
+});
+
+test.skipIf(process.platform !== "linux" || !Bun.which("git"))("linux-syncfs-unavailable", async () => {
+  const { root, source, target, staging, secrets } = await setup();
+  const plan = await planMigration(source, target);
+  const bin = join(root, "bin");
+  await mkdir(bin);
+  const counter = join(root, "counter");
+  await writeFile(join(bin, "sync"), `#!/bin/sh\nprintf x >> '${counter}'\nexit 64\n`, { mode: 0o755 });
+  const previousPath = process.env.PATH;
+  process.env.PATH = bin + ":" + previousPath;
+  try {
+    expect(Bun.which("sync", { PATH: process.env.PATH })).toBe(join(bin, "sync"));
+    const result = await stageLegacyPluginBackup(plan, staging);
+    expect(result.status).toBe("published");
+    expect(await readFile(counter, "utf8")).toBe("x");
+    expect(await readFile(join(result.directory!, "genshin/config/settings.yaml"), "utf8"))
+      .toBe(await readFile(secrets, "utf8"));
+  } finally { process.env.PATH = previousPath; }
 });
