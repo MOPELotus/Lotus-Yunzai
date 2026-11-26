@@ -293,3 +293,29 @@ test("删除原神面板在本人档案内确认 UID，阻止在途更新和旧�
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+test("正常面板仅在确认出图后登记当时底图并校验本人档案", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lotus-panel-original-"));
+  const photo = { root: "theme" as const, path: ["meta-gs", "character", "芙宁娜", "imgs", "splash.webp"], sha256: "a".repeat(64) };
+  const records: unknown[] = [];
+  const png = Buffer.from([1, 2, 3]);
+  try {
+    await writeFile(join(root, uid + ".json"), JSON.stringify(officialPanel(uid, [avatar], catalog, Date.now())));
+    const query = createGenshinPanelQuery({
+      async savedRole() { return role; },
+      async requestContext(qq, profileId, game) { return { qq, profileId, game, role, revision: "r1" } as ProfileRequestContext; },
+    }, { async fetchGenshinPanel() { throw new Error("unexpected fetch"); } }, lockFile, new AbortController().signal, {
+      archiveDirectory: join(root, "archive"), legacyDirectory: root,
+      theme: async () => ({ ...catalog, async picture() { return undefined; } }),
+      onOriginal: async (_context, confirmed, original, profileId, uid) => { records.push({ confirmed, original, profileId, uid }); },
+      render: { async list() { return { png }; }, async detail() { return { png, original: photo }; } },
+    });
+    const result = await query("#芙宁娜面板", { self_id: 99, user_id: 42, message_type: "group", group_id: 77 });
+    expect(result).toMatchObject({ type: "delivery", message: { type: "image", file: png } });
+    expect(records).toEqual([]);
+    if (typeof result !== "object" || result === null || !("onDelivered" in result)) throw Error("missing receipt");
+    await result.onDelivered(123);
+    expect(records).toEqual([{ confirmed: 123, original: photo, profileId: 1, uid }]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

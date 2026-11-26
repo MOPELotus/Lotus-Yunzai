@@ -4187,6 +4187,7 @@ if (import.meta.main) {
         return { roles };
       },
       zzzReminderRuntime: probingUpdate ? undefined : {
+        registerPanelCacheTask: run => registerModuleTask($t("app.zzz-panel-cache-task"), "0 0 * * * *", run, true),
         disconnect: handoffSession.signal,
         registerTask: run => registerModuleTask($t("app.text_0e17df94d9"), "0 * * * * *", run, true),
         route: (userId, botId, signal) => resolvePrivateFriendRoute(subscriptionTransport, userId, botId,

@@ -40923,8 +40923,8 @@
     },
     {
       "path": "resources/builtin/games/SOURCES.json",
-      "bytes": 1684231,
-      "sha256": "f3a40574980613d0f01678c00b1819c2a044c01c5bf76341ca06c80f3f4d1cf2"
+      "bytes": 1684349,
+      "sha256": "5acb5949beb89f6eb80e37167a41097c3938ccd9b669270b0af71e5606e3714c"
     },
     {
       "path": "resources/builtin/games/flower-fonts/font/HYWH-65W.ttf",
@@ -85272,6 +85272,701 @@
       "sha256": "0ba8580ab6a50d6339088b49a24e3a3a520405d278bff40e4a5f3943e330e45d"
     },
     {
+      "path": "resources/builtin/games/zzz/images/nanoka/SOURCES.json",
+      "bytes": 32756,
+      "sha256": "9d4e3e535d12351d07523aaae9a27e84d289cf2a92849736d64b0bfa3f307e97"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitAstralVoice.webp",
+      "bytes": 11150,
+      "sha256": "c38bbd1ceb7f81b52ecf5c7ceef0e3031c5ae4bb59f6a1b5e6b84d51a20df0c7"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitBloodwingNocturne.webp",
+      "bytes": 11694,
+      "sha256": "23a6ae4e43dc82184472017323e0377947de449c131d9ea7af109a3c96944ca1"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitBranch&BladeSong.webp",
+      "bytes": 9280,
+      "sha256": "7563780500b0bf137ea38105d7354c58db2330af7458e6c99dbf4ce20440dc7d"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitBunnyinWonderland.webp",
+      "bytes": 8890,
+      "sha256": "ec1c2e2ce144e60104965ad317b0982aedb07ce5ac6896c597b256d2d9b2af81"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitChaosJazz.webp",
+      "bytes": 5610,
+      "sha256": "46aeb61bf27cde9e989d4c083ed0b3b14c967125dfcf85550de2d6639d9c7250"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitChaosMetal.webp",
+      "bytes": 10018,
+      "sha256": "07b494aaed74760e5f22d904bc64f31fd6f97ee0da949ad205ef48012f66ceed"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitDawnsBloom.webp",
+      "bytes": 8978,
+      "sha256": "3f436e88e3d7a97debbc8243d3a4ebc6be2f24dcc376a30b1519f4465ae02ae3"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitFangedMetal.webp",
+      "bytes": 10594,
+      "sha256": "de9deb6e3444d9f049f6443a2056186fa0ec0c9199d5786331c6879db277c97d"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitFeatheredFate.webp",
+      "bytes": 9694,
+      "sha256": "268ef7845d1b7b6f10a490a6726e8b13819e23f8b711203cb29c4de6e7167bf5"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitFreedomBlues.webp",
+      "bytes": 6772,
+      "sha256": "803d42048cbaa6783a626c45c035da88a991684735f2bb8f98744ed78f8e70a8"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitHormonePunk.webp",
+      "bytes": 5402,
+      "sha256": "d27d156091d0b34b962710feb9dce40c0476bb8896ff4efcfc287d39a42f45a1"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitInfernoMetal.webp",
+      "bytes": 7484,
+      "sha256": "2442e3737730296c03efaddbc473b20bbeddeb35e331218b6bdaab83ad485c19"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitKingoftheSummit.webp",
+      "bytes": 12156,
+      "sha256": "252724b8b12b994f24f1278516c8a8fb5a7efbfcc8265a526dbba8befd4d3aa8"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitMonumentoftheStar.webp",
+      "bytes": 11920,
+      "sha256": "e8a3005e4e712aadb4892ebf8980ab65ee231cbcb9bf5426dac728c4f8a2382e"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitMoonlightLullaby.webp",
+      "bytes": 10786,
+      "sha256": "233a1879fa1ffe3323d78354cdc792f31cdc6a1ee10014357e4c406a9d3f76aa"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitNotesFromtheChained.webp",
+      "bytes": 8544,
+      "sha256": "1680fd8c8baf2676100b9f413523e44dfcfc89c124af77f1cc1e87784e51d658"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitPolarMetal.webp",
+      "bytes": 7658,
+      "sha256": "0aadd797c43d8d9e94f380eb1d348040a3282ee541136e0b750cdeedc054672d"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitProtoPunk.webp",
+      "bytes": 7674,
+      "sha256": "51f4acfedadf25164704fe5eea410bad640e80b251474041f11cfd89a0712741"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitPufferElectro.webp",
+      "bytes": 4664,
+      "sha256": "06ae3df9d2a562a10edb11794a3bb76b9ae8a1a37539af0ada3de3645e2275a3"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitSavior.webp",
+      "bytes": 7546,
+      "sha256": "614c6978362bd5c8449353ae9e8f0842abc9d74f83f2b7f2c27504dca8305b57"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitShadow.webp",
+      "bytes": 8556,
+      "sha256": "31634953e70812d374d550afe3ced02f33e457697840c4217bba5f64201cd610"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitShiningAria.webp",
+      "bytes": 7946,
+      "sha256": "4059a363ffb679962455d7884d8c51fdff20d9c5c7340d655453e8c0fd3b89e7"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitShockstarDisco.webp",
+      "bytes": 9304,
+      "sha256": "ba14a2ede5982ce91fad2f01c4fa9447e24b46aa36af93abb24ce1677380bff4"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitSoulRock.webp",
+      "bytes": 7000,
+      "sha256": "beff63759825803dae281a65af209a8087f6b0e126d0e646b3acb5c10447cf86"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitSwingJazz.webp",
+      "bytes": 8696,
+      "sha256": "d60e7e815b46cbb2aa1d39f4442d8b340a7d2d751fba94ee59bc1a8e19a66799"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitTheSkyAblaze.webp",
+      "bytes": 11136,
+      "sha256": "fd0a1356226da461b71e60536b8bc8bcb552dbbe1b9042449bce3e64118d334b"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitThornedRose.webp",
+      "bytes": 12394,
+      "sha256": "306ad12a3f364ed30527fa659015d8eecad77b03a6b69108f2f77db1602e444f"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitThunderMetal.webp",
+      "bytes": 8338,
+      "sha256": "c5c9dde614e98a40038511d3711dff09518843b6d17167d18e9c591b8b06b564"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitWhiteWaterBallad.webp",
+      "bytes": 11406,
+      "sha256": "ee6a98aa862a92f8b829edec79e824460905d437aa68e44c39605bae704d5487"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitWoodpeckerElectro.webp",
+      "bytes": 6748,
+      "sha256": "1d2002e8be9088baa56689f72dd616c2d1f57bfaacc750eaa2967ba3b1ce03b3"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitWutheringSalon.webp",
+      "bytes": 13152,
+      "sha256": "3e32b6907f22804e820884cfd3a0327e3d31c8b75fd01b879d9c54533152fc96"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/suit/SuitYunkuiTales.webp",
+      "bytes": 9200,
+      "sha256": "0ee8f37d01c2b520d556293473fdc170cc40a6b075863a1bee350544966324e9"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1011.webp",
+      "bytes": 45210,
+      "sha256": "8acbf02c8624629296752d6a034a70cea548567a8838a1a990388de248c52d55"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1031.webp",
+      "bytes": 47054,
+      "sha256": "3d314910a553f447a86671982eee02ecb75b5df2b60ebabaa8276ac8a6f22167"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1061.webp",
+      "bytes": 45294,
+      "sha256": "2e7a6822e2b93c271da84ceff7a4598873a50d544c971d1fb8d0f52f3fa4f34f"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1081.webp",
+      "bytes": 40960,
+      "sha256": "0167506ad8d3bac1d01fa83879c574c292f43537e5b338cea35e527e6d961666"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1111.webp",
+      "bytes": 46620,
+      "sha256": "418426cc8882d45287398405cb551c72100d61e520e218c2ed6356abcd593422"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1121.webp",
+      "bytes": 38626,
+      "sha256": "55279068f35292edfc790bbd0d03bf4e2c095d6e41608246a14f28080b549d1a"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1131.webp",
+      "bytes": 40216,
+      "sha256": "cbf3b602caddf22978a39105da864a588df6479fcd5850253dd82c77bf88a10f"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1151.webp",
+      "bytes": 43798,
+      "sha256": "421bb99f3f92d5c9497a3f2910bf3fb34f6ba590cae5b7d87e1fc83cf0da4d95"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1271.webp",
+      "bytes": 42046,
+      "sha256": "9e8708a97a1ec1e137151d39c11781014a3f65f8743386bb4b7199c6b8100d85"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1281.webp",
+      "bytes": 46970,
+      "sha256": "1d4b98c24ffcaf316e9cbc34632676baa639b712f4c67d25dd4bb7aba173a551"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1351.webp",
+      "bytes": 43702,
+      "sha256": "13e4293dc8bf76d1caa52bb226245e4e949c6b299fe14144cb1b0fc27f2a7e99"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1421.webp",
+      "bytes": 52048,
+      "sha256": "0e0c9598eac672ef6b46950880ca3aa06079d04acc163cc1616c6ede337fcca5"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_1441.webp",
+      "bytes": 38910,
+      "sha256": "44f30cbe74346f109e89ba4adb9b7ab4e9ffad7d1008fed61ec32724f4f0ed5f"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_01.webp",
+      "bytes": 35806,
+      "sha256": "bca21d87755c674f833de335e25c6caab85f426d69f8bf1537f6aad9adb4fbd8"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_02.webp",
+      "bytes": 43398,
+      "sha256": "f9df212165802ad7618ff0e34bcbc3097cd911d731a52e256ee2b1e87ad4d0fa"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_03.webp",
+      "bytes": 37094,
+      "sha256": "e6f43117011ec6f344868aadf301d38e60707ebb7e8d4a8d9c3452d4ba8b8389"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_04.webp",
+      "bytes": 31902,
+      "sha256": "216908c611039d379e93ddc9ab43468ae0693482e4a94b0f779746bd6174c3a0"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_05.webp",
+      "bytes": 40824,
+      "sha256": "faa2e0477e5c19f190043f2b43d89963fd1cd1eb8850fabe15dd077aa0bf162f"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_06.webp",
+      "bytes": 29006,
+      "sha256": "d963810505d7d7433c929e8825b290a8d7405f91f04947cd63f7bc85ade7cd07"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_07.webp",
+      "bytes": 33656,
+      "sha256": "d04e0a51ca9fefd49ff39e6dd332d633e1915f8aa47f069f79f1a7edeb537e34"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_08.webp",
+      "bytes": 39006,
+      "sha256": "0cfa06e9e8360c01f15b2dde69c78be13b3e87fef97108ddd0f33a17c4b9e828"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_09.webp",
+      "bytes": 29066,
+      "sha256": "c169cebe3852fee62f0cb9b7fbb02f7d30ed3c0c7cb69f0bc57e7f54f7d75fa8"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_10.webp",
+      "bytes": 40340,
+      "sha256": "706376719f2c428d5433df9f737ae836847ba7a3b9069d94e5fcfdc57aa64010"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_11.webp",
+      "bytes": 41244,
+      "sha256": "36ba828343243d58a310de5ee420716a73deaf41643e03774a8926bf864f5fc8"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_12.webp",
+      "bytes": 34450,
+      "sha256": "53066d235a535da29e04cdef79fd98144f9162f745612913cc6a67bd45cb125f"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_13.webp",
+      "bytes": 55290,
+      "sha256": "6d20910881b24e9fc65028cf2d3279c8b001f16717805a987a69ec9d10e8ca85"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_14.webp",
+      "bytes": 44668,
+      "sha256": "4c0aa14ab828aa838ffd0af0f4b3bb763f8837fd0a12eca3cbbc244c164de867"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_15.webp",
+      "bytes": 50336,
+      "sha256": "546b4f9f2e10f2c96c1a045184cdfc3f1a2e7a45dc3c5750021dd9cb610c97dd"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_16.webp",
+      "bytes": 46468,
+      "sha256": "93053bae9d0a94fe54c0545cae12028aa5d3d1da3bbe025f93e676228ba96547"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_17.webp",
+      "bytes": 45622,
+      "sha256": "efa9af528b1bf97a6d4f53e26b4caaa07881513355c5eb82b139aca2e25a853d"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_18.webp",
+      "bytes": 47368,
+      "sha256": "27ad57132a1563ed9cb48f2bf21b647d1258ee332c7d3de89d210ee3dad823b3"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_19.webp",
+      "bytes": 45002,
+      "sha256": "904a0da172b3e9953e7483a02d3569316de7d9ae5299b61c1258d4a29dbabd74"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_20.webp",
+      "bytes": 49374,
+      "sha256": "0bec7d224e3fde6e3dd184657bacfbd186a8b4b0276635f7cfd96e2d6bdcf12b"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_21.webp",
+      "bytes": 38488,
+      "sha256": "c1f6d8935db3b7e02cab2b065b96429034e86e693b3762312d5b6db11252c33f"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_A_Common_22.webp",
+      "bytes": 35900,
+      "sha256": "e4e1df21f4671ad65451ef97daaeaa9449462a45ddce7a2b35f170cbf6699360"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_01.webp",
+      "bytes": 31686,
+      "sha256": "74be41f3e06c1d2f8dca5aa106e2b872255981a3067b3d836c293540ddb11955"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_02.webp",
+      "bytes": 27654,
+      "sha256": "7acf65bd5154bb6ced4397baea40106548b1d5f5b816e45dc2c86f8df41047cb"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_03.webp",
+      "bytes": 32578,
+      "sha256": "3397a526a7fee5b338cc407d83e185d6d8be96161aaa52ef494f2f65a1261d94"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_04.webp",
+      "bytes": 32218,
+      "sha256": "9b5d6f647d0701e5c0f7f6802acca6f003ae227d0e70ea3b4f46b77d70681f8c"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_05.webp",
+      "bytes": 34108,
+      "sha256": "87630756cd1bc17f65e5e0929156bc518c254a32ec24a5c8342dc2d42b86c5a2"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_06.webp",
+      "bytes": 33782,
+      "sha256": "46b4a48232b0d26f5b4e1fa413fd556bdf0b4a3ce5070a00d4f2479e73787a29"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_07.webp",
+      "bytes": 30206,
+      "sha256": "b0861746e3237ffb6d70eedef1778451fa501a1bdd2951f9cdf434c073e65e56"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_08.webp",
+      "bytes": 32910,
+      "sha256": "16d911f9eb8c38a7d6c6658a66f7d56683c9daec1059d1c89f9e3d1279b0a004"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_09.webp",
+      "bytes": 33636,
+      "sha256": "453ebc46e131658334fa4fa4830c866a71e1a6d9619500e69e38ea15c16c5e48"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_10.webp",
+      "bytes": 29742,
+      "sha256": "a4c35f9841132cfcc437b71fdf299838e74322bee61392ffa44a3a08d2f648e6"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_11.webp",
+      "bytes": 35534,
+      "sha256": "8f7f7fab7637d0dbf2f8850deadcc727761efa31d98fa2af55772aef7337c1c9"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_12.webp",
+      "bytes": 32036,
+      "sha256": "8a2e566064e214a4df1d73ce58aab5fd04fd907c3cf81612d1c4762f61b13f90"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_13.webp",
+      "bytes": 34470,
+      "sha256": "8f5a710644bc67b27bed4eee499a818f83e0dc09f828d99937fe87726bd6d224"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_14.webp",
+      "bytes": 34092,
+      "sha256": "0a9b1a03e249a40aaab871aac39776bd3d479290cdd7771fe014084e0472e03e"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_15.webp",
+      "bytes": 33892,
+      "sha256": "690899b187fea8fefd22a3051946b1cad7dde2734feaed7b33985e4f796f84bb"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_B_Common_16.webp",
+      "bytes": 34126,
+      "sha256": "2fc2032a4d1f5c470fcedb16b87302b921a128766f6d64fa76fd5a5413abe8c5"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1021.webp",
+      "bytes": 39286,
+      "sha256": "e0eded2dec7ff36f55a67067c27bd67694113e0d1b1fe9b162ba772c2e6611ae"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1041.webp",
+      "bytes": 40734,
+      "sha256": "ccd64897392a576bf3035bbd0720cf58f79dd52a227fc8c4d02a94dd15fd0886"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1051.webp",
+      "bytes": 42670,
+      "sha256": "626b5ee74bf498899a67972fb1ab4ce43f96da5384c6c445dff4280014f46e8d"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1071.webp",
+      "bytes": 44966,
+      "sha256": "dcaa7dfaec40a2a69599900f65a5273a89fbe9ed9006a3bb16c5131143ab3731"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1091.webp",
+      "bytes": 49858,
+      "sha256": "80057c748bc84182dc69021cf16c5a7db5ca5041d852e70d07059ae15aa477a5"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1101.webp",
+      "bytes": 44052,
+      "sha256": "c6e08460300628b32443253612e3c90c5873809c7c8fc68a42a4f91ae9bf58fa"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1141.webp",
+      "bytes": 45668,
+      "sha256": "435f2880a04e8cdd00ab35b3e3cda442971ef91b89c5ea769ab09503e7edc6f0"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1161.webp",
+      "bytes": 45070,
+      "sha256": "d6d72a2babe6352d13944953e855ab547b157c812f80b2880480f5ef9003035d"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1171.webp",
+      "bytes": 41902,
+      "sha256": "c12b831f810fb2cdb31f03b46ce1a11c86d2c906bf6b1d31d7c90ce9842b576a"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1181.webp",
+      "bytes": 45044,
+      "sha256": "bb9f386d4cc76273e9de6c7f3266b829cd3173035aa9b9ca215a63fb3db98b80"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1191.webp",
+      "bytes": 30380,
+      "sha256": "2057e57b427a7c1fc64b25dc0ac4b2d979c3bca31ca198ebf20c92b1158db586"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1201.webp",
+      "bytes": 38546,
+      "sha256": "83fa99f5240f1567a2c533b674a66ae4a3a93098251157b063afdcac156c6e3f"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1211.webp",
+      "bytes": 42438,
+      "sha256": "dcbc65d034e70d582438e0abfc4c20bbb06f66623a5ab6010077bbd5cc48b80e"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1221.webp",
+      "bytes": 39342,
+      "sha256": "b96c8b1a8f7de7683057467cc9a718d4f543e5790b5ca4c5490f9c686492483a"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1241.webp",
+      "bytes": 42974,
+      "sha256": "2ce41b70dac9d59ed4c68f31d72d8fc045827e80183cec424252d04204198226"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1251.webp",
+      "bytes": 40090,
+      "sha256": "21f0e1bf75af28b7ddda9756e58424751e5ede9d363238eda831a320301af5c9"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1261.webp",
+      "bytes": 39594,
+      "sha256": "226af5b3b9c77ebdcbff303add25a42e704663cf84c7cfe266bfe19220c090fe"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1291.webp",
+      "bytes": 44684,
+      "sha256": "29191ab3c11ca15c1110d78251ec5f8261a37280fcfec1e94096388ea818f8f0"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1301.webp",
+      "bytes": 41836,
+      "sha256": "71a1c52e9ef21bbd3ea8de333ea92a1e4820e8e3d878aac3d287f177a895874f"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1311.webp",
+      "bytes": 46462,
+      "sha256": "e7c4f662764cfe7c7f1abad0fc3b4a9f9f8b5952251f27a63e25ff86d846d754"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1321.webp",
+      "bytes": 42706,
+      "sha256": "a23e782d38a46357b7955e3ddd44631da9786056ab11a2287d26862e3af459c0"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1331.webp",
+      "bytes": 40600,
+      "sha256": "cb42eac92b40589de8417fbb678b86022f32ac277f8196f89a37c213d7f7f5e3"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1341.webp",
+      "bytes": 48878,
+      "sha256": "17962bebacd336c8cfa43bbb786601e2af6c54fe5c24dc1671b93e634703f382"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1361.webp",
+      "bytes": 34066,
+      "sha256": "1267d9dcebb78254aaf167ea057743f56986cf0063568b5c8bbbaa652d94c177"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1371.webp",
+      "bytes": 60208,
+      "sha256": "79a0a5f04f5880ef96d25fd0b3d2c34da5fe9e8950a84fd8bbb540e1fbeeec24"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1381.webp",
+      "bytes": 42086,
+      "sha256": "4abf0f49cd2f1e5032bc7b8d5365709d418ce99e65687cf5d01293c6b78f0a7d"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1391.webp",
+      "bytes": 50414,
+      "sha256": "b692adb6b31bb282b09b742343e4a3fa88b3019768e68e50c121e26a018e4b23"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1401.webp",
+      "bytes": 40532,
+      "sha256": "e22ebcc0f8da10250dc15f5a69741c202ed490ecbe6f419156be5ebf5c882493"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1411.webp",
+      "bytes": 35098,
+      "sha256": "c87a318a4d7f0aabd306c780b2228929b801f64feddeb0e4c953b1f6ee60c375"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1431.webp",
+      "bytes": 42386,
+      "sha256": "1ae514d6256efd35d3033fb13aea50d96bf59b439c70846d44dee612636b0620"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1451.webp",
+      "bytes": 57672,
+      "sha256": "f5a73e49eea62e4fa98a2a59fcb1037ab6ed58c777c0d18afcf8863c36738b9e"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1461.webp",
+      "bytes": 41572,
+      "sha256": "6f5cb13fbcb515ba4b1e1b18d123b31dcfd2964cef537f4be70c8cbe9eeb6f7f"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1471.webp",
+      "bytes": 47268,
+      "sha256": "6eaff3ddd6620838ca27f4ce1e56a411d8a01d6c461f61e0bebbe3acfffebe52"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1481.webp",
+      "bytes": 45854,
+      "sha256": "bb7a27e09132f97e451db1ad33d5b0aacbfa21dfe4ab1a788359003985f76c52"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1491.webp",
+      "bytes": 53254,
+      "sha256": "620bf79de22daf6491275186dc54950ebcd2d1a6273b1d6c855349d601897afe"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1501.webp",
+      "bytes": 37786,
+      "sha256": "1afd7f9028092813626307e64eaff499dcbc5cb5ce4cda02b030d48744f8c9db"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1511.webp",
+      "bytes": 47730,
+      "sha256": "b36cc263bc4b2ca4c8797092d597fd26d6b3d49259feb3c84c0bc70a24853997"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1521.webp",
+      "bytes": 45620,
+      "sha256": "bc4f96acc5be9a6ea97f83aa32619d7dfccce955d6b850b9e7f0c942e80fc672"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1531.webp",
+      "bytes": 35106,
+      "sha256": "12f41a602b52dfd88795af412fd9f11f76b78bf7b4d8948c141ece7ace28a7a7"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1541.webp",
+      "bytes": 39986,
+      "sha256": "47ec6dd4615a5a6659f6b9c0920e6c8934b5109e30b1a462d269427d331dc362"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1561.webp",
+      "bytes": 23156,
+      "sha256": "5c413c7e41d59d6f266aedaaa81b08788c4a6cb9a465e4dcf19d59d961e2a0a8"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1571.webp",
+      "bytes": 39734,
+      "sha256": "67be79e0f9f85b75a4d64b28e59560256946801333fc31eac114a0545c0b657b"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1581.webp",
+      "bytes": 8334,
+      "sha256": "7387e373d077bb15edb8d1a48ff52327030ca6832e6e8e295eeebdbe75287687"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1591.webp",
+      "bytes": 9984,
+      "sha256": "113e428652e3292cc7dfe2eb449a1c6e10588b074c84b4ae022adc43aa778ae1"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1601.webp",
+      "bytes": 48000,
+      "sha256": "e680d3dea692b30227c1c2cb97a3a217c2f3ee02088ce7167cea33deafdb715c"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1611.webp",
+      "bytes": 33422,
+      "sha256": "e26af0ed84bfb21987882e3c0a01cabd6ff92917aa936a0af8082c8e7b332644"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1621.webp",
+      "bytes": 51536,
+      "sha256": "01601b1403c6aee5a2b6e420e473a46647d872c393b35d682cfaee1645b29a0b"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1631.webp",
+      "bytes": 36626,
+      "sha256": "73f100e1d04607557556177829c321919f65c8cffb83567c5d4c9ead2e7211a5"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1641.webp",
+      "bytes": 35566,
+      "sha256": "764e54887caea07085cfcbd8469b379753d4dfb68eb516542cbc8fcb29f1ed13"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1651.webp",
+      "bytes": 48660,
+      "sha256": "42e8fbdec4378571733e6e708e2773fa78de7cd452f53fa167032fa5c468dbb4"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_1661.webp",
+      "bytes": 52488,
+      "sha256": "1f076641fa3110c939e4143995403741531ebc2ae5a5ca7211832ea25b5a1df0"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_Common_01.webp",
+      "bytes": 39322,
+      "sha256": "a2893b83dadb1858a404cfdf26a820b6caa8cc77a6c45a18d0c7eb7147b0ca65"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_Common_02.webp",
+      "bytes": 38584,
+      "sha256": "eb3a71be796fddcbe1a0f6897ec88722dce4360fca902165e4593a71e51bfa10"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_Common_03.webp",
+      "bytes": 38330,
+      "sha256": "f3761ad0f4f518b320fffda8f70f193d4bcd0c9e15408ff8abc82a1ae31af857"
+    },
+    {
+      "path": "resources/builtin/games/zzz/images/nanoka/weapon/Weapon_S_Common_04.webp",
+      "bytes": 42134,
+      "sha256": "e83de3dc0d2305b05716901b845b098bd21e4075033eaf63844ed08b40583769"
+    },
+    {
       "path": "resources/builtin/games/zzz/images/role_general/IconRoleGeneral01.webp",
       "bytes": 7278,
       "sha256": "3a902aff478e5c06c24f9b84ab192b72635a741c9242d2dbfac403be4d60c6f3"
@@ -85643,8 +86338,8 @@
     },
     {
       "path": "resources/builtin/games/zzz/map/SuitData.json",
-      "bytes": 15326,
-      "sha256": "6e913feebfcfa94389770257072a0c6e4331b3729e15463fb340f59c48076383"
+      "bytes": 15369,
+      "sha256": "cd7707e4ef02977ebeef88ca9690a6f11283a7ea42521d2e8954304a337d8493"
     },
     {
       "path": "resources/builtin/games/zzz/map/WeaponId2Data.json",

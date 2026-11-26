@@ -41439,8 +41439,8 @@
       },
       {
         "path": "map/SuitData.json",
-        "bytes": 15326,
-        "sha256": "6e913feebfcfa94389770257072a0c6e4331b3729e15463fb340f59c48076383"
+        "bytes": 15369,
+        "sha256": "cd7707e4ef02977ebeef88ca9690a6f11283a7ea42521d2e8954304a337d8493"
       },
       {
         "path": "map/WeaponId2Data.json",
@@ -42124,7 +42124,10 @@
         "sha256": "4bc6123e83f20e1c1dc6561f7b9fb34ca63d219d2c7ef0d50f80d64dafb590e7",
         "sourcePath": "defSet/alias.yaml"
       }
-    ]
+    ],
+    "patchSources": {
+      "map/SuitData.json": "https://static.nanoka.cc/zzz/3.4.12+20835659/equipment.json"
+    }
   },
   {
     "repository": "https://gitee.com/Nwflower/flower-plugin.git",
