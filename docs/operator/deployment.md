@@ -9,10 +9,13 @@
 在开始部署前，请确认服务器满足以下条件：
 
 1. Git：系统已安装 `git` 命令。项目包含多个 Git 子模块，需通过 Git 克隆仓库，不能使用无 `.git` 元数据的源码压缩包。
-2. Bun 1.4.4：运行时版本锁定为 `bun@1.4.4`。初始化脚本会校验当前 Bun 版本，版本不符将中止退出。
+2. Bun 1.4.4 与 CPU / 原生编译环境：
+   - 运行时版本锁定为 `bun@1.4.4`，初始化脚本会校验当前 Bun 版本，版本不符将中止退出。
+   - x64 平台整项目最低要求 CPU 支持 SSE4.2（Nehalem 及以上），不要求 AVX；官方现行仅提供统一 x64 安装包，`baseline` 别名并非额外部署步骤（参见 [Bun CPU 要求](https://bun.sh/docs/installation/#cpu-requirements)）。
+   - 现代兼容机器仅使用预构建原生包，无需提前准备本地编译工具链（如 Rust、Node 或 `sudo` 权限）。若在 Linux x64（`glibc >= 2.28`）环境检测到指令集不兼容且对应组件具备已接入的源码路线，初始化流程会自动在私有目录 `data/native-build` 中准备隔离编译环境，不修改系统 `PATH` 或用户 shell 配置。各组件边界与探针机制详见 [原生组件与兼容性](native-components.md)。
 3. 存储后端（Valkey / Redis）：
-   - 若未设置环境变量 `LOTUS_VALKEY_URL` 且 `config/redis.yaml` 与兼容路径 `config/config/redis.yaml` 均不存在，系统默认启用项目托管 Valkey（已有任一路径配置均会被尊重）。
-   - Linux（x64 / arm64）：自动下载官方 Valkey 8.1.12，系统需具备 `tar` 命令。
+   - 若未设置环境变量 `LOTUS_VALKEY_URL` 且 `config/redis.yaml` 与兼容路径 `config/config/redis.yaml` 均不存在，系统默认启用项目托管 Valkey（已有任一路径配置或系统已有可用 `valkey-server` 均优先尊重，不会为其准备自动编译环境）。
+   - Linux（x64 / arm64）：自动下载官方 Valkey 8.1.12，系统需具备 `tar` 命令（Linux x64 `glibc >= 2.28` 下若预构建包指令集探针不通过，可回退自动源码构建）。
    - 其他类 Unix 平台：尝试从源码编译 Valkey，系统需具备 `make`、`cc` 和 `tar`。
    - Windows：若系统中没有现成的 `valkey-server`，内置托管安装不受支持。请自行部署外部 Redis 或 Valkey 服务，并通过 `LOTUS_VALKEY_URL` 或 `config/redis.yaml` 接入（配置方法见 [配置说明](configuration.md)）。
 
@@ -40,7 +43,7 @@ bun run init
 初始化脚本会按以下顺序执行：
 
 1. 版本与子模块同步：校验 Bun 版本为 `1.4.4`，拉取并核对 `.gitmodules` 中定义的全部子模块（包括 `plugins/*` 与 `vendor/gt-manual`）。
-2. 依赖安装与原生库检查：执行 `bun install --frozen-lockfile` 安装锁定依赖，并探测 Skia 图片原生库；若加载失败，脚本会自动尝试重新下载并校验恢复。
+2. 依赖安装与原生组件检测：执行 `bun install --frozen-lockfile` 安装锁定依赖，随后运行 `scripts/native-check.ts`，结合当前主机 CPU 特性与独立子进程探针逐一检查原生组件兼容性，并输出各组件的预构建或本机构建选择（详见 [原生组件与兼容性](native-components.md)）。
 3. 管理面板构建：执行 `bun run build:panel` 构建前端管理面板。
 4. 内置资源核对：校验内置程序资源完整性。
 5. 交互式配置与运行资料准备：
@@ -73,7 +76,8 @@ bun run init
 ## 补充说明
 
 - 初始化中断处理：若因网络波动或手动中止导致 `bun run init` 未能完成，直接重新执行 `bun run init` 即可。已下载的模型与图鉴记录会保留并继续完成，无需清理重来。
-- 直接启动的前提：`bun run start` 不会代替 `init` 下载验证码模型、图鉴数据或媒体依赖，未完成初始化直接启动会报错退出。
-- `--build-only` 参数用途：`bun run bootstrap --build-only` 仅用于依赖安装与管理面板构建（例如构建预备或迁移场景），会跳过内置资源核对以及模型、图鉴、Valkey 等运行资料的初始化，不能用于完成新建部署。
+- 直接启动的前提：`bun run start` 不会代替 `init` 下载或编译原生组件、验证码模型、图鉴数据或媒体依赖，未完成初始化直接启动会报错退出。
+- `--build-only` 参数用途：`bun run bootstrap --build-only` 会执行子模块同步、锁定依赖安装、`scripts/native-check.ts` 原生检测与管理面板构建（例如构建预备或迁移场景），会跳过内置资源核对以及模型、图鉴、Valkey 等运行资料的初始化，不能用于完成新建部署。
 - 已有存储配置优先：若环境中已存在 `LOTUS_VALKEY_URL`，或存在 `config/redis.yaml` / 兼容路径 `config/config/redis.yaml`，系统会优先使用已有配置，不会启用托管 Valkey，已有配置不会被覆盖。
+- 原生组件与缓存维护：本机构建的源码、工具链与动态库保存在 `data/native-build`，运行期间切勿直接删除该目录；完整组件矩阵、平台限制与缓存清理方法请参见 [原生组件与兼容性](native-components.md)。
 - 后续配置与网络：如需调整 Bot 账号、OneBot 接入令牌（`config/server.yaml` 中的 `onebot_token`）或代理设置，请继续阅读 [配置说明](configuration.md) 与 [网络配置](network.md)。
