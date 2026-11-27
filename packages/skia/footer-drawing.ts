@@ -1,4 +1,4 @@
-import type { CanvasRenderingContext2D } from "skia-canvas";
+import { Path2D, type CanvasRenderingContext2D } from "skia-canvas";
 
 type Transform = ReturnType<CanvasRenderingContext2D["getTransform"]>;
 
@@ -13,6 +13,7 @@ export function captureFooterDrawing(
   height: number,
   extraHeight: number,
 ): { restore(): void; brandBottom(): number | undefined } {
+  const originalRect = ctx.rect;
   const originalFillRect = ctx.fillRect;
   const originalDrawImage = ctx.drawImage;
   const originalFillText = ctx.fillText;
@@ -43,16 +44,27 @@ export function captureFooterDrawing(
     const t = receiver.getTransform();
     if (!validTransform(t)) return;
     const edges = [
-      t.a * x + t.e,
-      t.d * y + t.f,
-      t.a * (x + w) + t.e - width * initialA,
-      t.d * (y + h) + t.f - height * initialD,
+      t.a * x + t.e - initial.e,
+      t.d * y + t.f - initial.f,
+      t.a * (x + w) + t.e - initial.e - width * initialA,
+      t.d * (y + h) + t.f - initial.f - height * initialD,
     ];
-    if (!edges.every(Number.isFinite) || Math.abs(edges[0]!) > 2 || Math.abs(edges[1]!) > 2 ||
-        (cover ? edges[2]! < -2 || edges[3]! < -2 : Math.abs(edges[2]!) > 2 || Math.abs(edges[3]!) > 2)) return;
+    if (!edges.every(Number.isFinite)) return;
+    if (cover
+      ? edges[0]! > 2 || edges[1]! > 2 || edges[2]! < -2 || edges[3]! < -2
+      : edges.some(edge => Math.abs(edge) > 2)) return;
     const extended = h + extraHeight * initialD / t.d;
     if (Number.isFinite(extended) && extended > 0) return extended;
   }
+
+  ctx.rect = function (
+    this: CanvasRenderingContext2D,
+    ...args: unknown[]
+  ) {
+    const extended = extendedHeight(this, args, 0, true);
+    if (extended !== undefined) args[3] = extended;
+    return Reflect.apply(originalRect, this, args);
+  } as typeof originalRect;
 
   ctx.fillRect = function (
     this: CanvasRenderingContext2D,
@@ -67,14 +79,56 @@ export function captureFooterDrawing(
     this: CanvasRenderingContext2D,
     ...args: unknown[]
   ) {
-    const index = args.length === 5 ? 1 : args.length === 9 ? 5 : undefined;
-    if (index !== undefined) {
-      const extended = extendedHeight(this, args, index, true);
-      if (extended !== undefined) args[index + 3] = extended;
+    const result: unknown = Reflect.apply(originalDrawImage, this, args);
+    let continuation = args.slice();
+    let index = args.length === 5 ? 1 : args.length === 9 ? 5 : undefined;
+    if (args.length === 3) {
+      const image = args[0];
+      if (typeof image === "object" && image !== null) {
+        const dimensions = image as {
+          naturalWidth?: unknown;
+          naturalHeight?: unknown;
+          width?: unknown;
+          height?: unknown;
+        };
+        const w = dimensions.naturalWidth ?? dimensions.width;
+        const h = dimensions.naturalHeight ?? dimensions.height;
+        continuation = [image, args[1], args[2], w, h];
+        index = 1;
+      }
     }
-    return Reflect.apply(originalDrawImage, this, args);
+    if (index === undefined) return result;
+    const extended = extendedHeight(this, continuation, index, true);
+    if (extended === undefined) return result;
+    const t = this.getTransform();
+    const originalBottom =
+      t.d *
+        (Number(continuation[index + 1]) +
+          Number(continuation[index + 3])) +
+      t.f;
+    const bandStart = Math.max(
+      initial.f + height * initialD,
+      originalBottom,
+    );
+    const bandEnd = initial.f + (height + extraHeight) * initialD;
+    if (bandStart >= bandEnd) return result;
+    continuation[index + 3] = extended;
+    const band = new Path2D();
+    band.rect(
+      (initial.e - t.e) / t.a,
+      (bandStart - t.f) / t.d,
+      width * initialA / t.a,
+      (bandEnd - bandStart) / t.d,
+    );
+    this.save();
+    try {
+      this.clip(band);
+      Reflect.apply(originalDrawImage, this, continuation);
+    } finally {
+      this.restore();
+    }
+    return result;
   } as typeof originalDrawImage;
-
   ctx.fillText = function (
     this: CanvasRenderingContext2D,
     ...args: unknown[]
@@ -88,10 +142,10 @@ export function captureFooterDrawing(
       && typeof y === "number" && Number.isFinite(y)) {
       const t = this.getTransform();
       if (validTransform(t)) {
-        const baseline = (t.d * y + t.f) / initialD;
+        const baseline = (t.d * y + t.f - initial.f) / initialD;
         if (baseline >= height * 0.65 && baseline <= height) {
           const descent = this.measureText(text).actualBoundingBoxDescent;
-          const bottom = (t.d * (y + descent) + t.f) / initialD;
+          const bottom = (t.d * (y + descent) + t.f - initial.f) / initialD;
           if (Number.isFinite(bottom)) {
             lowest = lowest === undefined ? bottom : Math.max(lowest, bottom);
           }
@@ -103,6 +157,7 @@ export function captureFooterDrawing(
 
   return {
     restore(): void {
+      ctx.rect = originalRect;
       ctx.fillRect = originalFillRect;
       ctx.drawImage = originalDrawImage;
       ctx.fillText = originalFillText;
