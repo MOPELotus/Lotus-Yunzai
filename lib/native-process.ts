@@ -8,6 +8,13 @@ export interface NativeRunOptions {
   readonly progress?: (line: string) => void;
 }
 
+export function sanitizeNativeDiagnostic(text: string) {
+  return text.replace(/https?:\/\/[^\s'"<>]+/giu, value => {
+    try { const url = new URL(value); url.username = ""; url.password = ""; url.search = ""; url.hash = ""; return url.href; }
+    catch { return "[URL]"; }
+  }).replace(/\x1b\[[0-9;]*[A-Za-z]/gu, "").replace(/[\p{Cc}\p{Cf}]/gu, " ").slice(0, 800);
+}
+
 export async function runNativeCommand(argv: readonly string[], options: NativeRunOptions) {
   options.signal?.throwIfAborted();
   const child = spawn(argv[0]!, [...argv.slice(1)], { cwd: options.cwd, env: options.env,
@@ -15,10 +22,7 @@ export async function runNativeCommand(argv: readonly string[], options: NativeR
   let timedOut = false, failure: Error | undefined;
   const lines: string[] = [];
   const output: string[] = []; let outputBytes = 0;
-  const sanitize = (text: string) => text.replace(/https?:\/\/[^\s'"<>]+/giu, value => {
-    try { const url = new URL(value); url.username = ""; url.password = ""; url.search = ""; url.hash = ""; return url.href; }
-    catch { return "[URL]"; }
-  }).replace(/\x1b\[[0-9;]*[A-Za-z]/gu, "").replace(/[\p{Cc}\p{Cf}]/gu, " ").slice(0, 800);
+  const sanitize = sanitizeNativeDiagnostic;
   const drain = async (stream: NonNullable<typeof child.stdout>, capture = false) => {
     let pending = "";
     for await (const chunk of stream) {

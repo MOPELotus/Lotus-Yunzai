@@ -2,9 +2,27 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { devNull, tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { checkoutUpdateRevision } from "../lib/update-checkout.ts";
 
 const executable = Bun.which("git");
+
+test.skipIf(!executable)("shallow source boundaries survive repeated independent update checkouts", () => fixture(async (root, source) => {
+  await commit(source, "first\n");
+  const revision = await commit(source, "second\n");
+  const shallow = join(root, "shallow");
+  git(source, "clone", "--quiet", "--depth=1", pathToFileURL(source).href, shallow);
+  expect(git(shallow, "rev-parse", "--is-shallow-repository")).toBe("true");
+  let previous = shallow;
+  for (let index = 0; index < 2; index++) {
+    const target = join(root, `candidate-${index}`);
+    await checkoutUpdateRevision(previous, revision, target);
+    expect(git(target, "rev-parse", "--is-shallow-repository")).toBe("true");
+    expect(git(target, "fsck", "--connectivity-only", "--no-dangling")).toBe("");
+    expect(await readFile(join(target, "tracked.txt"), "utf8")).toBe("second\n");
+    previous = target;
+  }
+}));
 
 function git(directory: string, ...args: string[]): string {
   const result = Bun.spawnSync([executable!, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",

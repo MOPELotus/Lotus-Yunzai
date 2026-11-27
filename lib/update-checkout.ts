@@ -6,6 +6,7 @@ import { devNull } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runUpdateProcess } from "./update-build.ts";
+import { sanitizeNativeDiagnostic } from "./native-process.ts";
 import { createLocalGit, gitHead, isGitCheckout, isGitRevision, type LocalGit } from "./local-git.ts";
 
 async function sourceConfig(git: LocalGit, source: string, key: string): Promise<string | undefined> {
@@ -75,7 +76,12 @@ async function run(binary: string, cwd: string, args: string[], signal?: AbortSi
       PATH: process.env.PATH, LC_ALL: "C", GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: "1",
       GIT_ALLOW_PROTOCOL: "file", GIT_TERMINAL_PROMPT: "0", GIT_NO_LAZY_FETCH: "1", GIT_NO_REPLACE_OBJECTS: "1",
       GIT_OPTIONAL_LOCKS: "0",
-    }, command, 45_000, signal)) return;
+    }, command, 45_000, signal, result => {
+      if (result.code !== 0 || result.timedOut) console.warn($t("lib.update-checkout.git-failed", {
+        step: args[0] ?? "git", code: result.timedOut ? "timeout" : result.code,
+        details: sanitizeNativeDiagnostic(result.stderr),
+      }));
+    })) return;
   } catch {
     signal?.throwIfAborted();
     // Report only which operation failed; Git may print local or remote credentials.
@@ -106,7 +112,7 @@ export async function checkoutUpdateRevision(
   signal?.throwIfAborted();
   const target = await destinationDirectory(directory, destination);
   await run(binary, target, ["init", "--quiet", "--template=", `--object-format=${revision.length === 64 ? "sha256" : "sha1"}`], signal);
-  await run(binary, target, ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-auto-gc",
+  await run(binary, target, ["fetch", "--quiet", "--update-shallow", "--no-tags", "--no-write-fetch-head", "--no-auto-gc",
     "--no-recurse-submodules", "--upload-pack=git-upload-pack", "--", pathToFileURL(directory).href, revision], signal);
   await run(binary, target, ["checkout", "--quiet", "--detach", revision, "--"], signal);
   const verify = createLocalGit();
