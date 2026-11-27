@@ -1,3 +1,5 @@
+import { seedUpdateSubmodules } from "./update-submodules.ts";
+import type { ManagedUpdateProgress } from "./managed-update-protocol.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -204,7 +206,7 @@ async function probeStagedUpdate(
 
 export async function stageUpdate(
   root: URL, directories: PluginDirectories, ready: ReadyUpdate | ReadyBatchUpdate | ReadyInstall,
-  stagingParent = tmpdir(), signal?: AbortSignal,
+  stagingParent = tmpdir(), signal?: AbortSignal, report?: (status: ManagedUpdateProgress) => void,
 ) {
   let staging: string | undefined;
   let phase = $t("lib.update-staging.text_bd67fba743");
@@ -231,6 +233,7 @@ export async function stageUpdate(
     }
 
     phase = $t("lib.update-staging.text_6bd6e2b1e6");
+    report?.("phase:checkout");
     staging = await mkdtemp(join(parent, "lotus-update-"));
     const directory = join(staging, "checkout");
     const cache = join(staging, "bun-cache");
@@ -239,6 +242,9 @@ export async function stageUpdate(
     await checkoutUpdateRevision(host, stagedHead, directory, signal);
 
     phase = $t("lib.update-staging.text_557a75add7");
+    report?.("phase:submodules");
+    await seedUpdateSubmodules(host, directory, signal);
+    await initializeUpdateSubmodules(directory, cache, signal);
     const pluginRoot = join(directory, "plugins");
     await mkdir(pluginRoot, { recursive: true });
     if (await realpath(pluginRoot) !== pluginRoot) throw new Error($t("lib.update-staging.text_e7aa5dafcd"));
@@ -298,6 +304,7 @@ export async function stageUpdate(
     }
 
     phase = $t("lib.update-staging.text_bc8377b3ac");
+    report?.("phase:build");
     await buildUpdateCheckout(directory, cache, signal, async () => {
       for (const { source, destination } of copies) {
         await buildExternalPluginCheckout(destination, cache, source === installation?.plugin.source, signal);
@@ -319,6 +326,7 @@ export async function stageUpdate(
     }
 
     phase = $t("lib.update-staging.text_54ff22aead");
+    report?.("phase:verify");
     await checkRevisions(signal);
     await verifyStagedPins(directory, signal);
     for (const plugin of copies) {

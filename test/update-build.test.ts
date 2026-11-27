@@ -235,3 +235,32 @@ test("冻结安装拒绝链接锁及链接清单", () => fixture(async (temporar
   await expect(buildExternalPluginCheckout(plugin, cache, true)).rejects.toThrow("依赖清单须为普通文件");
   expect(await readFile(external, "utf8")).toBe("{}");
 }));
+
+test.skipIf(process.platform === "win32")("submodule synchronization retries transient network failures but rejects authentication failures immediately", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "lotus-submodule-retry-"));
+  try {
+    const binary = join(temporary, "bin"), checkout = join(temporary, "checkout"), counter = join(temporary, "attempts");
+    await mkdir(binary); await mkdir(checkout);
+    await writeFile(join(checkout, ".gitmodules"), "[submodule \"fixture\"]\npath = fixture\nurl = https://example.invalid/fixture.git\n");
+    for (const transient of [true, false]) {
+      await writeFile(counter, "0");
+      await writeFile(join(binary, "git"), `#!${process.execPath}
+import { readFileSync, writeFileSync } from "node:fs";
+const path = ${JSON.stringify(counter)};
+const attempt = Number(readFileSync(path, "utf8")) + 1;
+writeFileSync(path, String(attempt));
+if (attempt === 1) {
+  console.error(${JSON.stringify(transient ? "gnutls_handshake() failed: connection reset by peer" : "Authentication failed")});
+  process.exit(1);
+}
+`, { mode: 0o700 });
+      const code = `import { initializeUpdateSubmodules } from ${JSON.stringify(new URL("../lib/update-build.ts", import.meta.url).href)};
+        await initializeUpdateSubmodules(${JSON.stringify(checkout)}, ${JSON.stringify(join(temporary, "cache"))});`;
+      const child = Bun.spawn([process.execPath, "--no-env-file", "-e", code], {
+        cwd: checkout, env: { PATH: `${binary}:${process.env.PATH ?? ""}` }, stdin: "ignore", stdout: "ignore", stderr: "ignore",
+      });
+      expect(await child.exited).toBe(transient ? 0 : 1);
+      expect(await readFile(counter, "utf8")).toBe(transient ? "2" : "1");
+    }
+  } finally { await rm(temporary, { recursive: true, force: true }); }
+});

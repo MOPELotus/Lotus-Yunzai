@@ -1,3 +1,4 @@
+import { reportCurrentUpdate } from "./update-report.ts";
 import type { ManagedUpdateProgress } from "./managed-update-protocol.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
@@ -168,7 +169,8 @@ export async function prepareUpdate(
     const directory = external && path ? path : host;
     report?.(`detail:${external?.name ?? "Lotus-Yunzai"}:checking`);
     const result = await fetchUpdateCandidate(directory, signal, force);
-    report?.(`detail:${external?.name ?? "Lotus-Yunzai"}:${result.status === "ready" ? "updating" : result.status}`);
+    if (result.status === "current") await reportCurrentUpdate(external?.name ?? "Lotus-Yunzai", directory, result.current, report);
+    else report?.(`detail:${external?.name ?? "Lotus-Yunzai"}:${result.status === "ready" ? "updating" : result.status}`);
     if ("release" in result) release = result.release;
     signal?.throwIfAborted();
     if (!("release" in result)) return { status: result.status };
@@ -231,10 +233,11 @@ async function reportTrackedPlugins(directory: string, current: string, candidat
   const [before, after] = await Promise.all([readTree(git, directory, current), readTree(git, directory, candidate)]);
   if (!before || !after) return;
   for (const [path, entry] of after) {
-    const name = /^plugins\/([^/]+)$/u.exec(path)?.[1];
-    if (!name || entry.mode !== "160000") continue;
+    if (entry.mode !== "160000") continue;
+    const name = path.startsWith("plugins/") ? path.slice(8) : path.replaceAll("/", ".");
     report(`detail:${name}:checking`);
-    report(`detail:${name}:${before.get(path)?.revision === entry.revision ? "current" : "updating"}`);
+    if (before.get(path)?.revision === entry.revision) await reportCurrentUpdate(name, join(directory, path), entry.revision, report);
+    else report(`detail:${name}:updating`);
   }
 }
 
@@ -257,7 +260,8 @@ export async function prepareAllUpdates(
     const directory = await realpath(fileURLToPath(root));
     report?.("detail:Lotus-Yunzai:checking");
     const result = await fetchUpdateCandidate(directory, signal, force);
-    report?.(`detail:Lotus-Yunzai:${result.status === "ready" ? "updating" : result.status}`);
+    if (result.status === "current") await reportCurrentUpdate("Lotus-Yunzai", directory, result.current, report);
+    else report?.(`detail:Lotus-Yunzai:${result.status === "ready" ? "updating" : result.status}`);
     if ("release" in result) releases.add(result.release);
     signal?.throwIfAborted();
     if (!("release" in result)) return { status: result.status, target };
@@ -282,7 +286,8 @@ export async function prepareAllUpdates(
       if (binding !== "bound") return { status: binding, target };
       report?.(`detail:${name}:checking`);
       const result = await fetchUpdateCandidate(path, signal, force);
-      report?.(`detail:${name}:${result.status === "ready" ? "updating" : result.status}`);
+      if (result.status === "current") await reportCurrentUpdate(name, path, result.current, report);
+      else report?.(`detail:${name}:${result.status === "ready" ? "updating" : result.status}`);
       if ("release" in result) releases.add(result.release);
       signal?.throwIfAborted();
       if (!("release" in result)) return { status: result.status, target };

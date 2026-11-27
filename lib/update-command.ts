@@ -28,6 +28,11 @@ const replies: Readonly<Record<ManagedUpdateStatus, string>> = {
 };
 
 export function describeUpdateProgress(status: ManagedUpdateProgress): string {
+  if (status.startsWith("dated:")) {
+    const boundary = status.indexOf(":", 6);
+    return $t("lib.update-command.current-dated", { name: status.slice(6, boundary), date: status.slice(boundary + 1) });
+  }
+  if (status.startsWith("phase:")) return $t(`lib.update-command.phase.${status.slice(6)}`);
   if (status.startsWith("waiting:")) return $t("lib.update-command.progress.waiting", { seconds: status.slice(8) });
   if (status.startsWith("detail:")) {
     const [, name, state] = status.split(":");
@@ -104,9 +109,13 @@ export function createUpdateCommand(request: RequestUpdate) {
         await event.reply(message, false, { onDelivered: () => undefined });
       }).catch(() => undefined);
     };
+    let stage: string | undefined;
     const report = (status: ManagedUpdateProgress) => {
-      if (quiet && (quietStatuses.has(status) || status.startsWith("detail:") || status.startsWith("waiting:"))) return;
-      const reply = force && status === "checking" ? $t("lib.update-command.text_0127364ac8") : describeUpdateProgress(status);
+      if (quiet && (quietStatuses.has(status) || status.startsWith("detail:") || status.startsWith("waiting:") || status.startsWith("dated:") || status.startsWith("phase:"))) return;
+      if (status.startsWith("phase:")) stage = describeUpdateProgress(status);
+      const reply = status.startsWith("waiting:") && stage
+        ? $t("lib.update-command.phase.waiting", { stage, seconds: status.slice(8) })
+        : force && status === "checking" ? $t("lib.update-command.text_0127364ac8") : describeUpdateProgress(status);
       enqueue(reply);
     };
     let sent: boolean;

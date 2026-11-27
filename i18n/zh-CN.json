@@ -1148,6 +1148,10 @@
     "lib.checkin-batch-retry-commands": {
       "description": "针对全体已注册自动签到档案，串行调用手动签到并写入账本。",
       "source": "lib/checkin-batch-retry-commands.ts"
+    },
+    "lib.update-report": {
+      "description": "更新命令与更新报告的中文国际化文案，复用 TRSS 简洁术语与结构",
+      "source": "lib/update-report.ts"
     }
   },
   "messages": {
@@ -4371,7 +4375,7 @@
     "lib.update-checkout.text_fce2679ba6": "候选检出未到达指定的 detached 提交。",
     "lib.update-checkout.text_fdd048c87c": "候选检出目录须与当前工作区独立。",
     "lib.update-command.text_0127364ac8": "开始强制更新，正在检查。",
-    "lib.update-command.text_029f28b6f1": "正在准备候选版本。",
+    "lib.update-command.text_029f28b6f1": "正在更新依赖并构建",
     "lib.update-command.text_09fe40ea71": "请输入有效的插件名，例如 {example} system 或 {value2} @lotus-yunzai/system。",
     "lib.update-command.text_197cd5caf2": "请只发送 #全部强制更新、#全部静强制更新 或 #全部安静强制更新。",
     "lib.update-command.text_2236b3d59a": "更新失败，请检查宿主日志。",
@@ -4384,7 +4388,7 @@
     "lib.update-command.text_759c00b5d9": "更新候选未通过检查，更新未执行。",
     "lib.update-command.text_79a21d49b4": "#{value1}更新 starrail",
     "lib.update-command.text_8ec36d4e0b": "发送更新请求失败，请稍后重试。",
-    "lib.update-command.text_96790a7d94": "正在切换到候选版本。",
+    "lib.update-command.text_96790a7d94": "更新验证通过，正在重启",
     "lib.update-command.text_c3a2df2402": "请只发送 #全部更新、#全部静更新 或 #全部安静更新。",
     "lib.update-command.text_ca9955f4ec": "当前已是最新版本。",
     "lib.update-command.text_e0389507bc": "当前提交与上游已分叉，更新未执行。",
@@ -4980,7 +4984,7 @@
     "lib.update-command.progress.updating": "正在更新 {name}。",
     "lib.update-command.progress.current": "{name} 已是最新。",
     "lib.update-command.progress.detail": "{name}：{status}",
-    "lib.update-command.progress.waiting": "正在准备候选版本，已耗时 {seconds} 秒。",
+    "lib.update-command.progress.waiting": "更新已耗时 {seconds} 秒",
     "app.zzz-panel-cache-task": "绝区零面板缓存刷新",
     "app.gs-panel-cache-task": "原神面板缓存后台刷新",
     "app.sr-panel-cache-task": "星铁面板缓存后台刷新",
@@ -4992,7 +4996,16 @@
     "lib.checkin-batch-retry-commands.summary": "全部补签完成：共 {total} 个档案，本次成功 {success}，失败 {failed}，已成功跳过 {skipped}，执行中跳过 {busy}，通知失败 {notifyFailed}。",
     "lib.checkin-batch-retry-commands.failed": "全部补签任务执行异常失败，请稍后重试或检查日志。",
     "lib.checkin-batch-retry-commands.empty": "当前没有已注册的自动签到档案。",
-    "lib.checkin-batch-retry-commands.interrupted": "全部补签因跨日、服务停止或权限变更已中止，已完成部分已保留：共 {total} 个档案，本次成功 {success}，失败 {failed}，已成功跳过 {skipped}，执行中跳过 {busy}，通知失败 {notifyFailed}。"
+    "lib.checkin-batch-retry-commands.interrupted": "全部补签因跨日、服务停止或权限变更已中止，已完成部分已保留：共 {total} 个档案，本次成功 {success}，失败 {failed}，已成功跳过 {skipped}，执行中跳过 {busy}，通知失败 {notifyFailed}。",
+    "lib.update-command.current-dated": "{name} 已是最新\n最后更新时间：{date}",
+    "lib.update-command.phase.checkout": "正在更新程序文件",
+    "lib.update-command.phase.submodules": "正在同步子模块",
+    "lib.update-command.phase.build": "正在更新依赖并构建",
+    "lib.update-command.phase.verify": "正在验证更新",
+    "lib.update-command.phase.waiting": "{stage}（已耗时 {seconds} 秒）",
+    "lib.update-report.completed": "{name} 更新完成\n更新时间：{date}",
+    "lib.update-report.title": "{name} 更新日志（共 {count} 条）",
+    "lib.update-report.read-failed": "读取更新日志失败"
   },
   "parameters": {
     "lib.update-checkout.git-failed": {"step": "执行失败的 Git 命令步骤名称", "code": "Git 命令返回的进程退出码", "details": "经脱敏处理的 Git 失败诊断信息"},
@@ -7135,6 +7148,25 @@
       "skipped": "已签跳过",
       "busy": "执行中跳过",
       "notifyFailed": "通知失败"
+    },
+    "lib.update-command.current-dated": {
+      "name": "项目或组件名称",
+      "date": "最后更新时间"
+    },
+    "lib.update-command.phase.waiting": {
+      "stage": "当前更新阶段名称",
+      "seconds": "更新总耗时（秒）"
+    },
+    "lib.update-command.progress.waiting": {
+      "seconds": "更新总耗时（秒）"
+    },
+    "lib.update-report.completed": {
+      "name": "项目或组件名称",
+      "date": "更新时间"
+    },
+    "lib.update-report.title": {
+      "name": "项目或组件名称",
+      "count": "更新日志条数"
     }
   }
 }

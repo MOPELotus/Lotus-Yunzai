@@ -137,7 +137,8 @@ function milkyStatus(socket: Bun.ServerWebSocket) {
   }));
 }
 
-test("同一 QQ 的 OneBot 和 Milky 独立领取三类启动回执", async () => {
+for (const withReport of [false, true]) test(`同一 QQ 的 OneBot 和 Milky 独立领取三类启动回执，更新日志 ${withReport}`, async () => {
+  const reports = [{ name: "Lotus-Yunzai", date: "2026-11-27 22:00:00", lines: ["[2026-11-27 22:00:00] fixture update"] }];
   const root = await mkdtemp(join(tmpdir(), "lotus-adapter-receipts-"));
   const milky = milkyGateway();
   const oneBotClients: Awaited<ReturnType<typeof oneBotGateway>>[] = [];
@@ -153,11 +154,11 @@ test("同一 QQ 的 OneBot 和 Milky 独立领取三类启动回执", async () =
     const at = Date.now() - 1_000;
     await Promise.all([
       receipts.save({ kind: "restart", at, target: { type: "group", botId, id: 701 } }),
-      receipts.save({ kind: "update", result: "updated", revision, at, target: { type: "private", botId, id: 741 } }),
+      receipts.save({ kind: "update", result: "updated", revision, at, ...(withReport ? { reports } : {}), target: { type: "private", botId, id: 741 } }),
       receipts.save({ kind: "install", name: "onebot-fixture", result: "rolled-back", at, target: { type: "group", botId, id: 702 } }),
       receipts.save({ kind: "restart", at, target: { type: "private", botId, id: 742, adapter: "milky" } }),
       receipts.save({
-        kind: "update", result: "rolled-back", at, target: { type: "group", botId, id: 703, adapter: "milky" },
+        kind: "update", ...(withReport ? { result: "updated" as const, revision, reports } : { result: "rolled-back" as const }), at, target: { type: "group", botId, id: 703, adapter: "milky" },
       }),
       receipts.save({
         kind: "install", name: "milky-fixture", result: "installed", revision, at,
@@ -176,7 +177,7 @@ test("同一 QQ 的 OneBot 和 Milky 独立领取三类启动回执", async () =
       const firstOneBot = await oneBotGateway(url);
       oneBotClients.push(firstOneBot);
       const oneBotReceipts: OneBotFrame[] = [];
-      for (let count = 0; count < 3; count++) {
+      for (let count = 0; count < (withReport ? 4 : 3); count++) {
         const frame = await firstOneBot.replies.next();
         oneBotReceipts.push(frame);
         firstOneBot.ack(frame);
@@ -189,7 +190,7 @@ test("同一 QQ 的 OneBot 和 Milky 独立领取三类启动回执", async () =
         }),
         expect.objectContaining({
           action: "send_msg", params: expect.objectContaining({
-            message_type: "private", user_id: 741, message: "更新成功，提交 012345678901",
+            message_type: "private", user_id: 741, message: withReport ? "Lotus-Yunzai 更新完成\n更新时间：2026-11-27 22:00:00" : "更新成功，提交 012345678901",
           }),
         }),
         expect.objectContaining({
@@ -198,6 +199,12 @@ test("同一 QQ 的 OneBot 和 Milky 独立领取三类启动回执", async () =
           }),
         }),
       ]));
+      if (withReport) {
+        const forward = oneBotReceipts.find(frame => frame.action === "send_private_forward_msg");
+        expect(forward).toMatchObject({ params: { user_id: 741 } });
+        expect(JSON.stringify(forward)).toContain("fixture update");
+        expect(JSON.stringify(forward)).toContain("更新日志");
+      }
       expect(milky.requests.pending).toEqual([]);
 
       milky.releaseUpgrade.resolve();
@@ -206,12 +213,18 @@ test("同一 QQ 的 OneBot 和 Milky 独立领取三类启动回执", async () =
       const milkyReceipts = [
         await milky.requests.next(), await milky.requests.next(), await milky.requests.next(),
       ];
+      if (withReport) milkyReceipts.push(await milky.requests.next());
       expect(milkyReceipts).toEqual(expect.arrayContaining([
         { action: "send_private_message", body: { user_id: 742, message: text(expect.stringMatching(/^重启成功，用时/u)) } },
-        { action: "send_group_message", body: { group_id: 703, message: text("更新失败，已恢复旧版本。") } },
+        { action: "send_group_message", body: { group_id: 703, message: text(withReport ? "Lotus-Yunzai 更新完成\n更新时间：2026-11-27 22:00:00" : "更新失败，已恢复旧版本。") } },
         { action: "send_private_message", body: { user_id: 743, message: text("安装 milky-fixture 成功，提交 012345678901。") } },
       ]));
 
+      if (withReport) {
+        const forward = milkyReceipts.find(frame => JSON.stringify(frame.body).includes('"type":"forward"'));
+        expect(JSON.stringify(forward)).toContain("fixture update");
+        expect(JSON.stringify(forward)).toContain("更新日志");
+      }
       firstOneBot.close();
       await deadline(firstOneBot.closed, "OneBot 原回执连接未关闭。");
       firstMilky.close(1012, "fixture reconnect");

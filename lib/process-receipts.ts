@@ -1,3 +1,4 @@
+import type { AppliedUpdateReport } from "./update-report.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -17,7 +18,7 @@ type ReceiptTarget =
 
 type ProcessOrUpdate = { readonly target: ReceiptTarget } & (
   | { readonly kind: "stop" | "restart" }
-  | { readonly kind: "update"; readonly result: "updated"; readonly revision: string; readonly repositories?: number; readonly preserved?: true }
+  | { readonly kind: "update"; readonly result: "updated"; readonly revision: string; readonly repositories?: number; readonly preserved?: true; readonly reports?: readonly AppliedUpdateReport[] }
   | { readonly kind: "update"; readonly result: "rolled-back" }
 );
 
@@ -35,7 +36,7 @@ type ReceiptSlot = boolean | "install";
 
 const maxAge = 30 * 24 * 60 * 60 * 1_000;
 const maxClockSkew = 5 * 60 * 1_000;
-const maxFileBytes = 4_096;
+const maxFileBytes = 256 * 1024;
 
 function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
@@ -75,10 +76,35 @@ function receiptFrom(value: unknown): ProcessReceipt | undefined {
     const repositories = value.repositories;
     if (repositories !== undefined && (!positiveInteger(repositories) || repositories > 129)) return;
     if (value.preserved !== undefined && value.preserved !== true) return;
+    const reports = value.reports === undefined ? undefined : parseUpdateReports(value.reports);
+    if (value.reports !== undefined && !reports) return;
     return { kind, at, target: session, result: value.result, revision: value.revision,
+      ...(reports ? { reports } : {}),
       ...(repositories === undefined ? {} : { repositories }),
       ...(value.preserved ? { preserved: true } : {}) };
   }
+}
+
+function parseUpdateReports(value: unknown): AppliedUpdateReport[] | undefined {
+  if (!Array.isArray(value) || value.length > 129) return;
+  const reports: AppliedUpdateReport[] = [], names = new Set<string>();
+  let bytes = 0;
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.name !== "string" ||
+        !/^[\p{L}\p{N}][\p{L}\p{N}._-]{0,127}$/u.test(item.name) || names.has(item.name) ||
+        typeof item.date !== "string" || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(item.date) ||
+        !Array.isArray(item.lines) || item.lines.length > 100) return;
+    const lines: string[] = [];
+    for (const line of item.lines) {
+      if (typeof line !== "string" || line.length > 600 || /[\u0000-\u001f\u007f-\u009f]/u.test(line)) return;
+      bytes += Buffer.byteLength(line);
+      if (bytes > 96 * 1024) return;
+      lines.push(line);
+    }
+    names.add(item.name);
+    reports.push({ name: item.name, date: item.date, lines });
+  }
+  return reports;
 }
 
 function receiptTarget(target: Record<string, unknown>): ProcessReceipt["target"] | undefined {

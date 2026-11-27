@@ -1,3 +1,5 @@
+import { retryableGitFetchFailure } from "./git-network-errors.ts";
+import { setTimeout as pause } from "node:timers/promises";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -150,7 +152,20 @@ export async function initializeUpdateSubmodules(
   const env = await buildEnvironment(cacheDirectory);
   const git = Bun.which("git", { PATH: env.PATH });
   if (!git) throw new Error(failure);
-  await run(directory, env, [git, "submodule", "update", "--init", "--recursive", "--checkout"], 15 * 60_000, failure, signal);
+  const deadline = Date.now() + 15 * 60_000;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    signal?.throwIfAborted();
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    let diagnostic: { code: number; timedOut: boolean; stderr: string } | undefined;
+    const success = await runUpdateProcess(directory, env,
+      [git, "submodule", "update", "--init", "--recursive", "--checkout"], remaining, signal,
+      result => { diagnostic = result; });
+    if (success) return;
+    if (attempt === 2 || !diagnostic || !retryableGitFetchFailure(diagnostic.stderr, diagnostic.timedOut)) break;
+    await pause(attempt === 0 ? 400 : 1000, undefined, { signal });
+  }
+  throw new Error(failure);
 }
 
 export async function buildUpdateCheckout(

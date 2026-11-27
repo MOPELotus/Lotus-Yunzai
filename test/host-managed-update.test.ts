@@ -30,7 +30,7 @@ function git(root: string, ...args: string[]): string {
 }
 
 function isDetailedProgress(message: unknown) {
-  return typeof message === "string" && /^(?:正在(?:检查|更新) [\p{L}\p{N}._-]+。|[\p{L}\p{N}._-]+ 已是最新。|正在准备候选版本，已耗时 \d+ 秒。|[A-Za-z0-9._-]+：)/u.test(message);
+  return typeof message === "string" && /^(?:正在(?:检查|更新) [\p{L}\p{N}._-]+。|[\p{L}\p{N}._-]+ 已是最新|正在(?:同步子模块|更新依赖并构建|验证更新)|更新已耗时 \d+ 秒|[A-Za-z0-9._-]+：)/u.test(message);
 }
 
 function deadline<T>(promise: Promise<T>, description: string, delay = 5_000): Promise<T> {
@@ -57,6 +57,7 @@ function gateway(endpoint: string, botId?: number) {
     const frame: Frame = JSON.parse(data);
     if (frame.echo) socket.send(JSON.stringify({ echo: frame.echo, status: "ok", retcode: 0, data: { message_id: 77 } }));
     if (isDetailedProgress(frame.params?.message)) { progressFrames.push(frame); return; }
+    if (frame.action.includes("forward")) { progressFrames.push(frame); return; }
     frames.push(frame);
     ready.resolve();
   });
@@ -415,11 +416,10 @@ async function exerciseUpdate(fail: boolean, updateTarget: UpdateTarget = "host"
       await expectVersion(otherBot, expected);
       const originalBot = await open(replacementEndpoint, 99);
       const receipt = await originalBot.next();
-      expectText(receipt, target, fail ? /^更新失败，已恢复旧版本/u : /^更新成功/u);
+      expectText(receipt, target, fail ? /^更新失败，已恢复旧版本/u : /更新(?:成功|完成)/u);
       if (!fail) {
-        const reported = updateTarget === "plugin" ? candidatePlugin! : candidate;
-        expect(receipt.params.message).toContain(reported.slice(0, 12));
-        if (updateTarget === "all") expect(receipt.params.message).toContain("本次更新 2 个仓库");
+        expect(receipt.params.message).toContain("更新时间：");
+        expect(receipt.params.message).toContain(updateTarget === "plugin" ? "local-fixture 更新完成" : "Lotus-Yunzai 更新完成");
         if (force) {
           expect(receipt.params.message).toContain("原工作区已保留");
           expect(receipt.params.message).not.toContain(temporary);
@@ -547,7 +547,7 @@ test.skipIf(!Bun.which("git"))("托管更新保留本地 V3 插件的包内相�
       await probe(running);
       running.command("#静更新", 51);
       const updated = await supervisor.open(await deadline(supervisor.nextEndpoint(), "候选未接回入口链接。", 15_000), 99);
-      expectText(await updated.next(), { user_id: 51 }, /^更新成功/u);
+      expectText(await updated.next(), { user_id: 51 }, /更新(?:成功|完成)/u);
       await probe(updated);
       expect(await readlink(entry)).toBe("./linked.js");
       expect(git(active, "rev-parse", "HEAD")).toBe(candidate);
@@ -601,7 +601,7 @@ test.skipIf(!Bun.which("git"))("保留内存中仍可用的 V3 脚本，磁盘�
 
       running.command("#更新", 51);
       expectText(await running.next(), { user_id: 51 }, /^开始更新/u);
-      expectText(await running.next(), { user_id: 51 }, /^正在准备候选版本/u);
+      expectText(await running.next(), { user_id: 51 }, /^正在更新程序文件/u);
       await writeFile(entry, broken);
       expectText(await running.next(15_000), { user_id: 51 }, /^更新失败，请检查宿主日志。$/u);
       await Bun.sleep(1_020);
@@ -618,10 +618,10 @@ test.skipIf(!Bun.which("git"))("保留内存中仍可用的 V3 脚本，磁盘�
         status = await running.next();
       } while (status.params.message.startsWith("已有更新") && Date.now() < retryUntil);
       expectText(status, { user_id: 51 }, /^开始更新/u);
-      expectText(await running.next(), { user_id: 51 }, /^正在准备候选版本/u);
-      expectText(await running.next(), { user_id: 51 }, /^正在切换到候选版本/u);
+      expectText(await running.next(), { user_id: 51 }, /^正在更新程序文件/u);
+      expectText(await running.next(), { user_id: 51 }, /^更新验证通过，正在重启/u);
       const updated = await supervisor.open(await deadline(supervisor.nextEndpoint(), "修复脚本后的候选未启动。", 15_000), 99);
-      expectText(await updated.next(), { user_id: 51 }, /^更新成功/u);
+      expectText(await updated.next(), { user_id: 51 }, /更新(?:成功|完成)/u);
       expect(await probe(updated)).toBe("新版脚本可用");
       expect(git(active, "rev-parse", "HEAD")).toBe(candidate);
     } finally {
@@ -687,7 +687,7 @@ async function exercisePublicListenerUpdate(fault?: "http" | "onebot" | "port") 
       expect(await deadline(supervisor.nextEndpoint(), "交接后缺少 OneBot 启动记录。", 15_000)).toBe(wsEndpoint);
       const updated = await supervisor.open(wsEndpoint, 99);
       const expected = fault ? old : candidate;
-      expectText(await updated.next(), { user_id: 51 }, fault ? /已恢复旧版本/u : /^更新成功/u);
+      expectText(await updated.next(), { user_id: 51 }, fault ? /已恢复旧版本/u : /更新(?:成功|完成)/u);
       await expectPublic(expected);
       await expectVersion(updated, expected);
       expect(git(active, "rev-parse", "HEAD")).toBe(expected);
@@ -733,7 +733,7 @@ test.skipIf(!Bun.which("git"))("托管更新保留旧主人配置和 dotenv 链�
       const replacement = await deadline(supervisor.nextEndpoint(), "候选未启动。", 15_000);
       await checkStatus(replacement, candidate);
       const updated = await supervisor.open(replacement, 99);
-      expectText(await updated.next(), { user_id: 51 }, /^更新成功/u);
+      expectText(await updated.next(), { user_id: 51 }, /更新(?:成功|完成)/u);
       updated.command("#更新", 51);
       expectText(await updated.next(), { user_id: 51 }, /^开始更新/u);
       expectText(await updated.next(), { user_id: 51 }, /^当前已是最新版本/u);
@@ -846,7 +846,7 @@ async function exerciseTlsUpdate(fault?: "bind" | "wss" | "port") {
       first.command("#更新", 51);
       expectText(await first.next(), { user_id: 51 }, /^开始更新/u);
       const replacement = await supervisor.open(await deadline(supervisor.nextEndpoint(), "TLS 更新后未启动宿主。", 16_000), 99);
-      expectText(await replacement.next(), { user_id: 51 }, fault ? /已恢复旧版本/u : /^更新成功/u);
+      expectText(await replacement.next(), { user_id: 51 }, fault ? /已恢复旧版本/u : /更新(?:成功|完成)/u);
       const revision = fault ? old : candidate;
       expect(git(active, "rev-parse", "HEAD")).toBe(revision);
       await checkTls(revision);
@@ -940,7 +940,7 @@ async function exerciseValkeyUpdate(
         changed = true;
       } else {
         const replacement = await supervisor.open(await deadline(supervisor.nextEndpoint(), "存储更新后未启动宿主。", 16_000), 99);
-        expectText(await replacement.next(), { user_id: 51 }, expectRollback ? /已恢复旧版本/u : /^更新成功/u);
+        expectText(await replacement.next(), { user_id: 51 }, expectRollback ? /已恢复旧版本/u : /更新(?:成功|完成)/u);
         expect(git(active, "rev-parse", "HEAD")).toBe(expectRollback ? old : candidate);
         replacement.command("#读存储样本", 51);
         const reply = await replacement.next();
@@ -1018,7 +1018,7 @@ test.skipIf(!Bun.which("git"))("托管 #更新 后 V3 插件仍可分享自定�
       const endpoint = await deadline(supervisor.nextEndpoint(), "图像测试候选未接管。", 16_000)
         .catch(async error => { await supervisor.stop(); throw new Error(await supervisor.stderr, { cause: error }); });
       const replacement = await supervisor.open(endpoint, 99);
-      expectText(await replacement.next(), { user_id: 51 }, /^更新成功/u);
+      expectText(await replacement.next(), { user_id: 51 }, /更新(?:成功|完成)/u);
       expect(git(active, "rev-parse", "HEAD")).toBe(candidate);
       await checkPicture(replacement);
     } finally {
@@ -1029,9 +1029,9 @@ test.skipIf(!Bun.which("git"))("托管 #更新 后 V3 插件仍可分享自定�
   }
 }, 35_000);
 test.skipIf(!Bun.which("git"))("托管 #更新 在活动环境失败时恢复旧 HEAD 并回复原群", () => exerciseUpdate(true), 35_000);
-test.skipIf(!Bun.which("git"))("指定外部插件更新保留宿主提交并回报插件提交", () => exerciseUpdate(false, "plugin"), 35_000);
+test.skipIf(!Bun.which("git"))("指定外部插件更新保留宿主提交并回报更新时间", () => exerciseUpdate(false, "plugin"), 35_000);
 test.skipIf(!Bun.which("git"))("目标插件在实际环境拒绝加载时回退，宿主就绪不能掩盖失败", () => exerciseUpdate(true, "plugin"), 35_000);
-test.skipIf(!Bun.which("git"))("#全部更新一次切换宿主和外部插件，向原会话报告两个仓库", () => exerciseUpdate(false, "all"), 35_000);
+test.skipIf(!Bun.which("git"))("#全部更新一次切换宿主和插件，向原会话报告各变更仓库", () => exerciseUpdate(false, "all"), 35_000);
 test.skipIf(!Bun.which("git"))("#全部更新遇到仅在活动环境加载失败的插件时整批回滚", () => exerciseUpdate(true, "all"), 35_000);
 test.skipIf(!Bun.which("git"))("#强制更新对齐分叉的宿主并归档私有分支和暂存区", () => exerciseUpdate(false, "host", true), 35_000);
 test.skipIf(!Bun.which("git"))("#强制更新对齐领先的宿主失败后恢复原分支和暂存区", () => exerciseUpdate(true, "host", true), 35_000);
@@ -1068,6 +1068,9 @@ function milkyUpdateGateway(token: string, botId: number) {
       const body = await request.json() as {
         user_id?: number; group_id?: number; message: { type: string; data: { text: string } }[];
       };
+      if (body.message[0]?.type === "forward") {
+        return Response.json({ status: "ok", retcode: 0, data: { message_seq: ++receiptId, time } });
+      }
       expect(body.message).toEqual([{ type: "text", data: { text: expect.any(String) } }]);
       if (isDetailedProgress(body.message[0]!.data.text)) return Response.json({ status: "ok", retcode: 0, data: { message_seq: ++receiptId, time } });
       frames.push({
@@ -1169,13 +1172,13 @@ async function exerciseMilkyUpdate(fault?: "startup" | "config") {
       await expectVersion(sameOneBot, expected);
       // The replacement's held upgrade leaves only earlier update progress in this queue.
       while (mock.frames.length) {
-        await mock.next({ user_id: 51 }, /^正在(?:准备候选版本|切换到候选版本)。$/u);
+        await mock.next({ user_id: 51 }, /^(?:正在更新程序文件|更新验证通过，正在重启)$/u);
       }
 
       mock.releaseReplacement.resolve();
       const updated = await mock.open(1);
-      const receipt = await mock.next({ user_id: 51 }, fault ? /^更新失败，已恢复旧版本。$/u : /^更新成功/u);
-      if (!fault) expect(receipt).toContain(candidate.slice(0, 12));
+      const receipt = await mock.next({ user_id: 51 }, fault ? /^更新失败，已恢复旧版本。$/u : /更新(?:成功|完成)/u);
+      if (!fault) expect(receipt).toContain("更新时间：");
       updated("#版本", 51);
       const version = await mock.next({ user_id: 51 }, /^Lotus-Yunzai 版本/u);
       expect(version).toContain(expected.slice(0, 12));
@@ -1231,7 +1234,7 @@ async function exerciseScheduledUpdate(schedule: Schedule, fail: boolean) {
 
       const expected = fail ? old : candidate;
       expect(git(active, "rev-parse", "HEAD")).toBe(expected);
-      const receipt = fail ? /^更新失败，已恢复旧版本/u : /^更新成功/u;
+      const receipt = fail ? /^更新失败，已恢复旧版本/u : /更新(?:成功|完成)/u;
       const secondAgain = await supervisor.open(replacement, 100);
       expectText(await secondAgain.next(), { user_id: 52 }, receipt);
       const firstAgain = await supervisor.open(replacement, 99);
@@ -1304,8 +1307,8 @@ async function exerciseMilkyScheduledUpdate(fail: boolean) {
       expect(replies.map(({ params }) => params.user_id).sort()).toEqual([51, 52]);
       for (const frame of replies) {
         expect(frame.action).toBe("send_private_message");
-        expect(frame.params.message).toMatch(fail ? /^更新失败，已恢复旧版本。$/u : /^更新成功/u);
-        if (!fail) expect(frame.params.message).toContain(candidate.slice(0, 12));
+        expect(frame.params.message).toMatch(fail ? /^更新失败，已恢复旧版本。$/u : /更新(?:成功|完成)/u);
+        if (!fail) expect(frame.params.message).toContain("更新时间：");
       }
       await expect(lstat(persisted)).rejects.toMatchObject({ code: "ENOENT" });
       updated("#版本", 43);
@@ -1460,7 +1463,7 @@ exec ${binary} "$@"
         original.command(`#更新${directory}`, 51);
         expectText(await original.next(), { user_id: 51 }, /^开始更新/u);
         const online = await supervisor.open(await deadline(supervisor.nextEndpoint(), "插件更新后启动超时。", 16_000), 99);
-        expectText(await online.next(), { user_id: 51 }, /^更新成功/u);
+        expectText(await online.next(), { user_id: 51 }, /更新(?:成功|完成)/u);
         expect(git(installed, "rev-parse", "HEAD")).toBe(updated);
         await expectVersion(online, old);
       }

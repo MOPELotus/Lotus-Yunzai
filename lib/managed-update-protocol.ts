@@ -43,7 +43,7 @@ export function encodeManagedUpdateRequest(request: ManagedUpdateRequest, schedu
 const progress = ["checking", "building", "switching", "busy", "current", "dirty", "ahead", "diverged",
   "rejected", "unavailable", "storage-changed", "failed"] as const;
 export type ManagedUpdateStatus = typeof progress[number];
-export type ManagedUpdateProgress = ManagedUpdateStatus | `detail:${string}:${ManagedUpdateStatus | "updating"}` | `waiting:${number}`;
+export type ManagedUpdateProgress = ManagedUpdateStatus | `detail:${string}:${ManagedUpdateStatus | "updating"}` | `waiting:${number}` | `dated:${string}:${string}` | `phase:${"checkout" | "submodules" | "build" | "verify"}`;
 
 const knownProgress: ReadonlySet<string> = new Set(progress);
 const directoryName = /^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u;
@@ -177,6 +177,8 @@ export function isManagedUpdateRequestId(value: unknown): value is string {
 export function isManagedUpdateProgress(value: unknown): value is ManagedUpdateProgress {
   if (typeof value !== "string") return false;
   if (knownProgress.has(value)) return true;
+  if (/^phase:(?:checkout|submodules|build|verify)$/u.test(value)) return true;
+  if (/^dated:[\p{L}\p{N}][\p{L}\p{N}._-]{0,127}:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(value)) return true;
   if (/^waiting:[1-9]\d{0,4}$/u.test(value)) return true;
   const match = /^detail:([\p{L}\p{N}][\p{L}\p{N}._-]{0,127}):([a-z-]+)$/u.exec(value);
   return !!match && (match[2] === "updating" || knownProgress.has(match[2]!));

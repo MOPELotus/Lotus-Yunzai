@@ -1,3 +1,4 @@
+import { readAppliedUpdateReports, type AppliedUpdateReport } from "./update-report.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -153,20 +154,24 @@ export function createManagedSupervisor(directory: string, options: {
       }
       ready = result;
       signal.throwIfAborted();
-      report("building");
+      let applied: AppliedUpdateReport[] = [];
       const started = Date.now();
       const heartbeat = setInterval(() => {
         if (!request.quiet && active()) report(`waiting:${Math.floor((Date.now() - started) / 1000)}`);
       }, 30_000);
       try {
-        stage = await stageUpdate(rootUrl, directories, ready, dirname(root), signal);
+        stage = await stageUpdate(rootUrl, directories, ready, dirname(root), signal, report);
+        if (ready.scope !== "install") {
+          try { applied = await readAppliedUpdateReports(root, stage.directory, [...directories.keys()], signal); }
+          catch { signal.throwIfAborted(); console.warn($t("lib.update-report.read-failed")); }
+        }
       } finally {
         clearInterval(heartbeat);
       }
       if (stopped || signal.aborted || current !== worker) return;
       const revision = ready.scope === "all" ? ready.host.candidate : ready.scope === "install" ? stage.revision : ready.candidate;
       const repositories = ready.scope === "all"
-        ? Number(ready.host.current !== ready.host.candidate || ready.host.force === true) + ready.plugins.size : undefined;
+        ? Math.max(1, applied.length) : undefined;
       // An update can affect the retained plugins regardless of which repository was requested.
       const stagedPlugins = ready.scope === "install" ? undefined : new Set(await readdir(join(stage.directory, "plugins")));
       const expectedPlugins = new Set([...directories.keys()].filter(name => !stagedPlugins || stagedPlugins.has(name)));
@@ -208,7 +213,7 @@ export function createManagedSupervisor(directory: string, options: {
           }
           const destination = { kind: "update", at, target } as const;
           return receipts.save(outcome === "updated"
-            ? { ...destination, result: "updated", revision, repositories,
+            ? { ...destination, result: "updated", revision, repositories, ...(applied.length ? { reports: applied } : {}),
               ...(request.force ? { preserved: true } : {}) }
             : { ...destination, result: "rolled-back" });
         }));

@@ -263,7 +263,7 @@ test("进度消息按收到顺序发送，静默仅省略正常进度和已是�
   await regular.dispatch("#更新");
   expect(regular.replies).toHaveLength(statuses.length);
   expect(regular.replies.slice(0, 4)).toEqual([
-    "开始更新，正在检查。", "正在准备候选版本。", "正在切换到候选版本。", "当前已是最新版本。",
+    "开始更新，正在检查。", "正在更新依赖并构建", "更新验证通过，正在重启", "当前已是最新版本。",
   ]);
   const quiet = fixture((_event, _target, _quiet, report) => { statuses.forEach(report); return true; });
   await quiet.dispatch("#静更新");
@@ -311,8 +311,22 @@ test("验证逐项非终态进度不提前结束更新以及安静模式无过�
   const normal = fixture((_e, _r, _q, report) => { for (const status of statuses) report(status); return true; });
   await normal.dispatch("#全部更新");
   expect(normal.replies).toEqual(["开始更新，正在检查。", "正在检查 Lotus-Yunzai。", "genshin 已是最新。",
-    "正在更新 media。", "正在准备候选版本。", "正在准备候选版本，已耗时 30 秒。", "正在切换到候选版本。"]);
+    "正在更新 media。", "正在更新依赖并构建", "更新已耗时 30 秒", "更新验证通过，正在重启"]);
   const quiet = fixture((_e, _r, _q, report) => { for (const status of statuses) report(status); report("current"); return true; });
   await quiet.dispatch("#全部安静更新");
+  expect(quiet.replies).toEqual([]);
+});
+
+
+test("带日期的结果和阶段进度保持顺序，静默模式不发送过程", async () => {
+  const statuses: ManagedUpdateProgress[] = ["detail:Lotus-Yunzai:checking", "dated:Lotus-Yunzai:2026-11-27 22:00:00",
+    "phase:checkout", "phase:submodules", "waiting:30", "phase:build", "waiting:60", "phase:verify", "switching"];
+  const regular = fixture((_event, _target, _quiet, report) => { statuses.forEach(report); return true; });
+  await regular.dispatch("#全部更新");
+  expect(regular.replies).toEqual(["正在检查 Lotus-Yunzai。", "Lotus-Yunzai 已是最新\n最后更新时间：2026-11-27 22:00:00",
+    "正在更新程序文件", "正在同步子模块", "正在同步子模块（已耗时 30 秒）", "正在更新依赖并构建",
+    "正在更新依赖并构建（已耗时 60 秒）", "正在验证更新", "更新验证通过，正在重启"]);
+  const quiet = fixture((_event, _target, _quiet, report) => { statuses.forEach(report); return true; });
+  await quiet.dispatch("#全部静更新");
   expect(quiet.replies).toEqual([]);
 });

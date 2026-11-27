@@ -1,3 +1,4 @@
+import { appliedUpdateLogNodes, describeAppliedUpdates } from "./lib/update-report.ts";
 import { withCaptchaInteraction } from "./packages/hoyo-client/captcha.ts";
 import { quietDeliveryNotices } from "./lib/quiet-delivery-notices.ts";
 import "./lib/i18n-preload.ts";
@@ -908,7 +909,7 @@ if (import.meta.main) {
     }
   }
 
-  async function sendReceipt(target: ProcessReceipt["target"], message: string, signal?: AbortSignal): Promise<{
+  async function sendReceipt(target: ProcessReceipt["target"], message: string, signal?: AbortSignal, logNodes: readonly string[] = []): Promise<{
     confirmed: boolean;
     retry?: { pendingUsers?: readonly number[] };
   }> {
@@ -918,7 +919,7 @@ if (import.meta.main) {
       catch { return "unknown" as const; }
     }
     if (target.type === "terminal") {
-      const status = await delivery(() => { terminalOutput(message); return "confirmed"; });
+      const status = await delivery(() => { terminalOutput([message, ...logNodes].join("\n\n")); return "confirmed"; });
       return { confirmed: status === "confirmed", ...(status === "rejected" && { retry: {} }) };
     }
     const online = milkyOnline;
@@ -926,17 +927,31 @@ if (import.meta.main) {
       ? online?.id === target.botId && !online.signal.aborted && (!signal || signal === online.signal)
         ? online.checkinNotify : undefined
       : groups.checkinNotifications().find(binding => binding.botId === target.botId);
+    async function deliverWithLog(destination: { userId: number; groupId?: never } | { groupId: number; userId?: never }) {
+      const status = await delivery(transport && (() => destination.groupId === undefined
+        ? transport.sendPrivate(destination.userId, message) : transport.sendGroup(destination.groupId, message)));
+      if (status === "rejected" || !logNodes.length) return status;
+      // An unacknowledged send may already have reached the user; never duplicate it with a fallback.
+      if (transport?.sendForward) {
+        for (let index = 0; index < logNodes.length; index += 99) {
+          const outcome = await delivery(() => transport.sendForward!(destination, logNodes.slice(index, index + 99)));
+          if (outcome !== "confirmed") return outcome;
+        }
+        return status;
+      }
+      return delivery(transport && (() => destination.groupId === undefined
+        ? transport.sendPrivate(destination.userId, logNodes.join("\n\n")) : transport.sendGroup(destination.groupId, logNodes.join("\n\n"))));
+    }
     if (target.type === "masters") {
       const allowed = new Set(masterPermissions.masterIds(target.botId));
       allowed.delete(target.botId);
       const users = target.pendingUsers ? target.pendingUsers.filter(id => allowed.has(id)) : [...allowed];
-      const outcomes = await Promise.all(users.map(id => delivery(transport && (() => transport.sendPrivate(id, message)))));
+      const outcomes = await Promise.all(users.map(userId => deliverWithLog({ userId })));
       const pendingUsers = users.filter((_, index) => outcomes[index] === "rejected");
       return { confirmed: outcomes.every(status => status === "confirmed"),
         ...(pendingUsers.length > 0 && { retry: { pendingUsers } }) };
     }
-    const status = await delivery(transport && (() => target.type === "group"
-      ? transport.sendGroup(target.id, message) : transport.sendPrivate(target.id, message)));
+    const status = await deliverWithLog(target.type === "group" ? { groupId: target.id } : { userId: target.id });
     return { confirmed: status === "confirmed", ...(status === "rejected" && { retry: {} }) };
   }
 
@@ -950,6 +965,7 @@ if (import.meta.main) {
       let reply: string;
       if (receipt.kind === "update") {
         if (receipt.result === "rolled-back") reply = $t("app.text_0e3aef90e0");
+        else if (receipt.reports?.length) reply = describeAppliedUpdates(receipt.reports);
         else if (receipt.repositories !== undefined) {
           reply = $t("app.text_fab382b885", { "repositories": receipt.repositories, "value2": receipt.revision.slice(0, 12) });
         } else {
@@ -962,7 +978,9 @@ if (import.meta.main) {
       } else {
         reply = processReceiptText(receipt.kind, elapsed);
       }
-      const result = await sendReceipt(receipt.target, reply, signal);
+      const logNodes = receipt.kind === "update" && receipt.result === "updated" && receipt.reports
+        ? appliedUpdateLogNodes(receipt.reports) : [];
+      const result = await sendReceipt(receipt.target, reply, signal, logNodes);
       if (result.retry) {
         const remaining = receipt.kind !== "install" && receipt.target.type === "masters"
           ? { ...receipt, target: { ...receipt.target, pendingUsers: result.retry.pendingUsers } } : receipt;
