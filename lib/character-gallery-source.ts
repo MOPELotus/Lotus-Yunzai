@@ -116,6 +116,17 @@ export function createGallerySource(options: { fetch?: Transport; githubToken?: 
       }
       if (response.ok) return readResponse(response, maximum);
       await response.body?.cancel();
+      if (url.origin === origin && (response.status === 403 || response.status === 429) &&
+          response.headers.get("x-ratelimit-remaining") === "0") {
+        const reset = response.headers.get("x-ratelimit-reset");
+        const seconds = reset && /^\d{1,12}$/u.test(reset) ? Number(reset) : undefined;
+        const date = seconds !== undefined ? new Date(seconds * 1000) : undefined;
+        if (date && Number.isFinite(date.getTime())) {
+          const time = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", dateStyle: "short", timeStyle: "medium", hourCycle: "h23" }).format(date) + " UTC+8";
+          throw new Error($t("lib.character-gallery-source.rate-limit", { time }));
+        }
+        throw new Error($t("lib.character-gallery-source.rate-limit-unknown"));
+      }
       if (attempt >= 2 || response.status !== 429 && response.status < 500) {
         throw new Error($t("lib.character-gallery-source.text_5593372bbf", { "status": response.status }));
       }

@@ -202,3 +202,23 @@ test("索引、文件校验或取消失败保留原快照，手工图库路径�
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test("gallery sync reads initialization tokens from the environment without forwarding them to image hosts", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "lotus-gallery-env-token-"));
+  const previous = { primary: Bun.env.GITHUB_TOKEN, secondary: Bun.env.GH_TOKEN };
+  try {
+    Bun.env.GITHUB_TOKEN = " test-token "; Bun.env.GH_TOKEN = "must-not-use";
+    const first = sourceFixture();
+    await syncCharacterGallery({ root: join(workspace, "primary"), fetch: first.transport });
+    Bun.env.GITHUB_TOKEN = " "; Bun.env.GH_TOKEN = " test-token ";
+    const second = sourceFixture();
+    await syncCharacterGallery({ root: join(workspace, "fallback"), fetch: second.transport });
+    expect(first.downloads.length).toBeGreaterThan(0);
+    expect(second.downloads.length).toBeGreaterThan(0);
+  } finally {
+    for (const [name, value] of [["GITHUB_TOKEN", previous.primary], ["GH_TOKEN", previous.secondary]]) {
+      if (value === undefined) delete Bun.env[name!]; else Bun.env[name!] = value;
+    }
+    await rm(workspace, { recursive: true, force: true });
+  }
+});

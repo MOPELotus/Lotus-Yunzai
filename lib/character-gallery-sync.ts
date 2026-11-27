@@ -129,7 +129,7 @@ export async function syncCharacterGallery(options: CharacterGallerySyncOptions)
     await mkdir(snapshots, { recursive: true, mode: 0o700 });
     if (await realpath(snapshots) !== snapshots) throw new Error($t("lib.character-gallery-sync.text_748c3b6fe4"));
     const previous = await activeSnapshot(root);
-    const source = createGallerySource({ fetch: options.fetch, githubToken: options.githubToken, signal });
+    const source = createGallerySource({ fetch: options.fetch, githubToken: options.githubToken ?? (Bun.env.GITHUB_TOKEN?.trim() || Bun.env.GH_TOKEN?.trim()), signal });
     const plan = await source.plan();
     const previousImages = new Map(previous?.manifest.images.map(image => [image.path, image]));
     const images = [...plan.images.values()];

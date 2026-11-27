@@ -11,6 +11,7 @@ export async function initializeRuntimeResources(root: URL, signal: AbortSignal,
     const { syncCharacterGallery } = await import(new URL("lib/character-gallery-sync.ts", root).href) as typeof import("./character-gallery-sync.ts");
     await runInitializationStage($t("lib.initialize-resources.text_908b651319"), onProgress => syncCharacterGallery({
       root: fileURLToPath(new URL("data/character-gallery-synced/", root)), signal, onProgress,
+      githubToken: Bun.env.GITHUB_TOKEN?.trim() || Bun.env.GH_TOKEN?.trim(),
     }), { signal });
   }
   if (await Bun.file(new URL("plugins/guides/initialize-resources.ts", root)).exists()) {

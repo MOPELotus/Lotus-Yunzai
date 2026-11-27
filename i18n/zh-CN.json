@@ -1150,6 +1150,8 @@
     }
   },
   "messages": {
+    "lib.character-gallery-source.rate-limit": "GitHub API 请求配额已耗尽，请在 {time} 后重试。",
+    "lib.character-gallery-source.rate-limit-unknown": "GitHub API 请求配额已耗尽，服务器未提供重置时间，请稍后重试。",
     "app.text_0091a6122f": "图库",
     "app.text_010bbe20df": "加入黑名单",
     "app.text_0173552aba": "档案设置已变化，请重新读取。",
@@ -4974,6 +4976,7 @@
     "lib.checkin-batch-retry-commands.interrupted": "全部补签因跨日、服务停止或权限变更已中止，已完成部分已保留：共 {total} 个档案，本次成功 {success}，失败 {failed}，已成功跳过 {skipped}，执行中跳过 {busy}，通知失败 {notifyFailed}。"
   },
   "parameters": {
+    "lib.character-gallery-source.rate-limit": {"time": "配额重置后可重试的时间"},
     "app.text_242958f459": {
       "name": "定时任务名称"
     },
