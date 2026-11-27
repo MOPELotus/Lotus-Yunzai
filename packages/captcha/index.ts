@@ -1,4 +1,4 @@
-import { Worker } from 'node:worker_threads'
+import { fork, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -16,23 +16,25 @@ export interface LocalCaptchaSolver {
 }
 interface Options {
   readonly modelsDirectory?: string
-  /** Test seam: production always uses the checked-in TypeScript worker. */
+  /** Test seam: production always uses the checked-in TypeScript process entrypoint. */
   readonly workerUrl?: URL
   readonly timeoutMs?: number
 }
 interface Reply {
   readonly id?: string
-  readonly type?: 'closed'
+  readonly type?: 'closed' | 'ready'
   readonly proof?: Proof
   readonly error?: { readonly code: string; readonly retryable: boolean }
 }
 interface OwnedWorker {
-  readonly worker: Worker
+  readonly worker: ChildProcess
+  readonly exited: Promise<void>
+  readonly ready: Promise<void>
   readonly temporaryDirectory: string
   dispose?: Promise<void>
 }
 
-/** No port, subprocess service, model loading or worker starts during construction. */
+/** No port, service, model loading or child process starts during construction. */
 export function createLocalCaptchaSolver(options: Options = {}): LocalCaptchaSolver {
   const modelsDirectory = options.modelsDirectory ?? defaultModelsDirectory
   const workerUrl = options.workerUrl ?? new URL('./src/runtime/worker.ts', import.meta.url)
@@ -46,7 +48,8 @@ export function createLocalCaptchaSolver(options: Options = {}): LocalCaptchaSol
     if (target.dispose) return target.dispose
     if (owned === target) owned = undefined
     target.dispose = (async () => {
-      await target.worker.terminate().catch(() => undefined)
+      if (target.worker.exitCode === null && target.worker.signalCode === null) target.worker.kill('SIGKILL')
+      await target.exited
       // Only this worker writes here; never remove another process's pending download.
       await rm(target.temporaryDirectory, { recursive: true, force: true }).catch(() => undefined)
     })()
@@ -55,8 +58,15 @@ export function createLocalCaptchaSolver(options: Options = {}): LocalCaptchaSol
   function obtain() {
     if (owned) return owned
     const temporaryDirectory = join(modelsDirectory, '.work', randomUUID())
-    const worker = new Worker(workerUrl, { workerData: { modelsDirectory, temporaryDirectory }, execArgv: [] })
-    const target: OwnedWorker = { worker, temporaryDirectory }
+    const worker = fork(fileURLToPath(workerUrl), [], { execPath: process.execPath, execArgv: [],
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc'], serialization: 'json',
+      env: { ...process.env, LOTUS_CAPTCHA_WORKER_DATA: JSON.stringify({ modelsDirectory, temporaryDirectory }) } })
+    const exited = new Promise<void>(resolve => worker.once('close', () => resolve()))
+    const ready = new Promise<void>(resolve => {
+      const message = (reply: Reply) => { if (reply.type === 'ready') { worker.off('message', message); resolve() } }
+      worker.on('message', message)
+    })
+    const target: OwnedWorker = { worker, temporaryDirectory, exited, ready }
     owned = target
     worker.on('error', () => { void dispose(target) })
     worker.on('exit', () => { void dispose(target) })
@@ -69,7 +79,7 @@ export function createLocalCaptchaSolver(options: Options = {}): LocalCaptchaSol
       const message = (reply: Reply) => { if (reply.type === 'closed') finish() }
       const timer = setTimeout(finish, 500)
       target.worker.on('message', message)
-      try { target.worker.postMessage({ type: 'close' }) } catch { finish() }
+      try { target.worker.send({ type: 'close' }) } catch { finish() }
     })
     await dispose(target)
   }
@@ -80,6 +90,7 @@ export function createLocalCaptchaSolver(options: Options = {}): LocalCaptchaSol
       if (active) throw new CaptchaError('captcha_busy', undefined, true, 429)
       const target = obtain(), id = randomUUID()
       target.worker.ref()
+      target.worker.channel?.ref?.()
       const settled = Promise.withResolvers<void>()
       const result = new Promise<Proof>((resolve, reject) => {
         let finished = false, cancelling: Error | undefined
@@ -94,7 +105,7 @@ export function createLocalCaptchaSolver(options: Options = {}): LocalCaptchaSol
           target.worker.off('error', failed)
           target.worker.off('exit', exited)
           if (terminate) await (graceful ? release(target) : dispose(target))
-          else target.worker.unref()
+          else { target.worker.unref(); target.worker.channel?.unref?.() }
           active = undefined
           settled.resolve()
           if (error) reject(error)
@@ -103,7 +114,7 @@ export function createLocalCaptchaSolver(options: Options = {}): LocalCaptchaSol
         const cancel = (reason: Error) => {
           if (finished || cancelling) return
           cancelling = reason
-          try { target.worker.postMessage({ type: 'cancel', id }) } catch { /* Already exited. */ }
+          try { target.worker.send({ type: 'cancel', id }) } catch { /* Already exited. */ }
           cancellationTimer = setTimeout(() => { void finish(reason, undefined, true) }, 250)
         }
         const aborted = () => cancel(signal.reason instanceof Error ? signal.reason : new CaptchaError('aborted'))
@@ -122,12 +133,17 @@ export function createLocalCaptchaSolver(options: Options = {}): LocalCaptchaSol
         target.worker.on('message', message)
         target.worker.once('error', failed)
         target.worker.once('exit', exited)
-        try {
-          signal.throwIfAborted()
-          target.worker.postMessage({ type: 'solve', id, challenge, timeoutMs })
-        } catch (error) {
-          void finish(error instanceof Error ? error : new CaptchaError('local_worker_failed'), undefined, true)
-        }
+        void target.ready.then(() => {
+          if (finished || cancelling) return
+          try {
+            signal.throwIfAborted()
+            target.worker.send({ type: 'solve', id, challenge, timeoutMs }, error => {
+              if (error) void finish(new CaptchaError('local_worker_failed'), undefined, true)
+            })
+          } catch (error) {
+            void finish(error instanceof Error ? error : new CaptchaError('local_worker_failed'), undefined, true)
+          }
+        })
       })
       return result
     },

@@ -112,6 +112,8 @@ password: ""        # 密码（可选）
 
 ## 验证码处理
 
+本地验证码识别由机器人自动管理的独立子进程执行原生推理，不新增服务配置，也不使用 HTTP 或监听端口。任务取消或超时时仅终止该子进程，下次执行任务时会自动重新创建。
+
 `config/global.yaml` 顶层的 `captcha` 字段用于配置验证码识别与人工兜底策略。默认按 `local`、`ttocr`、`manual` 顺序尝试。
 
 内置 `local` 识别器默认启用，所需模型文件存放在 `data/captcha/models`，在执行 `bun run init` 时自动下载并校验，无需额外部署独立的 Captcha HTTP 服务。

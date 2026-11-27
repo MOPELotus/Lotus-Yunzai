@@ -12,10 +12,11 @@ async function fixture() {
   const workerUrl = pathToFileURL(join(directory, 'worker.ts'))
   const engineModule = new URL('../packages/captcha/src/composition/engine.ts', import.meta.url).href
   const modelsModule = new URL('../packages/captcha/src/infrastructure/models.ts', import.meta.url).href
-  // This actual Bun TS worker loads the migrated native dependencies and real
+  // This actual Bun TS process loads the migrated native dependencies and real
   // engine, substituting only the upstream network protocol with local inputs.
   await writeFile(workerUrl, `
-    import { parentPort, workerData } from 'node:worker_threads'
+    const workerData = JSON.parse(process.env.LOTUS_CAPTCHA_WORKER_DATA)
+    const parentPort = { on: (...args) => process.on(...args), postMessage: value => process.send(value) }
     import { mkdir, writeFile } from 'node:fs/promises'
     import { join } from 'node:path'
     import { createEngine } from ${JSON.stringify(engineModule)}
@@ -48,6 +49,7 @@ async function fixture() {
       const proof = await engine.solve(message.challenge, AbortSignal.timeout(message.timeoutMs))
       parentPort.postMessage({ id: message.id, proof })
     })
+    process.send({ type: 'ready' })
   `)
   return { directory, workerUrl, modelsDirectory: join(directory, 'models') }
 }
@@ -86,7 +88,7 @@ test('取消、超时和关闭回收worker独占临时文件，并发占用不�
     controller.abort(new Error('original operation cancelled'))
     expect((await rejection)?.message).toBe('original operation cancelled')
     expect(await readdir(work)).toEqual([])
-    // A cancelled thread is replaced, rather than reusing an aborted engine.
+    // A cancelled process is replaced, rather than reusing an aborted engine.
     expect((await solver.solve({ version: 4, captcha_id: 'replacement' }, new AbortController().signal)).version).toBe(4)
     const shutdown = solver.solve({ version: 3, gt: 'wait', challenge: 'again' }, new AbortController().signal)
     const rejected = shutdown.then(() => undefined, error => error)
