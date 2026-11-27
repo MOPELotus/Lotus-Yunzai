@@ -50,7 +50,7 @@
     "@lotus-yunzai/i18n": "workspace:*",
     "@lotus-yunzai/skia": "workspace:*",
     "@lotus-yunzai/storage": "workspace:*",
-    "@pixel.js/shotium": "0.12.4",
+    "@pixel.js/shotium": "0.13.0",
     "art-template": "4.13.2",
     "node-schedule": "2.1.2",
     "pm2": "7.0.4",

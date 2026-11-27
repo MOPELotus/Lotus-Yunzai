@@ -13,7 +13,7 @@
         "@lotus-yunzai/i18n": "workspace:*",
         "@lotus-yunzai/skia": "workspace:*",
         "@lotus-yunzai/storage": "workspace:*",
-        "@pixel.js/shotium": "0.12.4",
+        "@pixel.js/shotium": "0.13.0",
         "art-template": "4.13.2",
         "node-schedule": "2.1.2",
         "pm2": "7.0.4",
@@ -340,23 +340,23 @@
 
     "@oxc-project/types": ["@oxc-project/types@0.156.0", "", {}, "sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw=="],
 
-    "@pixel.js/shotium": ["@pixel.js/shotium@0.12.4", "", { "optionalDependencies": { "@pixel.js/shotium-darwin-arm64": "0.12.4", "@pixel.js/shotium-darwin-x64": "0.12.4", "@pixel.js/shotium-linux-arm64": "0.12.4", "@pixel.js/shotium-linux-arm64-musl": "0.12.4", "@pixel.js/shotium-linux-x64": "0.12.4", "@pixel.js/shotium-linux-x64-musl": "0.12.4", "@pixel.js/shotium-win32-arm64": "0.12.4", "@pixel.js/shotium-win32-x64": "0.12.4" }, "bin": { "shotium": "dist/cli.js" } }, "sha512-YTMjE1TTFkbet2Hg4TraF32W3a8NIgasewdDDnzmZVeOiKaX27dvO8lyHtYxITXr1FtkCBeHtbmNDSn0raI51g=="],
+    "@pixel.js/shotium": ["@pixel.js/shotium@0.13.0", "", { "optionalDependencies": { "@pixel.js/shotium-darwin-arm64": "0.13.0", "@pixel.js/shotium-darwin-x64": "0.13.0", "@pixel.js/shotium-linux-arm64": "0.13.0", "@pixel.js/shotium-linux-arm64-musl": "0.13.0", "@pixel.js/shotium-linux-x64": "0.13.0", "@pixel.js/shotium-linux-x64-musl": "0.13.0", "@pixel.js/shotium-win32-arm64": "0.13.0", "@pixel.js/shotium-win32-x64": "0.13.0" }, "bin": { "shotium": "dist/cli.js" } }, "sha512-ysbZS/GUChM07AKzL6HwWuDdEWUDXOpRZCMgWyDes/cq39D8SaXLznXo+IB3zjPXXUfHDUEq9hE0HpWaij/BIA=="],
 
-    "@pixel.js/shotium-darwin-arm64": ["@pixel.js/shotium-darwin-arm64@0.12.4", "", { "os": "darwin", "cpu": "arm64" }, "sha512-Y/2a0KoCnVlPrMh8md86gEBJUbPIqzjEraIJsOm3JEqyP55GyrYASY6nXbWcFTduWv7D2waHbubE26qJ4AQcpQ=="],
+    "@pixel.js/shotium-darwin-arm64": ["@pixel.js/shotium-darwin-arm64@0.13.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-Je0TYtI6K412Q3JwZLvEQTaL6yGdUwXG8hcs5179lo+eGcFO6vS4ZulPXStkoA6RHXk7jL/BjPU5nJ++KFKIeA=="],
 
-    "@pixel.js/shotium-darwin-x64": ["@pixel.js/shotium-darwin-x64@0.12.4", "", { "os": "darwin", "cpu": "x64" }, "sha512-Wi52Pj3TmoNJG+zp8KcSBwAakl0WnMMDfvB7m4DkplgvlasexmgLVwoUSjjns0vTXJThs6Fcp3mvLsyUFfzlrw=="],
+    "@pixel.js/shotium-darwin-x64": ["@pixel.js/shotium-darwin-x64@0.13.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-mELjiYpwJiVUjy9vd7DelgzbAoOyGHEygf8dmaG4NrcdNdPbCewPffv1NTSg6VIrebz3TfrwvLwVLZL87b/XnA=="],
 
-    "@pixel.js/shotium-linux-arm64": ["@pixel.js/shotium-linux-arm64@0.12.4", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-ORzRH6yfS7XVtxIlCDeuGbviEyhwEhbmaRqBmhaws3yoQf4uQAWCX1Br5pOHb9p39NQfYaiL4DVzyTP5TfylMA=="],
+    "@pixel.js/shotium-linux-arm64": ["@pixel.js/shotium-linux-arm64@0.13.0", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-un+/4AN78WIWJAT+RLO9J6AeEmG0JhdMOT1gHLbqPeQ1/Zkb94wrAGs0lV/UV5rPThgnUhQrI+vJH7hR++uBfg=="],
 
-    "@pixel.js/shotium-linux-arm64-musl": ["@pixel.js/shotium-linux-arm64-musl@0.12.4", "", { "os": "linux", "cpu": "arm64", "libc": "musl" }, "sha512-RMIqTZdy9NPE0sQ39M4vXsrk9nOaZAFWWkttK+KDkZRfjr7gBCBZ7z3/fKWLuKXApdugNi9xu5ko8lsEtWJECw=="],
+    "@pixel.js/shotium-linux-arm64-musl": ["@pixel.js/shotium-linux-arm64-musl@0.13.0", "", { "os": "linux", "cpu": "arm64", "libc": "musl" }, "sha512-bTsGVgYoP6sD00BLTQEa/v9DbETMLOk0Mb0k1JAjlX1RMfIUG+UI2dhQ2jyN80lW9thEhbDpGH7eiH4h1/YwiQ=="],
 
-    "@pixel.js/shotium-linux-x64": ["@pixel.js/shotium-linux-x64@0.12.4", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-MjD3sNNgu+RyUa58t8kftBnWjXxBZs5tFsFZnWxcFX6UBEbbQ3rqmHlYFq+DRp9nz9Ut/ga4F94T0fVftiVL7w=="],
+    "@pixel.js/shotium-linux-x64": ["@pixel.js/shotium-linux-x64@0.13.0", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-39/7tTJxRe792/167p2bB3e8Er8Ei38yojtZ6iTHFeSw4nGc8W7Nc0jY+ilDdQmPh6aDMoyamK+TqiisjjqDvg=="],
 
-    "@pixel.js/shotium-linux-x64-musl": ["@pixel.js/shotium-linux-x64-musl@0.12.4", "", { "os": "linux", "cpu": "x64", "libc": "musl" }, "sha512-OMUuh9xR//qK1ZW2pkRPQD146xA9XoQK/TDvBxlRKfuwwpdyt8UVnI60HTzLH+nnQfrODAvad03rGDfpFQ6cXw=="],
+    "@pixel.js/shotium-linux-x64-musl": ["@pixel.js/shotium-linux-x64-musl@0.13.0", "", { "os": "linux", "cpu": "x64", "libc": "musl" }, "sha512-KWtFoBtFvwN4y6CEPTWKF0R7fyHElWi9vX2/z59uBhDMGthzqvXwKYolbZI3FkbTYcmBxh3fbBZwVDne3FJfTA=="],
 
-    "@pixel.js/shotium-win32-arm64": ["@pixel.js/shotium-win32-arm64@0.12.4", "", { "os": "win32", "cpu": "arm64" }, "sha512-ebrscBxzZ1w5wEEexkmyxbQx2zXpNsdoeDfo1AZH4cuEYDnUK7ogRgRlVBgbN3t1FfJOXVqxb3XklcDotyWCnQ=="],
+    "@pixel.js/shotium-win32-arm64": ["@pixel.js/shotium-win32-arm64@0.13.0", "", { "os": "win32", "cpu": "arm64" }, "sha512-mdfzSAG+JTpQmct6LWwuI5pnp/jJXmZ5VwdrKcIL/VRanM1G1xocU51G8uf2Ac/nFPL8M2xpzkommFYXzcIEZg=="],
 
-    "@pixel.js/shotium-win32-x64": ["@pixel.js/shotium-win32-x64@0.12.4", "", { "os": "win32", "cpu": "x64" }, "sha512-7cfv7fNNPlHHe8hxNZ7S4FRAqC3oJzRixs28GjZa6qSkWryld95171Ib7s3CnPECWBExjT8XeBwO1bHCoKemSQ=="],
+    "@pixel.js/shotium-win32-x64": ["@pixel.js/shotium-win32-x64@0.13.0", "", { "os": "win32", "cpu": "x64" }, "sha512-ln65JVTzRClMgfwtCoNvQuCHeONiAtJitlwOAJET+i57PTx6zzdNlGRKwkwN3YwbQLoxlGqeTGjvTVvjRDG0jw=="],
 
     "@pm2/blessed": ["@pm2/blessed@0.1.81", "", { "bin": { "blessed": "bin/tput.js" } }, "sha512-ZcNHqQjMuNRcQ7Z1zJbFIQZO/BDKV3KbiTckWdfbUaYhj7uNmUwb+FbdDWSCkvxNr9dBJQwvV17o6QBkAvgO0g=="],
 
