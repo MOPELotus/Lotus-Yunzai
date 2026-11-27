@@ -47,3 +47,15 @@ test('V4 pt=0 preserves UTF-8 and rejects unsupported modes', () => {
   expect(Buffer.from(encryptPayload(plain, 0), 'base64url').toString()).toBe(plain)
   expect(() => encryptPayload(plain, 3)).toThrow('Unsupported encryption mode')
 })
+
+test('V4 1.9.10 config is consumed by the adapter and derives build-specific lot fields', async () => {
+  const { V4Adapter } = await import('../packages/captcha/src/protocols/v4/adapter.ts')
+  const { lotFields } = await import('../packages/captcha/src/protocols/v4/crypto.ts')
+  const adapter = new V4Adapter() as unknown as { config(path: string): Promise<{biht:string;lib_key:string;lib_val:string;abo_key:string;abo_val:string}> }
+  const lot = '0123456789abcdef0123456789abcdef'
+  const patrol = await adapter.config('/v4/static/v1.9.10-8b6b4f')
+  expect(patrol).toMatchObject({biht:'1426265548',lib_key:'X4Rs',lib_val:'2UoU'})
+  expect(lotFields(patrol.abo_key, patrol.abo_val, lot)).toEqual({'1701':'abcd'})
+  const previous = await adapter.config('/v4/static/v1.9.10-be7fe1')
+  expect(previous.lib_key).toBe('BHGy')
+})
