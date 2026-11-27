@@ -438,8 +438,13 @@ export async function readZzzTuning(
       const batch = versions.slice(start, start + batchSize);
       const history = periodsOf(await request("hist_pool_stat", { gacha_type, vers: batch.join(",") }));
       const returned = new Set(history.map(({ version }) => version));
-      if (returned.size !== batch.length || batch.some((version) => !returned.has(version))) {
+      if ([...returned].some((version) => !batch.includes(version))) {
         invalid($t("zzz-tuning.text_ac9680b223"));
+      }
+      for (const version of batch.filter(version => !returned.has(version))) {
+        const confirmed = periodsOf(await request("hist_pool_stat", { gacha_type, vers: version }));
+        if (confirmed.some(period => period.version !== version)) invalid($t("zzz-tuning.text_ac9680b223"));
+        history.push(...confirmed);
       }
       periods.push(...history);
     }

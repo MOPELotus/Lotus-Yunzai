@@ -169,12 +169,41 @@ test("does not output a snapshot for missing bands, missing history, invalid rec
     ? ok({ ...index(), type_stats: index().type_stats.slice(1) }) : answer(url))).rejects.toThrow("六个频段");
   await expect(check(async (url) => url.pathname.endsWith("/index")
     ? ok({ ...index(), type_stats: [...index().type_stats, band(weapon)] }) : answer(url))).rejects.toThrow("重复频段");
-  await expect(check(async (url) => url.pathname.endsWith("/hist_pool_stat") && url.searchParams.get("vers") === versions.at(-1)
-    ? ok(empty) : answer(url))).rejects.toThrow("历史期次返回不全");
+  await expect(check(async (url) => url.pathname.endsWith("/hist_pool_stat") && url.searchParams.get("vers")!.split(",").includes(versions[0]!)
+    ? ok(empty) : answer(url))).rejects.toThrow("汇总与 S 级明细不一致");
   await expect(check(async (url) => url.pathname.endsWith("/cur_pool_stat") && url.searchParams.get("gacha_type") === "5"
     ? ok({ list: [periods(currentVersion, [{ ...pulls[0], rarity: "A" }])] }) : answer(url))).rejects.toThrow("邦布频段");
   await expect(check(async (url) => url.pathname.endsWith("/index")
     ? ok({ ...index(), total_gacha_count: 42 }) : answer(url))).rejects.toThrow("总览与分频段");
+});
+
+test("confirms omitted empty periods individually without rejecting complete S records", async () => {
+  const omitted = versions[5]!;
+  let confirmations = 0;
+  const result = await readZzzTuning(source, async url => {
+    if (!url.pathname.endsWith("/hist_pool_stat")) return answer(url);
+    const batch = url.searchParams.get("vers")!;
+    if (batch === omitted) { confirmations++; return ok(empty); }
+    const response = await answer(url).json() as { data: { list: Array<{ version: string }> } };
+    return ok({ list: response.data.list.filter(period => period.version !== omitted) });
+  }, options);
+  expect(confirmations).toBe(1);
+  expect(result.totalS).toBe(2);
+  expect(result.pools[0]!.records).toHaveLength(2);
+  expect(result.pools[0]!.periods.some(period => period.version === omitted)).toBe(false);
+});
+
+test("retries omitted populated periods and rejects a confirmation for a different period", async () => {
+  const omitted = versions[0]!;
+  const transport: HoyoTransport = async url => {
+    if (!url.pathname.endsWith("/hist_pool_stat")) return answer(url);
+    if (url.searchParams.get("vers") === omitted) return ok({ list: [periods(omitted, pulls)] });
+    const response = await answer(url).json() as { data: { list: Array<{ version: string }> } };
+    return ok({ list: response.data.list.filter(period => period.version !== omitted) });
+  };
+  expect((await readZzzTuning(source, transport, options)).pools[0]!.records).toHaveLength(2);
+  await expect(readZzzTuning(source, async (url, init) => url.searchParams.get("vers") === omitted
+    ? ok({ list: [periods("unexpected")] }) : transport(url, init), options)).rejects.toThrow("历史期次返回不全");
 });
 
 test("keeps real duplicate pulls when required by the official S total", async () => {
