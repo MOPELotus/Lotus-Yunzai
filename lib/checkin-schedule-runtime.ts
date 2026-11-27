@@ -1,3 +1,4 @@
+import { withCaptchaInteraction } from "../packages/hoyo-client/captcha.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -165,7 +166,7 @@ export function createCheckinScheduleRuntime({
 
   function schedule(configured: unknown, fallback: string, name: string, callback: () => unknown) {
     const valid = normalizeCron(configured);
-    const job = new Job(`lotus-checkin-${name}-${crypto.randomUUID()}`, () => { void callback(); });
+    const job = new Job(`lotus-checkin-${name}-${crypto.randomUUID()}`, () => { void withCaptchaInteraction(() => false, callback); });
     const use = valid ?? fallback;
     if (configured !== undefined && !valid) console.warn($t("lib.checkin-schedule-runtime.text_3895cd24bb", { "name": name }));
     const install = (rule: string) => {

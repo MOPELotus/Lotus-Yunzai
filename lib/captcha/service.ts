@@ -1,3 +1,4 @@
+import { captchaManualAllowed } from "../../packages/hoyo-client/captcha.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { CaptchaChallenge, CaptchaEvent, CaptchaProof, CaptchaRun, CaptchaSolver } from "@lotus-yunzai/hoyo-client";
 import type { createManualCaptchaRelay } from "./manual-relay.ts";
@@ -73,7 +74,7 @@ export function createCaptchaService(options: CaptchaServiceOptions = {}): Captc
         for (let round = 1; round <= 2; round++) {
           for (const provider of config.order) {
             if (disabled.has(provider)) continue;
-            if (provider === "manual" ? !config.manual.enabled || input.allowManual === false || (!input.manualProof && (!canNotify || !options.manualRelay?.())) : !providers.available(provider)) continue;
+            if (provider === "manual" ? !config.manual.enabled || !captchaManualAllowed(input.allowManual) || (!input.manualProof && (!canNotify || !options.manualRelay?.())) : !providers.available(provider)) continue;
             const attempts = provider === "manual" ? 1 : 5;
             for (let attempt = 1; attempt <= attempts; attempt++) {
               await guard();

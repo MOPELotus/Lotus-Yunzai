@@ -5,7 +5,7 @@ import { createHash, randomInt } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import { transientReadResponse } from "@lotus-yunzai/http";
 import type { Game } from "@lotus-yunzai/account";
-import { getDefaultCaptchaSolver, type CaptchaChallenge, type CaptchaEvent, type CaptchaProof } from "./captcha.ts";
+import { captchaManualAllowed, getDefaultCaptchaSolver, type CaptchaChallenge, type CaptchaEvent, type CaptchaProof } from "./captcha.ts";
 import type { HoyoTransport } from "./credentials.ts";
 import { CaptchaBusinessRejectedError, HoyoRequestError } from "./errors.ts";
 import { readGameRecordPayload } from "./game-record.ts";
@@ -205,7 +205,7 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
   }
   let firstInline = inline(target.payload);
   const execute = () => solver.run<T>({ signal, verify: guard, context: options.context, notify: options.notify,
-    allowManual: options.allowManual ?? Boolean(options.context || options.notify),
+    allowManual: captchaManualAllowed(options.allowManual),
     async challenge() {
       stage = "challenge";
       if (route.kind === "inline") {

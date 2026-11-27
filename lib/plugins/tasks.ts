@@ -1,3 +1,4 @@
+import { withCaptchaInteraction } from "../../packages/hoyo-client/captcha.ts";
 import { createTranslator as createTextTranslator } from "../../packages/i18n/index.ts";
 import messageCatalog from "../../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -145,7 +146,7 @@ export class LegacyTasks {
         .then(async () => {
           if (this.#tasks.get(key)?.job !== job || !this.accepting()) return;
           if (task.log) console.log($t("lib.plugins.tasks.text_123691cd16", { "name": name }));
-          await owner.run(() => task.invoke());
+          await withCaptchaInteraction(() => false, () => owner.run(() => task.invoke()));
         })
         .catch((error: unknown) => {
           console.warn($t("lib.plugins.tasks.text_da3faae960", { "name": name }), error);

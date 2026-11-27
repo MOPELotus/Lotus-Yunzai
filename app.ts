@@ -1,3 +1,4 @@
+import { withCaptchaInteraction } from "./packages/hoyo-client/captcha.ts";
 import { quietDeliveryNotices } from "./lib/quiet-delivery-notices.ts";
 import "./lib/i18n-preload.ts";
 import { createTranslator as createTextTranslator } from "./packages/i18n/index.ts";
@@ -382,7 +383,7 @@ if (import.meta.main) {
       if (runAtStartup) {
         startup = Promise.resolve().then(async () => {
           if (!lifecycle.signal.aborted && handoff.accepting) {
-            await (typeof runAtStartup === "function" ? runAtStartup : run)();
+            await withCaptchaInteraction(() => false, typeof runAtStartup === "function" ? runAtStartup : run);
           }
         }).catch(() => console.warn($t("app.text_40832b56e7", { "name": name })));
         const finished = startup;
@@ -2140,7 +2141,7 @@ if (import.meta.main) {
     const profiles = await gameProfileDefaults.read(String(scope.user));
     let handling = true;
     try {
-      return await withGameCommandProfiles({ user: scope.user, profiles, isCurrent: () => handling && scope.isCurrent() }, dispatch);
+      return await withGameCommandProfiles({ user: scope.user, profiles, isCurrent: () => handling && scope.isCurrent() }, () => withCaptchaInteraction(() => handling && scope.isCurrent(), dispatch));
     } finally {
       handling = false;
     }

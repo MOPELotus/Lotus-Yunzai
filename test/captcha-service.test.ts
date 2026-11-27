@@ -1,3 +1,4 @@
+import { withCaptchaInteraction } from "../packages/hoyo-client/captcha.ts";
 import { expect, test } from "bun:test";
 import { createCaptchaService } from "../lib/captcha/service.ts";
 import { captchaConfig, createAutomaticProviders, normalizeCaptchaProof, ProviderFailure } from "../lib/captcha/providers.ts";
@@ -8,7 +9,7 @@ const proof4 = (lot: string) => ({ captchaVersion: 4, captchaId: v4.captchaId, l
   captchaOutput: "output", passToken: "token", genTime: "1234" }) as const;
 const wire4 = (lot: string) => ({ captcha_id: v4.captchaId, lot_number: lot, captcha_output: "output", pass_token: "token", gen_time: "1234" });
 
-test("自动节点每轮5次、人工每轮1次，完整两轮且每次获取新挑战", async () => {
+test("自动节点每轮5次、人工每轮1次，完整两轮且每次获取新挑战", async () => withCaptchaInteraction(() => true, async () => {
   const attempts: string[] = [], events: string[] = [];
   let challengeCount = 0, acceptedCount = 0;
   const service = createCaptchaService({ providers: {
@@ -34,7 +35,7 @@ test("自动节点每轮5次、人工每轮1次，完整两轮且每次获取新
   expect(challengeCount).toBe(22);
   expect(acceptedCount).toBe(22);
   expect(events).toEqual(["automatic", "failed"]);
-});
+}));
 
 test("本地v4通过后业务接受即结束，不花费TTOCR也不等待人工", async () => {
   const attempted: string[] = [];
@@ -89,7 +90,7 @@ test("额度/配置错误只禁用对应节点，后续节点继续，后台禁�
   expect(result.ok).toBe(false); expect(attempts).toEqual(["local", "ttocr"]); expect(manual).toBe(0);
 });
 
-test("人工票据在完成、通知失败和原操作退出后均取消", async () => {
+test("人工票据在完成、通知失败和原操作退出后均取消", async () => withCaptchaInteraction(() => true, async () => {
   let scope: AbortSignal | undefined, reads = 0;
   const service = createCaptchaService({ config: { providers: ["manual"] }, manualRelay: () => ({
     async register(_challenge, signal) { scope = signal; return { link: "https://example.invalid/manual", expiresAt: Date.now() + 1000, ticket: {} as never }; },
@@ -98,7 +99,7 @@ test("人工票据在完成、通知失败和原操作退出后均取消", async
   expect(await service.run({ signal: new AbortController().signal, verify: async () => {}, challenge: async () => v4,
     accept: async () => ({ accepted: true, value: true }), notify: () => true })).toEqual({ ok: true, value: true });
   expect(scope?.aborted).toBe(true); expect(reads).toBe(1);
-});
+}));
 
 test("本地v3/v4惰性内部调用、复用识别器且不走HTTP，signed risk_type完整传入", async () => {
   const seen: unknown[] = [];

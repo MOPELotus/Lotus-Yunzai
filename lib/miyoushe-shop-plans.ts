@@ -1,3 +1,4 @@
+import { withCaptchaInteraction } from "../packages/hoyo-client/captcha.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -878,7 +879,8 @@ export function createMiyousheShopPlans({
         let result: MiyousheShopExchangeResult = "missed";
         if (firstDispatchAllowed()) {
           started = true;
-          result = await submit(Object.freeze(submitted), activeSignal, verifyBinding, manual, firstDispatchAllowed);
+          result = await withCaptchaInteraction(() => Boolean(immediate && !activeSignal?.aborted),
+            () => submit(Object.freeze(submitted), activeSignal, verifyBinding, manual, firstDispatchAllowed));
         }
         await update(plan.id, "submitting", (current, data) => {
           if (result === "missed") {

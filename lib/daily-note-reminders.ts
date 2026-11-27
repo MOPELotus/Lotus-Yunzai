@@ -1,3 +1,4 @@
+import { withCaptchaInteraction } from "../packages/hoyo-client/captcha.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -384,7 +385,7 @@ export function createDailyNoteReminders({
     start() {
       if (!enabled || stopped || started || signal.aborted) return;
       started = true;
-      const tick = () => runDue()?.catch(() => console.warn($t("lib.daily-note-reminders.text_fa17cc2548")));
+      const tick = () => withCaptchaInteraction(() => false, () => runDue()?.catch(() => console.warn($t("lib.daily-note-reminders.text_fa17cc2548"))));
       if (cron !== undefined) {
         job = reminderJob(cron, tick);
         if (!job) console.warn($t("lib.daily-note-reminders.text_406611c259"));

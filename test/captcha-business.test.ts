@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import type { ProfileAccountContext, ProfileRequestContext } from "../packages/account/index.ts";
-import { getDefaultCaptchaSolver, setDefaultCaptchaSolver, type CaptchaChallenge, type CaptchaRun, type CaptchaSolver } from "../packages/hoyo-client/captcha.ts";
+import { withCaptchaInteraction, getDefaultCaptchaSolver, setDefaultCaptchaSolver, type CaptchaChallenge, type CaptchaRun, type CaptchaSolver } from "../packages/hoyo-client/captcha.ts";
 import { withMiyousheCaptcha } from "../packages/hoyo-client/captcha-business.ts";
 import { submitBbsCheckin } from "../packages/hoyo-client/bbs-checkin.ts";
 import { GameRecordRequestError } from "../packages/hoyo-client/game-record.ts";
@@ -302,3 +302,18 @@ test("社区 misc 的空 captcha_id 不遮蔽有效 v3，非空 v4 字段仍拒�
     expect(reads).toBe(captcha_id === "" ? 2 : 1);
   }
 });
+
+
+test("generic profile reads require an active command for manual captcha", async () => scoped(async () => {
+  const policies: (boolean | undefined)[] = [];
+  setDefaultCaptchaSolver({ async run(options) {
+    policies.push(options.allowManual);
+    return { ok: false, reason: "fixture" };
+  } });
+  const client = createHoyoClient(async () => risk());
+  const read = () => client.fetchDailyNotes([source]).catch(() => undefined);
+  await read();
+  await withCaptchaInteraction(() => true, read);
+  await withCaptchaInteraction(() => false, read);
+  expect(policies).toEqual([false, true, false]);
+}));

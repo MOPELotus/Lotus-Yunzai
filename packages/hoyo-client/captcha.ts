@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 /** Provider orchestration is supplied by the host; business adapters own acceptance. */
 export type CaptchaChallenge =
   | { readonly captchaVersion: 3; readonly gt: string; readonly challenge: string;
@@ -30,3 +31,12 @@ let defaultSolver: CaptchaSolver | undefined;
 /** Explicit host lifecycle registration; readers constructed before startup also see updates. */
 export function setDefaultCaptchaSolver(solver: CaptchaSolver | undefined) { defaultSolver = solver; }
 export function getDefaultCaptchaSolver() { return defaultSolver; }
+
+const interactions = new AsyncLocalStorage<() => boolean>();
+export function withCaptchaInteraction<T>(isCurrent: () => boolean, run: () => T): T {
+  return interactions.run(isCurrent, run);
+}
+export function captchaManualAllowed(explicit?: boolean): boolean {
+  const current = interactions.getStore();
+  return current?.() === true && explicit !== false;
+}

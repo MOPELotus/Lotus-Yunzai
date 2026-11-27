@@ -1,3 +1,4 @@
+import { withCaptchaInteraction } from "../packages/hoyo-client/captcha.ts";
 import { createTranslator as createTextTranslator } from "../packages/i18n/index.ts";
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
@@ -466,7 +467,7 @@ export function createMiyousheWeb({ publicBase, databasePath, assetDirectory, si
           if (await manualCheckin.revision(target, task, verifyJob) !== revision) {
             throw new ProfileError("changed", $t("lib.miyoushe-web.text_f25dad049a"));
           }
-          const result = await manualCheckin.run(target, task, verifyJob);
+          const result = await withCaptchaInteraction(() => !task.aborted && job.status === "running", () => manualCheckin.run(target, task, verifyJob));
           await verifyJob();
           job.status = result.status;
           if (validRevision(result.revision)) job.revision = result.revision;
