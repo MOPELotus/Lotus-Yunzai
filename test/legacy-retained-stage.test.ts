@@ -187,3 +187,22 @@ test.skipIf(!Bun.which("git"))("已归档散装入口只按相对路径剔除，
   expect(await readFile(join(to, "data/settings.json"), "utf8")).toBe('{"original":true}\n');
   expect(await readFile(join(from, "apps/retired.js"), "utf8")).toBe("retired");
 }));
+
+
+test("retained executable scripts keep original bytes while scanning dependencies after shebang and BOM", () => fixture(async (source, target, staging) => {
+  const good = "#!/usr/bin/env node\nimport path from 'node:path';\nexport default path;\n";
+  const bom = "\uFEFF#!/usr/bin/env node\r\nimport fs from 'node:fs';\r\nexport default fs;\r\n";
+  const missing = "#!/usr/bin/env node\nimport missing from '@fixture/missing-dependency';\nexport default missing;\n";
+  await put(source, "plugins/executable/index.mjs", good, 0o755);
+  await put(source, "plugins/executable/bom.mjs", bom, 0o755);
+  await put(source, "plugins/missing/index.mjs", missing, 0o755);
+  const plan = await planMigration(source, target);
+  const result = await stageRetainedLegacyPlugins(plan, staging);
+  expect(result.retained.map(item => item.path)).toContain("plugins/executable");
+  expect(result.held).toContainEqual(expect.objectContaining({ path: "plugins/missing", reason: "unresolved-dependency" }));
+  for (const [file, bytes] of [["index.mjs", good], ["bom.mjs", bom]]) {
+    expect(await readFile(join(source, "plugins/executable", file!), "utf8")).toBe(bytes!);
+    expect(await readFile(join(staging, "plugins/executable", file!), "utf8")).toBe(bytes!);
+  }
+  expect(await readFile(join(source, "plugins/missing/index.mjs"), "utf8")).toBe(missing);
+}));

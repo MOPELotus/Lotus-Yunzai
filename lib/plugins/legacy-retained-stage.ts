@@ -136,7 +136,8 @@ async function inspectStagedPlugin(
       manifests.set(dirname(path), manifestDeps);
     } else if (info.isFile() && scanner) {
       if (info.size > 8 * 1024 * 1024) throw new Error($t("lib.plugins.legacy-retained-stage.text_d396fde7ae"));
-      for (const { path: specifier, kind } of scanner.scanImports(await Bun.file(path).text())) {
+      const source = (await Bun.file(path).text()).replace(/^\uFEFF/u, "").replace(/^#![^\r\n]*/u, "");
+      for (const { path: specifier, kind } of scanner.scanImports(source)) {
         const pkg = browserName(specifier);
         if (pkg) browser.add(pkg);
         imports.push({ source: relative(localRoot, path), specifier, mode: kind === "require-call" ? "require" : "import" });
