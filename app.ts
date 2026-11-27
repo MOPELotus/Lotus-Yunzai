@@ -2109,7 +2109,9 @@ if (import.meta.main) {
 
   async function dispatchMessage(incoming: MessageEvent, handled?: () => void) {
     if (isGameSignatureInput(incoming)) return;
+    const quotedRecall = quotedRecallSessions.get(incoming);
     incoming = quietDeliveryNotices(incoming);
+    if (quotedRecall) quotedRecallSessions.set(incoming, quotedRecall);
     let prepared = groupDispatch.prepare(incoming);
     const { event, allowNew } = prepared;
     const scope = allowNew && event.msg ? ownCheckinSession(event, []) : undefined;
