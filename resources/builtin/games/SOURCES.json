@@ -162,8 +162,8 @@
       },
       {
         "path": "character/profile-detail.css",
-        "bytes": 23882,
-        "sha256": "807b53faadb08cadc62ec239ca85baadd121bdd978f16304b055355031a2e081"
+        "bytes": 24099,
+        "sha256": "9535a1e86e22a693f7718589a45e348cbb949068692836d93263162e032dacaa"
       },
       {
         "path": "character/profile-detail.html",
@@ -347,23 +347,23 @@
       },
       {
         "path": "common/font/HYWH-65W.ttf",
-        "bytes": 3155072,
-        "sha256": "809ab0683bff573c55305c2c723c1692c64d6ecfdb78620b6b99d7a66d662dff"
+        "bytes": 3153156,
+        "sha256": "6715b6f110ab8d78bd4759fb901956046c2bc8944dd1741e064ccc006157a3fa"
       },
       {
         "path": "common/font/HYWH-65W.woff",
-        "bytes": 2061044,
-        "sha256": "b699f4cb024d6374a49f05ff381dd561c2b9ff8a0b7ce9d25f3a8d139e33337f"
+        "bytes": 2061420,
+        "sha256": "3ddf281cd0f3db8dc58b48b4755b9c27c2cf495c210b9cf6198a56c76c0051f8"
       },
       {
         "path": "common/font/NZBZ.ttf",
-        "bytes": 1501200,
-        "sha256": "979eb11a284220d6e3077d2ff63ed6398dec84ef90a0908c4d9fa28f37bf5dc9"
+        "bytes": 1489424,
+        "sha256": "a73d522e65fb4c7a2f9bf01fff3b40f8ac11098c0d6dbd0209bafa8ad5eb735a"
       },
       {
         "path": "common/font/NZBZ.woff",
-        "bytes": 899956,
-        "sha256": "e76437fee538145d2157917667d1ec21e2e3ee2c8cf86179abf839c9b38c30e6"
+        "bytes": 898200,
+        "sha256": "dbd564112066006fdec6d9a21cb9927089b8db99ba241418b0335bdcff6ad8dd"
       },
       {
         "path": "common/font/tttgbnumber.ttf",
@@ -3402,8 +3402,8 @@
       },
       {
         "path": "meta-gs/character/八重神子/calc.js",
-        "bytes": 3110,
-        "sha256": "21963a34a6b1e433a5cf85a4b981589050a34e0ab8b29d72262dbebfc7afa5b7"
+        "bytes": 3108,
+        "sha256": "92f614fa04d0531be58540312e3dc782bfa686b25b9d3d268791aa474fec1a6b"
       },
       {
         "path": "meta-gs/character/八重神子/calc_auto.js",
@@ -28202,8 +28202,8 @@
       },
       {
         "path": "meta-sr/character/星神★阿哈/imgs/face.webp",
-        "bytes": 10996,
-        "sha256": "3dd66a5b0c2780ffd77db24f0bb842de307b6087143a3fdfdf46c37a70dbe6c2"
+        "bytes": 9768,
+        "sha256": "ed2d48ae48ff3904d1074063a1b901bda81302937bcfc6f7d5c7047736f1141c"
       },
       {
         "path": "meta-sr/character/星神★阿哈/imgs/preview.webp",
@@ -38875,6 +38875,42 @@
         "bytes": 1085,
         "sha256": "6c10db94c2446a85a25c2bbffc6d33c4db0f8f22ed4b19e7697736381eb62fb1",
         "sourcePath": "LICENSE"
+      }
+    ],
+    "upstreamPatches": [
+      {
+        "repository": "https://github.com/yoimiya-kokomi/miao-plugin",
+        "revision": "d7bd26c487cb9e0b1ceafbbab769ed5f67c772b8",
+        "files": [
+          {
+            "path": "character/profile-detail.css",
+            "blob": "831fff4ee2b7f49536581a9e1dc6e36648dd5880"
+          },
+          {
+            "path": "common/font/HYWH-65W.ttf",
+            "blob": "573811fc2a4cd084d03dcf378b07c362022c7d58"
+          },
+          {
+            "path": "common/font/HYWH-65W.woff",
+            "blob": "0ade7b7083427c6bfd1bbb750b427b69e379f2a8"
+          },
+          {
+            "path": "common/font/NZBZ.ttf",
+            "blob": "10220747c0c68b8418f09ed04070bc3b9bc0e1b7"
+          },
+          {
+            "path": "common/font/NZBZ.woff",
+            "blob": "4b28e55ad80769d9977641b40ed9afd00c666d46"
+          },
+          {
+            "path": "meta-gs/character/八重神子/calc.js",
+            "blob": "7e43b28cec300c69b596416bfba6cd13577ef68f"
+          },
+          {
+            "path": "meta-sr/character/星神★阿哈/imgs/face.webp",
+            "blob": "b28890631cc0ba55e32495effb8a9c22d09e0317"
+          }
+        ]
       }
     ]
   },
