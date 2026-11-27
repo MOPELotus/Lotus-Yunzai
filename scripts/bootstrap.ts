@@ -86,6 +86,11 @@ if (await Bun.file(new URL(".gitmodules", root)).exists()) {
 const installArgs = [process.execPath, "install", "--frozen-lockfile"];
 let installCode = await command($t("scripts.bootstrap.text_efb49f60da"), installArgs);
 const prepared = installCode === 0 ? 0 : await command($t("scripts.bootstrap.text_7b014aff02"), [...installArgs, "--ignore-scripts"]);
+if (prepared === 0) {
+  const native = await command($t("lib.native-build.checking", { name: $t("lib.native-build.label") }), [process.execPath, "--no-env-file", "scripts/native-check.ts"]);
+  if (native !== 0) process.exit(native);
+  if (installCode !== 0) installCode = await command($t("scripts.bootstrap.text_0deb4d5776"), installArgs);
+}
 // Load each probe in a fresh Bun process so a failed import does not survive native recovery.
 const loadSkiaNative = () => Bun.spawn(
   [process.execPath, "--eval", 'await import("./packages/skia/index.ts")'],

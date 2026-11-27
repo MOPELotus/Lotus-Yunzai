@@ -3,7 +3,17 @@ import { cp, lstat, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { buildExternalPluginCheckout, buildUpdateCheckout, initializeUpdateSubmodules } from "../lib/update-build.ts";
+import { buildExternalPluginCheckout, buildUpdateCheckout, initializeUpdateSubmodules, runUpdateProcess } from "../lib/update-build.ts";
+
+test("source compilation can extend the update deadline once while ordinary hangs still expire", async () => {
+  const command = [process.execPath, "-e", "setTimeout(()=>process.exit(0),100)"];
+  let extensions = 0;
+  expect(await runUpdateProcess(process.cwd(), {}, command, 30, undefined, undefined,
+    { timeout: 300, enabled: async () => { extensions++; return true; } })).toBe(true);
+  expect(extensions).toBe(1);
+  expect(await runUpdateProcess(process.cwd(), {}, command, 30, undefined, undefined,
+    { timeout: 300, enabled: async () => false })).toBe(false);
+});
 
 async function fixture(run: (root: string, checkout: string, cache: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "lotus-update-build-"));

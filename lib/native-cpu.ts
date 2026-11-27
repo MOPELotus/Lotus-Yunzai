@@ -38,6 +38,11 @@ export function nativeCpuFingerprint(cpu: NativeCpu) {
   return createHash("sha256").update(JSON.stringify([cpu.platform, cpu.arch, cpu.known, cpu.runtime, cpu.system, [...cpu.features].sort()])).digest("hex");
 }
 
+export function nativeHostFingerprint(cpu: NativeCpu) {
+  const libc = cpu.system?.includes("non-glibc") ? "non-glibc" : cpu.system?.includes("glibc:") ? "glibc" : "unknown";
+  return createHash("sha256").update(JSON.stringify([cpu.platform, cpu.arch, cpu.known, libc, [...cpu.features].sort()])).digest("hex");
+}
+
 export function needsBaselineBuild(cpu: NativeCpu, requiredFeatures: readonly string[]) {
   if (cpu.arch !== "x64" || !cpu.known) return false;
   return requiredFeatures.some(feature => !cpu.features.includes(feature));

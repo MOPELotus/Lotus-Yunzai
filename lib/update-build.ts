@@ -4,12 +4,16 @@ const $t = createTextTranslator("core", messageCatalog.messages);
 import { lstat, mkdir, readFile } from "node:fs/promises";
 import { devNull } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { hasNativeSourceMode, nativeBuildCacheRoot } from "./native-build.ts";
+import { detectNativeCpu } from "./native-cpu.ts";
 
 const inheritedVariable = /^(?:LANG|LANGUAGE|LC_[A-Z_]+|TZ|(?:HTTP|HTTPS|ALL|NO)_PROXY|(?:http|https|all|no)_proxy)$/u;
+interface BuildContinuation { timeout: number; enabled: () => Promise<boolean> }
 
 export async function runUpdateProcess(
   directory: string, env: NodeJS.ProcessEnv, command: string[], timeout: number, signal?: AbortSignal,
   diagnostic?: (result: { code: number; timedOut: boolean; stderr: string }) => void,
+  continuation?: BuildContinuation,
 ): Promise<boolean> {
   signal?.throwIfAborted();
   const child = Bun.spawn(command, {
@@ -58,9 +62,17 @@ export async function runUpdateProcess(
     stop();
     rejectAbort(signal!.reason);
   }
-  const deadline = setTimeout(() => {
+  let finished = false;
+  const expire = () => {
     timedOut = true;
     stop();
+  };
+  let deadline = setTimeout(async () => {
+    let extend = false;
+    try { extend = Boolean(continuation && await continuation.enabled()); } catch {}
+    if (finished) return;
+    if (extend) deadline = setTimeout(expire, continuation!.timeout);
+    else expire();
   }, timeout);
   signal?.addEventListener("abort", onAbort, { once: true });
   try {
@@ -73,6 +85,7 @@ export async function runUpdateProcess(
     });
     return code === 0;
   } finally {
+    finished = true;
     clearTimeout(deadline);
     signal?.removeEventListener("abort", onAbort);
   }
@@ -80,9 +93,10 @@ export async function runUpdateProcess(
 
 async function run(
   directory: string, env: NodeJS.ProcessEnv, command: string[], timeout: number, failure: string, signal?: AbortSignal,
+  continuation?: BuildContinuation,
 ) {
   try {
-    if (await runUpdateProcess(directory, env, command, timeout, signal)) return;
+    if (await runUpdateProcess(directory, env, command, timeout, signal, undefined, continuation)) return;
   } catch {
     signal?.throwIfAborted();
     // Keep candidate output and system paths out of host replies.
@@ -146,7 +160,10 @@ export async function buildUpdateCheckout(
   signal?.throwIfAborted();
   const env = await buildEnvironment(cacheDirectory);
   const command = [process.execPath, "run", "--no-env-file", "--no-orphans"];
-  await run(directory, env, [...command, "scripts/bootstrap.ts", "--build-only"], 15 * 60_000, $t("lib.update-build.text_a8f50a0fa8"), signal);
+  env.LOTUS_NATIVE_BUILD_ROOT = nativeBuildCacheRoot();
+  const cpu = await detectNativeCpu();
+  await run(directory, env, [...command, "scripts/bootstrap.ts", "--build-only"], 15 * 60_000, $t("lib.update-build.text_a8f50a0fa8"), signal,
+    { timeout: (8 * 60 - 15) * 60_000, enabled: () => hasNativeSourceMode(env.LOTUS_NATIVE_BUILD_ROOT!, cpu) });
   signal?.throwIfAborted();
   await preparePlugins?.();
   signal?.throwIfAborted();

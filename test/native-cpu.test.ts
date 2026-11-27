@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { detectNativeCpu, linuxCpuFeatures, nativeBuildKey, nativeCpuFingerprint, nativeProbeOutcome, needsBaselineBuild } from "../lib/native-cpu.ts";
+import { detectNativeCpu, linuxCpuFeatures, nativeBuildKey, nativeCpuFingerprint, nativeHostFingerprint, nativeProbeOutcome, needsBaselineBuild } from "../lib/native-cpu.ts";
 
 test("CPU flags are intersected across cores and unavailable data does not invent capabilities", async () => {
   expect(linuxCpuFeatures("processor: 0\nflags : sse2 avx avx2\nprocessor: 1\nflags : sse2 avx\n")).toEqual(["avx", "sse2"]);
@@ -26,4 +26,7 @@ test("cache identity includes version, source and CPU; SIGILL stays distinct fro
   expect(nativeBuildKey("skia", "4.0.1", "sha-a", { ...cpu, features: ["sse2"] })).not.toBe(key);
   expect([0, 132, -4, 1].map(code => nativeProbeOutcome(code))).toEqual(["ready", "illegal-instruction", "illegal-instruction", "failed"]);
   expect(nativeProbeOutcome(132, true)).toBe("timeout");
+  expect(nativeHostFingerprint(cpu)).toBe(nativeHostFingerprint({ ...cpu, runtime: "new-runtime" }));
+  expect(nativeCpuFingerprint(cpu)).not.toBe(nativeCpuFingerprint({ ...cpu, runtime: "new-runtime" }));
+  expect(nativeHostFingerprint(cpu)).not.toBe(nativeHostFingerprint({ ...cpu, features: ["sse2"] }));
 });

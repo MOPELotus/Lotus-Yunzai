@@ -3,7 +3,7 @@ import { createTranslator as createTextTranslator } from "../packages/i18n/index
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
 import { createHash, randomBytes } from "node:crypto";
-import { chmod, copyFile, lstat, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
@@ -12,6 +12,8 @@ import { fileURLToPath } from "node:url";
 import { createStorageClient, type StorageConnectionOptions } from "@lotus-yunzai/storage";
 import { readOptionalLocalConfig } from "./config.ts";
 import { parseStorageSettings } from "./valkey-config.ts";
+import { buildNativeArtifact, nativeBuildCacheRoot, nativeSourceMode, rememberNativeSourceMode } from "./native-build.ts";
+import { detectNativeCpu } from "./native-cpu.ts";
 
 // Published by https://valkey.io/download/releases/v8-1-12/ (official binary artifacts).
 const release = {
@@ -64,6 +66,20 @@ async function usable(binary: string) {
   try { await command([binary, "--version"]); return true; } catch { return false; }
 }
 async function compileOfficial(directory: string, signal?: AbortSignal, progress?: (message: string) => void) {
+  if (process.platform === "linux" && process.arch === "x64") {
+    const cpu = await detectNativeCpu(), cacheRoot = nativeBuildCacheRoot();
+    await rememberNativeSourceMode(cacheRoot, "valkey", cpu);
+    const built = await buildNativeArtifact({ component: "valkey", version: "8.1.12", cpu, cacheRoot, signal, progress });
+    const binary = join(directory, "valkey-server");
+    const candidate = binary + ".native-" + randomBytes(8).toString("hex");
+    try {
+      await copyFile(built, candidate); await chmod(candidate, 0o700);
+      if (!await usable(candidate)) throw new Error($t("lib.managed-valkey.text_154dd63891"));
+      signal?.throwIfAborted();
+      await rename(candidate, binary);
+    } finally { await rm(candidate, { force: true }); }
+    return binary;
+  }
   const make = Bun.which("make"), cc = Bun.which("cc"), tar = Bun.which("tar");
   if (!make || !cc || !tar) throw new Error($t("lib.managed-valkey.text_21d33979c2"));
   progress?.($t("lib.managed-valkey.text_c917308c00"));
@@ -86,6 +102,10 @@ async function prepareBinary(root: URL, install: boolean, signal?: AbortSignal, 
   if (system && await usable(system)) { progress?.($t("lib.managed-valkey.text_83f01e7eac")); return system; }
   const directory = join(fileURLToPath(root), "data/tools/valkey");
   const binary = join(directory, "valkey-server");
+  if (install && await nativeSourceMode(nativeBuildCacheRoot(), "valkey", await detectNativeCpu())) {
+    await privateDirectory(directory);
+    return compileOfficial(directory, signal, progress);
+  }
   if (await usable(binary)) return binary;
   if (!install) throw new Error($t("lib.managed-valkey.text_fd31eb1387"));
   if (process.platform === "win32") throw new Error($t("lib.managed-valkey.text_d5094e1b50"));

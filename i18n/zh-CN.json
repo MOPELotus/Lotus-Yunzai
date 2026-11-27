@@ -4,6 +4,7 @@
   "namespace": "core",
   "description": "机器人核心、账号命令、启动初始化与日志",
   "sections": {
+    "lib.native-build": {"description": "原生依赖自动兼容构建提示文案：仅在 CPU 不兼容时于私有目录准备工具链并执行本机构建，不修改全局环境，现代机器沿用预构建包。", "source": "lib/native-toolchain.ts"},
     "app": {
       "description": "机器人核心运行入口，负责存储与协议服务监听、账号及签到计划调度、命令分发、群管权限控制与进程生命周期管理",
       "source": "app.ts"
@@ -1150,6 +1151,23 @@
     }
   },
   "messages": {
+    "lib.native-build.cpu": "检测到 CPU 架构：{arch}，关键指令集：{features}",
+    "lib.native-build.unknown": "未能读取",
+    "lib.native-build.prebuilt": "组件 {name}（{version}）验证通过，使用预构建版本",
+    "lib.native-build.selected-source": "组件 {name}（{version}）选择本机构建",
+    "lib.native-build.label": "原生组件",
+    "lib.native-build.runtime_unsupported": "当前处理器不满足 Bun 运行最低指令集要求（{features}）。",
+    "lib.native-build.unsupported_source": "组件 {name} 在当前系统（{platform}/{arch}）暂无已验证的自动源码构建路线。",
+    "lib.native-build.checking": "正在检查 {name} 的本机兼容性...",
+    "lib.native-build.tools": "首次准备 {name} 所需的私有编译环境...",
+    "lib.native-build.building": "正在本机构建 {name} {version}...",
+    "lib.native-build.cached": "已复用 {name} 本机构建缓存",
+    "lib.native-build.failed": "{name} 本机构建失败：{details}",
+    "lib.native-build.unsupported": "当前 {platform}/{arch} 缺少可自动准备的本机构建环境",
+    "lib.native-build.checksum": "{name} 下载校验失败",
+    "lib.native-build.source": "正在核对 {name} 源码版本...",
+    "lib.native-build.probe": "正在验证 {name} 本机构建...",
+    "lib.native-build.busy": "本机构建任务正在执行，请稍候",
     "lib.character-gallery-source.rate-limit": "GitHub API 请求配额已耗尽，请在 {time} 后重试。",
     "lib.character-gallery-source.rate-limit-unknown": "GitHub API 请求配额已耗尽，服务器未提供重置时间，请稍后重试。",
     "app.text_0091a6122f": "图库",
@@ -4976,6 +4994,22 @@
     "lib.checkin-batch-retry-commands.interrupted": "全部补签因跨日、服务停止或权限变更已中止，已完成部分已保留：共 {total} 个档案，本次成功 {success}，失败 {failed}，已成功跳过 {skipped}，执行中跳过 {busy}，通知失败 {notifyFailed}。"
   },
   "parameters": {
+    "lib.native-build.cpu": {"arch": "CPU架构", "features": "指令集列表"},
+    "lib.native-build.unknown": {},
+    "lib.native-build.prebuilt": {"name": "组件或工具名称", "version": "组件版本号"},
+    "lib.native-build.selected-source": {"name": "组件或工具名称", "version": "组件版本号"},
+    "lib.native-build.label": {},
+    "lib.native-build.runtime_unsupported": {"features": "指令集列表"},
+    "lib.native-build.unsupported_source": {"name": "组件或工具名称", "platform": "操作系统", "arch": "CPU架构"},
+    "lib.native-build.checking": {"name": "组件或工具名称"},
+    "lib.native-build.tools": {"name": "组件或工具名称"},
+    "lib.native-build.building": {"name": "组件或工具名称", "version": "组件版本号"},
+    "lib.native-build.cached": {"name": "组件或工具名称"},
+    "lib.native-build.failed": {"name": "组件或工具名称", "details": "失败诊断信息"},
+    "lib.native-build.unsupported": {"platform": "操作系统", "arch": "CPU架构"},
+    "lib.native-build.checksum": {"name": "组件或工具名称"},
+    "lib.native-build.source": {"name": "组件或工具名称"},
+    "lib.native-build.probe": {"name": "组件或工具名称"},
     "lib.character-gallery-source.rate-limit": {"time": "配额重置后可重试的时间"},
     "app.text_242958f459": {
       "name": "定时任务名称"
