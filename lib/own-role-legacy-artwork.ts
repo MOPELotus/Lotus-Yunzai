@@ -84,7 +84,7 @@ export function createOwnRoleLegacyArtwork(profiles: ProfileStore, lockFile: Acq
     if (game === "zzz" || signal.aborted) return;
     try {
       const source = await profiles.requestContext(qq, id, game, uid);
-      const account = profileCookieAccountId(source.account);
+      const account = source.international ? `os:${source.international.realm}:${source.international.accountId}` : profileCookieAccountId(source.account);
       if (!account || source.role.uid !== uid || signal.aborted) return;
       const player = await readLegacyPlayerPortrait(game, uid, signal);
       if (!player || signal.aborted) return;
@@ -121,7 +121,8 @@ export function createOwnRoleLegacyArtwork(profiles: ProfileStore, lockFile: Acq
       const artwork = await sourceArt(directory, game, name, elem, signal);
       if (!artwork || signal.aborted || await discarded()) return;
       const current = await profiles.requestContext(qq, id, game, uid);
-      if (current.revision === source.revision && current.role.uid === uid && profileCookieAccountId(current.account) === account && !signal.aborted) return artwork;
+      const currentAccount = current.international ? `os:${current.international.realm}:${current.international.accountId}` : profileCookieAccountId(current.account);
+      if (current.revision === source.revision && current.role.uid === uid && currentAccount === account && !signal.aborted) return artwork;
     } catch {
       // 缺档、换绑和旧素材失效都交回现在的 UID 卡头像回退。
     }

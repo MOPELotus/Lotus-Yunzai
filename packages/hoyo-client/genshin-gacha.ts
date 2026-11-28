@@ -53,7 +53,7 @@ function cnRegion({ game, role: { uid, gameBiz: roleBiz, region: explicit } }: P
   return region;
 }
 
-function parseRow(row: unknown, uid: string, type: GenshinGachaPool): GenshinGachaRow {
+function parseRow(row: unknown, uid: string, type: GenshinGachaPool, clockShift = 0): GenshinGachaRow {
   if (!record(row)) throw new HoyoRequestError("response", $t("genshin-gacha.text_203e0e6c84"));
   const id = decimal(row.id);
   const gachaType = typeof row.gacha_type === "string" || typeof row.gacha_type === "number" ? String(row.gacha_type) : "";
@@ -61,7 +61,16 @@ function parseRow(row: unknown, uid: string, type: GenshinGachaPool): GenshinGac
       (gachaType !== String(type) && !(type === 301 && gachaType === "400"))) {
     throw new HoyoRequestError("response", $t("genshin-gacha.text_ce1ee3106c"));
   }
-  return { ...row, id, uid, gacha_type: gachaType as RecordPool };
+  let shiftedTime: string | undefined;
+  if (clockShift) {
+    const time = typeof row.time === "string" ? row.time : "";
+    const stamp = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(time) ? Date.parse(time.replace(" ", "T") + "Z") : NaN;
+    if (!Number.isFinite(stamp) || new Date(stamp).toISOString().slice(0, 19).replace("T", " ") !== time) {
+      throw new HoyoRequestError("response", $t("genshin-gacha.text_ce1ee3106c"));
+    }
+    shiftedTime = new Date(stamp + clockShift * 3600000).toISOString().slice(0, 19).replace("T", " ");
+  }
+  return { ...row, ...(shiftedTime && { time: shiftedTime }), id, uid, gacha_type: gachaType as RecordPool };
 }
 
 export class GenshinAuthKeyRequestError extends HoyoRequestError {}
@@ -181,7 +190,8 @@ async function readGenshinGachaOnce(
         throw new HoyoRequestError("response", $t("genshin-gacha.text_afa5d7703c"));
       }
       if (!data.list.length) return rows;
-      const batch = data.list.map((row) => parseRow(row, uid, type));
+      const clockShift = source.international ? region === "os_usa" ? 13 : region === "os_euro" ? 7 : 0 : 0;
+      const batch = data.list.map((row) => parseRow(row, uid, type, clockShift));
       const next = batch[batch.length - 1]!.id;
       if (cursor !== "0" && BigInt(next) >= BigInt(cursor)) {
         throw new HoyoRequestError("response", $t("genshin-gacha.text_e42ce73091"));
