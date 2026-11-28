@@ -129,6 +129,7 @@ import { gachaExpectationCommands, gachaExpectationModuleName, isGachaExpectatio
 import { hoyoLabProfileCommands, isHoYoLabCookieInput } from "./lib/hoyolab-profile-commands.ts";
 import { hoyoTransportForBot } from "./lib/hoyolab-network.ts";
 import { createCaptchaService } from "./lib/captcha/service.ts";
+import { tracePanelCacheTask } from "./lib/runtime-trace.ts";
 import { runInitializationStage } from "./lib/initialization-progress.ts";
 import { setDefaultCaptchaSolver } from "@lotus-yunzai/hoyo-client";
 import { startImagePreviews } from "./lib/image-previews.ts";
@@ -3174,8 +3175,9 @@ if (import.meta.main) {
             }
             return false;
           },
-          report({ provider, round, attempt, reason }) {
-            console.info($t("app.text_9027c66a53", { "provider": provider, "round": round, "attempt": attempt, "reason": reason }));
+          report({ provider, round, attempt, reason, stage, code, runId, taskId }) {
+            console.info($t("app.captcha-failure-diagnostics", { provider, round, attempt, reason,
+              stage, code: code ?? 'unknown', runId, taskId: taskId ?? '-' }));
           },
         });
         setDefaultCaptchaSolver(captchaService);
@@ -4253,10 +4255,13 @@ if (import.meta.main) {
       },
       panelCacheRuntime: probingUpdate ? undefined : {
         disconnect: handoffSession.signal,
-        register: (game, run) => registerModuleTask($t(game === "gs" ? "app.gs-panel-cache-task" : "app.sr-panel-cache-task"), "0 0 * * * *", run, true),
+        register: (game, run) => registerModuleTask($t(game === "gs" ? "app.gs-panel-cache-task" : "app.sr-panel-cache-task"), "0 0 * * * *",
+          tracePanelCacheTask(game === 'gs' ? 'gs-panel-cache' : 'sr-panel-cache', run,
+            entry => console.info($t('app.panel-cache-trace', entry))), true),
       },
       zzzReminderRuntime: probingUpdate ? undefined : {
-        registerPanelCacheTask: run => registerModuleTask($t("app.zzz-panel-cache-task"), "0 0 * * * *", run, true),
+        registerPanelCacheTask: run => registerModuleTask($t("app.zzz-panel-cache-task"), "0 0 * * * *",
+          tracePanelCacheTask('zzz-panel-cache', run, entry => console.info($t('app.panel-cache-trace', entry))), true),
         disconnect: handoffSession.signal,
         registerTask: run => registerModuleTask($t("app.text_0e17df94d9"), "0 * * * * *", run, true),
         route: (userId, botId, signal) => resolvePrivateFriendRoute(subscriptionTransport, userId, botId,

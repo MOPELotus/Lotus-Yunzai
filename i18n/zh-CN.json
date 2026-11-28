@@ -1299,6 +1299,8 @@
     "app.text_8da97ddda9": "开启",
     "app.text_8e0ddab11a": "只有当前机器人的主人才能执行此操作。",
     "app.text_8eeae42aa2": "[HTTPS] 无法读取证书或启动监听，已跳过 HTTPS。",
+    "app.captcha-failure-diagnostics": "[验证码] {provider} 第{round}轮第{attempt}次：{reason} stage={stage} code={code} runId={runId} taskId={taskId}",
+    "app.panel-cache-trace": "[PanelRefresh] task={task} taskId={taskId} state={state}",
     "app.text_9027c66a53": "[验证码] {provider} 第{round}轮第{attempt}次：{reason}",
     "app.text_91868678e0": "[进程管理] 未确认旧版操作回执。",
     "app.text_92fc95a61f": "档案 {profileId} 正在自动验证。",

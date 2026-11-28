@@ -1,10 +1,28 @@
 import { captchaManualAllowed } from "../../packages/hoyo-client/captcha.ts";
+import { CaptchaError } from "@lotus-yunzai/captcha";
+import { randomUUID } from "node:crypto";
+import { runtimeTraceId } from "../runtime-trace.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { CaptchaChallenge, CaptchaEvent, CaptchaProof, CaptchaRun, CaptchaSolver } from "@lotus-yunzai/hoyo-client";
 import type { createManualCaptchaRelay } from "./manual-relay.ts";
 import { captchaConfig, createAutomaticProviders, normalizeCaptchaProof, ProviderFailure, type CaptchaConfig, type ProviderId } from "./providers.ts";
 
 type Relay = Pick<ReturnType<typeof createManualCaptchaRelay>, "register" | "readResult">;
+export interface CaptchaFailureReport {
+  provider: ProviderId; round: number; attempt: number; reason: string;
+  stage: 'solve' | 'normalize' | 'accept'; code?: string; runId: string; taskId?: string;
+}
+const localErrorCodes = new Set([
+  'local_worker_failed', 'local_worker_exited', 'invalid_worker_result', 'timeout', 'recognition_failed',
+  'model_missing', 'captcha_busy', 'service_closed', 'aborted', 'unsupported_puzzle', 'unsupported_version',
+  'empty_response', 'invalid_upstream_response', 'upstream_api_error', 'upstream_response_too_large',
+  'invalid_answer', 'invalid_v', 'verification_failed', 'answer_type_mismatch', 'invalid_grid',
+  'invalid_resource_url', 'proof_identity_mismatch', 'protocol_key_updated', 'unsupported_build',
+]);
+function safeErrorCode(error: unknown): string | undefined {
+  if (error instanceof CaptchaError && localErrorCodes.has(error.code)) return error.code;
+  if (error instanceof DOMException && error.name === 'TimeoutError') return 'timeout';
+}
 export interface CaptchaServiceOptions {
   readonly config?: unknown;
   readonly manualRelay?: () => Relay | undefined;
@@ -14,7 +32,7 @@ export interface CaptchaServiceOptions {
   readonly now?: () => number;
   readonly wait?: (ms: number, signal: AbortSignal) => Promise<unknown>;
   readonly providers?: { available(id: ProviderId): boolean; solve(id: "local" | "ttocr", challenge: CaptchaChallenge, signal: AbortSignal): Promise<CaptchaProof>; close?(): Promise<void> };
-  readonly report?: (entry: { provider: ProviderId; round: number; attempt: number; reason: string }) => void;
+  readonly report?: (entry: CaptchaFailureReport) => void;
 }
 export function createCaptchaService(options: CaptchaServiceOptions = {}): CaptchaSolver & { readonly config: CaptchaConfig; close(): Promise<void> } {
   const config = captchaConfig(options.config);
@@ -29,6 +47,8 @@ export function createCaptchaService(options: CaptchaServiceOptions = {}): Captc
     async close() { closed.abort(); await providers.close?.(); },
     async run<T>(input: CaptchaRun<T>) {
       if (!config.enabled) return { ok: false, reason: "disabled" };
+      const runId = randomUUID(), taskId = runtimeTraceId();
+      const report = (entry: Omit<CaptchaFailureReport, 'runId' | 'taskId'>) => options.report?.({ ...entry, runId, ...(taskId && { taskId }) });
       const operation = new AbortController();
       const signal = AbortSignal.any([input.signal, lifecycle, operation.signal]);
       const usedChallenges = new Set<string>(), usedProofs = new Set<string>(), disabled = new Set<ProviderId>();
@@ -103,20 +123,20 @@ export function createCaptchaService(options: CaptchaServiceOptions = {}): Captc
                 await guard();
                 reason = error instanceof ProviderFailure ? error.reason : "provider_request_failed";
                 if (error instanceof ProviderFailure && !error.retryable) disabled.add(provider);
-                options.report?.({ provider, round, attempt, reason });
+                report({ provider, round, attempt, reason, stage: 'solve', code: safeErrorCode(error) });
                 if (disabled.has(provider)) break;
                 continue;
               }
               const normalized = normalizeCaptchaProof(proof, next);
               if (!normalized) {
                 reason = "invalid_proof";
-                options.report?.({ provider, round, attempt, reason });
+                report({ provider, round, attempt, reason, stage: 'normalize' });
                 continue;
               }
               const proofKey = "validate" in normalized ? `v3:${normalized.validate}` : `v4:${normalized.lotNumber}`;
               if (usedProofs.has(proofKey)) {
                 reason = "proof_reused";
-                options.report?.({ provider, round, attempt, reason });
+                report({ provider, round, attempt, reason, stage: 'normalize' });
                 continue;
               }
               usedProofs.add(proofKey);
@@ -134,7 +154,7 @@ export function createCaptchaService(options: CaptchaServiceOptions = {}): Captc
                 return { ok: true, value: accepted.value };
               }
               reason = "business_rejected";
-              options.report?.({ provider, round, attempt, reason });
+              report({ provider, round, attempt, reason, stage: 'accept' });
             }
           }
         }
