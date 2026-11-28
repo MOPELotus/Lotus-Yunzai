@@ -101,3 +101,29 @@ test("delegate exposes roster only for the active authorized group and rejects s
   expect(delivered).toEqual([701,43,700]);
   authorized.close();
 });
+
+test("delegated forwards retain the selected target and cannot escape hold or completed dispatch", async () => {
+  const scope = new AbortController();
+  const sent: Array<{groupId?:number;userId:number}> = [];
+  let late: MessageEvent["forward"];
+  const dispatcher = createCommandDelegation({signal:scope.signal,mayDelegate:()=>true,isMaster:()=>false,
+    async run(event,handled) { handled(); late=event.forward; expect(await event.forward?.(["fixture"])).toBe(true); },
+  });
+  const origin: MessageEvent = {post_type:"message",message_type:"group",self_id:99,user_id:42,group_id:700,
+    isMaster:true,isGroup:true,isPrivate:false,msg:"#代",raw_message:"#代",message:"#代",reply:async()=>true,
+    [delegationSession]: {signal:scope.signal,groups:async()=>[700],members:async()=>[43],isFriend:async()=>true,
+      memberRole:async()=>"member",botMute:async()=>undefined,send:async()=>"confirmed",
+      forward:async(target)=>{sent.push(target);return "confirmed";},
+    },
+  };
+  const authorized=dispatcher.authorize(origin)!;
+  const actor: ExecuteContext={isMaster:true,message_type:"group",self_id:99,user_id:42,group_id:700,delegationSignal:authorized.event.delegationSignal};
+  const active=authorized.event.delegationSignal!;
+  for(const [group,hold] of [["本群",false],["私聊",false],["本群",true]] as const){
+    const request:ExecuteRequest={group,users:[43],hold,gap:0,command:"%抽卡记录",segments:[{type:"text",text:"%抽卡记录"}]};
+    const target=(await dispatcher.execute.resolveTargets(actor,request,active))[0]!;
+    expect(await dispatcher.execute.dispatch(actor,target,request,active)).toBe("handled");
+    expect(await late?.(["stale"])).toBe(false);
+  }
+  expect(sent).toEqual([{groupId:700,userId:43},{groupId:undefined,userId:43}]);authorized.close();
+});

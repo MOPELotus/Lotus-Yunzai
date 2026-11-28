@@ -1130,6 +1130,11 @@ async function dispatchMessage(
       isFriend: (id) => calls.isFriend(send, id),
       memberRole: (groupId, id) => calls.getGroupRole(send, groupId, id, true),
       botMute: async (groupId) => mutes?.forMessage(groupId, selfId, () => calls.getGroupRole(send, groupId, selfId, true)),
+      async forward({ groupId, userId }, nodes) {
+        const messages = encodeOneBotForward(nodes, selfId!);
+        if (display.closed || attachmentSession.signal.aborted || !messages) return "rejected";
+        return calls.sendForwardConfirmed(send, groupId === undefined ? { user_id: userId } : { group_id: groupId }, messages, attachmentSession.signal);
+      },
       async send({ groupId, userId }, reply) {
         const message = encodeOneBotReply(reply);
         if (display.closed || attachmentSession.signal.aborted || message === undefined) return "rejected";

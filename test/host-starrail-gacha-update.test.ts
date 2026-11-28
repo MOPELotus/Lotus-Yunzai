@@ -1,4 +1,4 @@
-import { linkHostPackages } from "./host-fixture.ts";
+import { linkHostPackages, linkHostBuiltinResources } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -120,6 +120,7 @@ test("星铁旧档、国服汇总成功、同 UID 拒绝重入与限频后查询
     await cp(plugin, installed, { recursive: true, filter: file => ![".git", "node_modules", "test"].includes(basename(file)) });
     await symlink(join(plugin, "node_modules"), join(installed, "node_modules"), "dir");
     await linkHostPackages(root);
+    await linkHostBuiltinResources(root);
     const theme = join(root, "data/starrail/theme");
     for (const font of ["HYWH-65W.ttf", "NZBZ.ttf", "tttgbnumber.ttf"]) {
       await mkdir(join(theme, "common/font"), { recursive: true });

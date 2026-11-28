@@ -28,11 +28,14 @@ test("keeps the exact budget ordinary forward at 4×", async () => {
   expect(render.calls).toEqual([[1, 4], [2, 4], [3, 4]]);
 });
 
-test("aggregate overflow redraws all original pages and still returns one forward", async () => {
-  const render = pages(8, 4);
-  const reply = await gachaImageReply({ ...base, ...render, inlineImageByteLimit: 13 });
-  expect(reply && typeof reply === "object" && "nodes" in reply && pageOrder(reply.nodes)).toEqual([1, 2, 3]);
-  expect(render.calls).toEqual([[1, 4], [2, 4], [1, 2], [2, 2], [3, 2]]);
+test("aggregate overflow splits the original images without lowering density", async () => {
+  const render = pages(8, 4), groups: number[][] = [];
+  const reply = await gachaImageReply({ ...base, ...render, inlineImageByteLimit: 13,
+    async forward(nodes) { groups.push(pageOrder(nodes)); return true; },
+  });
+  expect(reply).toEqual([]);
+  expect(groups).toEqual([[1], [2], [3]]);
+  expect(render.calls).toEqual([[1, 4], [2, 4], [3, 4]]);
 });
 
 test("larger 2× replies split only the original pages, in order, with distinct headings", async () => {
@@ -47,8 +50,8 @@ test("larger 2× replies split only the original pages, in order, with distinct 
     },
   });
   expect(reply).toEqual([]);
-  expect(groups).toEqual([[1, 2], [3]]);
-  expect(headings).toEqual(["合成样本，共 3 页（第 1/2 段）", "合成样本，共 3 页（第 2/2 段）"]);
+  expect(groups).toEqual([[1], [2], [3]]);
+  expect(headings).toEqual(["合成样本，共 3 页（第 1/3 段）", "合成样本，共 3 页（第 2/3 段）", "合成样本，共 3 页（第 3/3 段）"]);
 });
 
 test("rejected and ambiguous forward attempts stop without repeating or sending later pages", async () => {
@@ -62,7 +65,7 @@ test("rejected and ambiguous forward attempts stop without repeating or sending 
         return false;
       },
     });
-    expect(sent).toEqual([[1, 2]]);
+    expect(sent).toEqual([[1]]);
     expect(reply).toContain(uncertain ? "结果未确认" : "未发送");
   }
 });
@@ -105,4 +108,11 @@ test("低配按原分页一次出图，单页超限时保留文字回执", async
   } finally {
     setImageRenderPreset("standard");
   }
+});
+
+test('one original image is sent directly without a merged forward',async()=>{
+ const renderer=pages(8,4);
+ const reply=await gachaImageReply({...base,...renderer,total:1,inlineImageByteLimit:8});
+ expect(reply).toMatchObject({type:'image'});
+ expect(renderer.calls).toEqual([[1,4]]);
 });

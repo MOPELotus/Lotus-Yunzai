@@ -35,6 +35,7 @@ test("绝区零卡片只访问固定 QQ 头像和受信图标地址，失败图�
   const paths = new Map<string, Buffer | undefined>();
   for (const key of new Set(keys)) paths.set(key, await loadArtwork(key));
   expect(keys.map(key => paths.get(key))).toEqual([image, undefined, undefined, undefined, image, image]);
+  await Promise.all([loadArtwork(avatar), ...keys.map(loadArtwork)]);
   expect(called).toEqual([
     "https://q1.qlogo.cn/g?b=qq&nk=42&s=640",
     "https://act-webstatic.mihoyo.com/example.webp",

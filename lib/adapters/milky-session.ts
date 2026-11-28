@@ -708,6 +708,7 @@ export async function openMilkySession(settings: MilkySettings, options: MilkyTr
     isFriend: checkinNotify.isFriend,
     botMute: groupMute.forMessage,
     memberRole,
+    forward: ({ groupId, userId }, nodes) => sendForwardConfirmed(groupId === undefined ? { user_id: userId } : { group_id: groupId }, nodes),
     send: ({ groupId, userId }, reply) => sendConfirmed(groupId === undefined ? { user_id: userId } : { group_id: groupId }, reply),
   };
 

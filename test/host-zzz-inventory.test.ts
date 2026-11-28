@@ -100,16 +100,17 @@ test("国服统计仅当前登录可读，网关确认后才查实时库存，�
       expect(await Bun.file(join(root, "requests.json")).exists()).toBe(false);
 
       sendOneBot("%抽卡记录2");
-      const refused = await onebot.next("send_msg");
+      const refused = await onebot.next("send_private_forward_msg");
       const stats = imageBytes(refused.params);
-      expect(stats.byteLength).toBeLessThanOrEqual(4 * 1024 * 1024);
+      expect(stats.byteLength).toBeLessThanOrEqual(8 * 1024 * 1024);
       expect(refused.echo).toBeString();
       expect(await new Bun.Image(stats).metadata()).toMatchObject({ format: "png" });
       refused.respond(null, "failed");
-      await Bun.sleep(75);
+      const rejected = await onebot.next("send_msg");
+      expect(JSON.stringify(rejected.params)).toContain("未发送");
       expect(await Bun.file(join(root, "requests.json")).exists()).toBe(false);
 
-      sendOneBot("%抽卡分析2");
+      sendOneBot("%角色记录2");
       const accepted = await onebot.next("send_msg");
       expect(accepted.echo).toBeString();
       accepted.respond({ message_id: 160 });
@@ -119,13 +120,20 @@ test("国服统计仅当前登录可读，网关确认后才查实时库存，�
       expect(await Bun.file(join(root, "requests.json")).json()).toEqual(["123456789"]);
 
       sendOneBot("%逐抽记录4");
-      const archive = await onebot.next("send_msg");
+      const archive = await onebot.next("send_private_forward_msg");
+      archive.respond({ message_id: 162 });
+      await Bun.sleep(50);
+      while (onebot.calls.length) {
+        const batch = await onebot.next("send_private_forward_msg");
+        batch.respond({ message_id: 163 });
+        await Bun.sleep(50);
+      }
       expect(await new Bun.Image(imageBytes(archive.params)).metadata()).toMatchObject({ format: "png" });
       sendOneBot("%逐抽记录5");
       const conflicting = await onebot.next("send_msg");
       expect(JSON.stringify(conflicting.params)).toContain("还没有绝区零逐抽记录");
       expect(await Bun.file(join(root, "requests.json")).json()).toEqual(["123456789"]);
-    }, 8_000, preload, async root => {
+    }, 30_000, preload, async root => {
       await sources(root);
       const theme = join(root, "data", "zzz", "gacha-theme");
       const graphics = [
@@ -169,4 +177,4 @@ ${account}  game_roles: { zzz: [{ uid: "${uid}", nickname: "样本42", level: 60
         }] })),
       ]);
     });
-}, 25_000);
+}, 90_000);

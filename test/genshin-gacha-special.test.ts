@@ -61,10 +61,11 @@ test("reads 100 alone and reproduces the old beginner card's observed statistics
 
 test("keeps the cross-pool 301/302/500/200 order and each pool's own range, ranks and threshold", () => {
   const model = buildGenshinGachaSpecial({ ...options, type: "all" })!;
-  expect(model).toMatchObject({ poolName: "全部", totalNum: 17 });
+  expect(model).toMatchObject({ poolName: "全部", totalNum: 23 });
   expect(model.data.map(({ type, firstTime, max, fiveNum }) => [type, firstTime, max, fiveNum])).toEqual([
     [301, "2023-11-22 12:17", 90, 3], [302, "2023-11-21 12:20", 80, 2],
     [500, "2024-03-22 12:23", 90, 1], [200, "2023-10-20 12:23", 90, 1],
+    [100, "2023-03-06 12:19", undefined, 1],
   ]);
   expect(metrics(model.data[0]!)).toMatchObject({ 小保底不歪: "50.0%", UP平均: 4, UP花费原石: "640", 五星常驻: 1 });
   expect(metrics(model.data[1]!)).toMatchObject({ 未出四星: 0, 四星平均: 3, 四星武器: 2 });
@@ -75,7 +76,8 @@ test("keeps the cross-pool 301/302/500/200 order and each pool's own range, rank
 test("falls back to the real beginner records only for an archive without main-pool records", () => {
   const fallback = buildGenshinGachaSpecial({ ...options, records: {}, type: "all" })!;
   expect(fallback).toMatchObject({ poolName: "全部", totalNum: 6, data: [{ type: 100, uid, typeName: "新手" }] });
-  expect(buildGenshinGachaSpecial({ ...options, beginner: {}, type: "all" })?.data).toHaveLength(4);
+  expect(() => buildGenshinGachaSpecial({ ...options, beginner: {}, type: "all" })).toThrow("逐抽数组");
+  expect(buildGenshinGachaSpecial({ ...options, beginner: undefined, type: "all" })?.data).toHaveLength(4);
   expect(buildGenshinGachaSpecial({ uid, type: "all", records: {} })).toBeUndefined();
   expect(buildGenshinGachaSpecial({ uid, type: "beginner", records })).toBeUndefined();
   expect(() => buildGenshinGachaSpecial({ ...options, type: "beginner",

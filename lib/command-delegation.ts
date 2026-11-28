@@ -15,6 +15,7 @@ export interface DelegationSession {
   readonly isFriend: (userId: number) => Promise<boolean>;
   readonly memberRole: (groupId: number, userId: number) => Promise<GroupMembership["botRole"] | undefined>;
   readonly botMute: (groupId: number) => Promise<MessageEvent["botMute"]>;
+  readonly forward?: (target: ExecuteTarget, nodes: readonly MessageReply[]) => Promise<ChatFileResult>;
   readonly send: (target: ExecuteTarget, reply: MessageReply) => Promise<ChatFileResult>;
 }
 
@@ -96,11 +97,18 @@ export function createCommandDelegation({ signal, mayDelegate, isMaster, run }: 
         }),
         ...(role && { member: { is_admin: role === "admin", is_owner: role === "owner" } }),
         sender: { user_id: userId, ...(role && { role }) },
+        forward: session.forward ? async (nodes) => {
+          if (!dispatching || !current(actor, cancellation)) return false;
+          match = true;
+          if (request.hold) return true;
+          return await session.forward!(target, nodes) === "confirmed";
+        } : undefined,
         async reply(content) {
           if (!dispatching || !current(actor, cancellation)) return false;
           match = true;
           if (request.hold) return true;
-          return await session.send(target, content) !== "rejected";
+          const status = await session.send(target, content);
+          return status !== "rejected";
         },
       };
       try {

@@ -378,5 +378,5 @@ export async function renderGachaSpecialCard(
       width / 2, bottom + 9, 14, muted, "center");
     text(ctx, $t("genshin-gacha-special-card.text_d41c915582"), width / 2 + 5, bottom + (page ? 29.5 : 7.5),
       12, "#000", "center", "number");
-  }, mode, { renderScale: scale, allowHalfScale: scale === 4 });
+  }, mode, { renderScale: scale, allowHalfScale: false });
 }
