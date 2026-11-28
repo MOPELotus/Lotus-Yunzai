@@ -80,6 +80,7 @@ import { gameCheckinCommands, namedCheckinCommand } from "./lib/game-checkin-com
 import { isPreviewRedeemSetting, redeemCodeCommands } from "./lib/redeem-code-commands.ts";
 import { createManualRedeemCommand, isManualRedeemCommand } from "./lib/redeem-code-manual.ts";
 import { createPreviewRedeemRunner } from "./lib/redeem-code-runner.ts";
+import { createInternationalRedeemRunner } from "./lib/international-redeem-runner.ts";
 import { readMilkySettings } from "./lib/adapters/milky-config.ts";
 import { createMilkyGroupReviews } from "./lib/adapters/milky-group-reviews.ts";
 import { createMilkyInvitationReceipts } from "./lib/adapters/milky-invitation-receipts.ts";
@@ -3279,8 +3280,20 @@ if (import.meta.main) {
       commands.registerModule(redeemCodeCommands(previewOptions, publicPreview, {
         profiles: checkinProfiles, signal: previewSignal, canRegister: canRegisterCheckin, hasHistory: preview.hasHistory,
       }, manualRedeem));
+      const internationalRedeem = createInternationalRedeemRunner(checkinProfiles, hoyoTransport, {
+        journal: fileURLToPath(new URL("data/redeemCodes/international-auto.json", root)), signal: previewSignal,
+        warn: game => console.warn($t("lib.redeem-code-runner.international-scan-failed", {game})),
+        async notify({qq,profileId},reply,signal,verifySend) {
+          const settings = await checkinProfiles.previewRedeemSettings(qq,profileId);
+          await verifySend();
+          return notifyCheckin({userId:Number(qq),settings:settings.notify,reply,transports:subscriptionTransport(),signal,verifySend:async()=>{await verifySend();return true;}});
+        },
+      });
       registerModuleTask($t("app.text_8041e6891b"), "0 */5 * * * *",
-        () => preview.scan(previewSignal, diagnostic => console.warn($t("app.text_c664cebfcc", { "diagnostic": diagnostic }))));
+        async () => {
+          await preview.scan(previewSignal, diagnostic => console.warn($t("app.text_c664cebfcc", { "diagnostic": diagnostic })));
+          await internationalRedeem.run();
+        });
       previewSettings = {
         async read({ qq, profileId }, signal, verifyLogin) {
           await verifyLogin();

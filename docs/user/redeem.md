@@ -33,7 +33,9 @@
 
 ## 2. 前瞻码自动兑换（开启与关闭）
 
-开启后，机器人会在检测到国服前瞻兑换码可用时，自动为对应档案提交兑换，并按该档案的[每日签到](checkin.md)通知设置发送结果。
+* 沿用各游戏原有的自动兑换功能开关，内部独立隔离国服与国际服数据源与账本记录。
+* 系统每 5 分钟扫描 HoYoLAB 官方发布渠道；同角色同码记账防重。
+* 自动任务仅处理现有已注册自动兑换的档案。
 
 ### 可用命令与输入示例
 - **开启自动兑换**：
@@ -55,7 +57,7 @@
 - **关闭范围说明**：发送关闭命令仅关闭当前档案的前瞻码自动兑换设置，**不会**清除已绑定的 Cookie/SToken，也不影响每日签到功能。
 
 ### 支持范围与去重限制
-- **支持游戏与服务器**：仅支持 **原神、星穹铁道、绝区零** 的 **国服**（如官服与 B 服区服）。
+- 三款游戏均已接入国际服手动与自动兑换，绝区零本次群榜和挑战提醒支持国际服；部分冷门或特殊接口未完成实测，未承诺整体功能全支持。
 - **角色选择**：若档案已设置选定 UID，则兑换到该角色；否则仅在目标游戏区服下唯一存在 1 个角色时自动选择。
 - **去重与中断**：系统按“账号 + 游戏 + 版本号 + UID”记录兑换状态，同一版本同一角色不会重复提交。若某条兑换码返回被拦截（`blocked`）或结果未确认（`unknown`），将停止本轮后续兑换码的提交，且不会自动反复重投。
 
@@ -77,9 +79,8 @@
 
 ### 前置条件与限制
 - **会话限制**：**仅限机器人好友私聊**使用，群聊、委托会话或终端均不可用。
-- **登录要求**：对应档案须已绑定并核验 HoYoLAB Cookie（星穹铁道还需具备活动 Cookie）。
+- **登录要求**：对应档案须已绑定并核验 HoYoLAB Cookie（星穹铁道、绝区零还需具备活动 Cookie）。
 - **角色确定**：系统会按“档案选定 UID → 仅 1 个角色 → HoYoLAB 默认选中角色”的顺序确定目标角色；若无法唯一确定，需先在 HoYoLAB 选择默认角色后再试。
-- **绝区零不支持**：绝区零国际服暂不支持通过机器人命令手动兑换（发送 `%兑换码使用` 或 `#绝区零兑换码使用` 会提示请在游戏内兑换）。
 - **防重复提交**：同一账号、游戏、区服及角色 UID 下，相同兑换码不可重复提交。
 
 ---
@@ -157,3 +158,5 @@
 - 前瞻兑换码命令与自动兑换：[lib/redeem-code-commands.ts](../../lib/redeem-code-commands.ts)、[lib/redeem-code-runner.ts](../../lib/redeem-code-runner.ts)、[packages/hoyo-client/redeem-preview/games.ts](../../packages/hoyo-client/redeem-preview/games.ts)
 - 国际服手动兑换：[lib/redeem-code-manual.ts](../../lib/redeem-code-manual.ts)、[packages/hoyo-client/redeem-submit.ts](../../packages/hoyo-client/redeem-submit.ts)
 - 米游币查询与网页商城：[lib/miyoushe-balance.ts](../../lib/miyoushe-balance.ts)、[lib/miyoushe-web.ts](../../lib/miyoushe-web.ts)、[lib/miyoushe-shop-catalog.ts](../../lib/miyoushe-shop-catalog.ts)、[lib/miyoushe-shop-plans.ts](../../lib/miyoushe-shop-plans.ts)、[lib/miyoushe-shop-tracking.ts](../../lib/miyoushe-shop-tracking.ts)
+
+- [国际服使用说明](international.md)：包含 HoYoLAB 独立建档、抽卡记录获取限制、三游兑换码与绝区零海外支持细节。

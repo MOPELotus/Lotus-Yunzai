@@ -17,34 +17,35 @@ globalThis.fetch = Object.assign(async (input, init) => {
   const url = new URL(input instanceof Request ? input.url : String(input));
   if (url.hostname === "127.0.0.1") return real(input, init);
   const cookie = new Headers(init.headers).get("cookie");
-  const biz = url.searchParams.get("game_biz");
+  const fields = init.body ? JSON.parse(String(init.body)) : Object.fromEntries(url.searchParams);
+  const biz = fields.game_biz;
   assert.equal(init.redirect, "error");
   assert.equal(init.credentials, "omit");
   if (url.hostname === "api-account-os.hoyolab.com") {
     const genshin = biz === "hk4e_global";
-    const account = genshin ? "71" : "72";
+    const zzz = biz === "nap_global";
+    const account = genshin || zzz ? "71" : "72";
     appendFileSync("queries", biz + "\\n");
     assert.equal(url.pathname, "/binding/api/getUserGameRolesBy" + (genshin ? "CookieToken" : "Ltoken"));
-    assert.equal(cookie, genshin ? "account_id=71; cookie_token=fixture-71" : "ltuid=72; ltoken=fixture-activity-72");
+    assert.equal(cookie, genshin ? "account_id=71; cookie_token=fixture-71" : "ltuid=" + account + "; ltoken=fixture-activity-" + account);
     return ok({ aid: account, list: genshin ? [
       { game_uid: "800000081", region: "os_asia", game_biz: biz },
       { game_uid: "700000081", region: "os_euro", game_biz: biz, is_chosen: true },
-    ] : [
+    ] : zzz ? [{ game_uid: "100000081", region: "prod_gf_jp", game_biz: biz, is_chosen: true }] : [
       { game_uid: "800000082", region: "prod_official_asia", game_biz: biz, is_chosen: true },
       { game_uid: "700000082", region: "prod_official_eur", game_biz: biz },
     ]});
   }
-  if (url.hostname === "sg-hk4e-api.hoyolab.com" || url.hostname === "sg-hkrpg-api.hoyolab.com") {
-    const genshin = url.hostname === "sg-hk4e-api.hoyolab.com";
-    const uid = url.searchParams.get("uid"), region = url.searchParams.get("region");
-    const code = url.searchParams.get("cdkey");
-    const account = genshin ? "71" : "72";
-    assert.equal(url.pathname, "/common/apicdkey/api/webExchangeCdkeyHyl");
-    assert.equal(biz, genshin ? "hk4e_global" : "hkrpg_global");
-    assert.equal(uid, genshin ? "800000081" : "800000082");
-    assert.equal(region, genshin ? "os_asia" : "prod_official_asia");
+  if (["public-operation-hk4e.hoyoverse.com", "public-operation-hkrpg.hoyoverse.com", "public-operation-nap.hoyoverse.com"].includes(url.hostname)) {
+    const genshin = biz === "hk4e_global", zzz = biz === "nap_global";
+    const uid = String(fields.uid), region = fields.region, code = fields.cdkey;
+    const account = genshin || zzz ? "71" : "72";
+    assert.equal(init.method, genshin ? "GET" : "POST");
+    assert.equal(url.pathname, "/common/apicdkey/api/" + (genshin ? "webExchangeCdkey" : "webExchangeCdkeyRisk"));
+    assert.equal(uid, genshin ? "800000081" : zzz ? "100000081" : "800000082");
+    assert.equal(region, genshin ? "os_asia" : zzz ? "prod_gf_jp" : "prod_official_asia");
     assert.equal(cookie, "account_id=" + account + "; cookie_token=fixture-" + account);
-    const key = createHash("sha256").update(JSON.stringify([account, genshin ? "gs" : "sr", region, uid, code.toLowerCase()])).digest("hex");
+    const key = createHash("sha256").update(JSON.stringify([account, genshin ? "gs" : zzz ? "zzz" : "sr", region, uid, code.toLowerCase()])).digest("hex");
     assert.equal(JSON.parse(readFileSync(${JSON.stringify(journal)}, "utf8"))[key].status, "started");
     appendFileSync("submissions", code + "\\n");
     if (code === "FIXTURE-LOST") throw new Error("模拟官方已收请求后断线");
@@ -71,7 +72,6 @@ test("三游旧语法路由，原铁只兑本人国际服，群提示不回显�
     expect(await submissions()).toBe("");
     expect(await queries()).toBe("");
 
-    expect(await reply("%兑换码使用FIXTURE-ZZZ")).toMatchObject({ user_id: 42, message: "绝区零请在游戏内兑换。" });
     expect(await reply("#cdk-uFIXTURE-OTHER", { user_id: 65 })).toMatchObject({
       user_id: 65, message: expect.stringContaining("重新绑定已核验的 HoYoLAB Cookie"),
     });
@@ -88,13 +88,14 @@ test("三游旧语法路由，原铁只兑本人国际服，群提示不回显�
       { type: "text", data: { text: "星铁国际服兑换 · 档案 2\n使用成功" } },
     ] });
     starRail.respond({ message_seq: 931 });
+    expect(await reply("%兑换码使用FIXTURE-ZZZ")).toMatchObject({user_id:42,message:"绝区零国际服兑换 · 档案 1\n使用成功"});
     expect(await reply("#原神cdk-u FIXTURE-INVALID")).toMatchObject({ message: expect.stringContaining("兑换码无效") });
     expect(await reply("#原神cdk-uFIXTURE-EXPIRED")).toMatchObject({
       message: expect.stringContaining("重新绑定已核验的 HoYoLAB Cookie"),
     });
     expect(await reply("#原神cdk-uFIXTURE-LOST")).toMatchObject({ message: expect.stringContaining("结果未确认") });
     expect(await reply("#兑换码使用 fixture-lost")).toMatchObject({ message: expect.stringContaining("已提交过") });
-    expect(await submissions()).toBe("FIXTURE-GS\nFIXTURE-SR\nFIXTURE-INVALID\nFIXTURE-EXPIRED\nFIXTURE-LOST\n");
+    expect(await submissions()).toBe("FIXTURE-GS\nFIXTURE-SR\nFIXTURE-ZZZ\nFIXTURE-INVALID\nFIXTURE-EXPIRED\nFIXTURE-LOST\n");
     const data = await readFile(join(root, journal), "utf8");
     const hash = createHash("sha256").update(JSON.stringify(["71", "gs", "os_asia", "800000081", "fixture-lost"])).digest("hex");
     expect(JSON.parse(data)[hash].status).toBe("finished");

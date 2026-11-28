@@ -30,9 +30,8 @@ export function createManualRedeemCommand(
     if (active.aborted) return;
     const game = match[2] === "绝区零" || (!match[2] && (match[1] === "%" || match[1] === "％")) ? "zzz"
       : match[2] === "星铁" || (!match[2] && match[1] === "*") ? "sr" : "gs";
-    if (game === "zzz") return $t("lib.redeem-code-manual.text_2b1e639b18");
-    const label = game === "sr" ? $t("lib.redeem-code-manual.text_a2927891f0") : $t("lib.redeem-code-manual.text_d1597c51ed");
-    const usage = $t("lib.redeem-code-manual.text_e7b4074acc", { "value1": game === "sr" ? $t("lib.redeem-code-manual.text_a2927891f0") : "" });
+    const label = game === "zzz" ? $t("lib.redeem-code-runner.text_b1110352c9") : game === "sr" ? $t("lib.redeem-code-manual.text_a2927891f0") : $t("lib.redeem-code-manual.text_d1597c51ed");
+    const usage = $t("lib.redeem-code-manual.text_e7b4074acc", { "value1": game === "zzz" ? $t("lib.redeem-code-runner.text_b1110352c9") : game === "sr" ? $t("lib.redeem-code-manual.text_a2927891f0") : "" });
     const input = target.exec(match[4]?.trim() ?? "");
     const code = input?.[1];
     if (!code || !isRedeemCode(code)) return usage;
@@ -43,7 +42,7 @@ export function createManualRedeemCommand(
     let claim: Awaited<ReturnType<typeof ledger.claim>>;
     try {
       const source = await profiles.internationalRedeemContext(qq, id, game);
-      if (!source || (game === "sr" && !source.activityCookie)) return loginTip;
+      if (!source || (game !== "gs" && !source.activityCookie)) return loginTip;
       const verifyProfile = async () => {
         active.throwIfAborted();
         const latest = await profiles.internationalRedeemContext(qq, id, game).catch(() => undefined);

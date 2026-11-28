@@ -9,6 +9,7 @@ const BBS_PATHS = ["/apihub/api/home/new", "/post/wapi/userPost", "/post/wapi/se
 const OFFICIAL_ROUTES = new Map([
   ["bbs-api.mihoyo.com", BBS_PATHS],
   ["bbs-api.miyoushe.com", BBS_PATHS],
+  ["bbs-api-os.hoyolab.com", ["/community/painter/wapi/circle/channel/guide/material"]],
   ["api-takumi.mihoyo.com", ["/event/miyolive/index"]],
   ["api-takumi-static.mihoyo.com", ["/event/miyolive/refreshCode"]],
 ])

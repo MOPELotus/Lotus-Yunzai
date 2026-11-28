@@ -2,6 +2,7 @@ import { createTranslator as createTextTranslator } from "../i18n/index.ts";
 import messageCatalog from "./i18n/zh-CN.json";
 const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import type { Game, ProfileAccountContext } from "@lotus-yunzai/account";
+import { randomUUID } from "node:crypto";
 import type { HoyoTransport } from "./credentials.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 import { HoyoRequestError } from "./errors.ts";
@@ -9,6 +10,7 @@ import { openHoYoLabCheckinTransport, type HoYoLabCheckinAccount,
   type HoYoLabCheckinOptions } from "./hoyolab-checkin-transport.ts";
 import { openHoYoLabGenshinCheckin } from "./hoyolab-genshin-checkin.ts";
 import { openHoYoLabStarRailCheckin } from "./hoyolab-starrail-checkin.ts";
+import { openHoYoLabZzzCheckin } from "./hoyolab-zzz-checkin.ts";
 
 const games = {
   gs: { host: "hk4e-api.mihoyo.com", biz: "hk4e_cn", regions: ["cn_gf01", "cn_qd01"] },
@@ -27,12 +29,12 @@ const sessionFields = new Set([...sentFields, ...identityFields]);
 const idPattern = /^[1-9]\d{0,19}$/u;
 const valuePattern = /^[!#-:<-\[\]-~]{1,2048}$/u;
 const codePattern = /^[\p{L}\p{N}_-]{1,64}$/u;
-const blockedCodes = new Set([-2016, -1071, -1033, -1035]);
+const blockedCodes = new Set([-2016, -1071, -1033, -1035, -2008, -2011, -2021, 1034, 10035, 10041, -3101]);
 const responseLimit = 64 * 1024;
 
 export type PreviewRedeemStatus = "succeeded" | "already-used" | "expired" | "invalid" | "blocked" | "unknown";
 export type InternationalRedeemStatus = PreviewRedeemStatus | "login-expired";
-export type InternationalRedeemGame = "gs" | "sr";
+export type InternationalRedeemGame = Game;
 
 export function isRedeemCode(value: string) {
   return codePattern.test(value);
@@ -84,7 +86,8 @@ function responseStatus(payload: Record<string, unknown> | undefined): PreviewRe
   if (typeof retcode !== "number" || !Number.isSafeInteger(retcode)) return "unknown";
   if (blockedCodes.has(retcode)) return "blocked";
   if (retcode === -2001) return "expired";
-  if (retcode === -2003) return "invalid";
+  if ([-2003, -2004, -2006, -2014, -1065].includes(retcode)) return "invalid";
+  if (retcode === -2017 || retcode === -2018) return "already-used";
   const data = payload?.data;
   const nested = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : undefined;
   const already = /已(?:经)?(?:被)?(?:使用|兑换|领取)|重复兑换|already (?:been )?(?:used|redeemed|claimed)/iu;
@@ -122,13 +125,17 @@ export async function openHoYoLabRedemption(
   transport: HoyoTransport, options: HoYoLabCheckinOptions,
 ) {
   const { signal, verifyProfile } = options;
+  if (!Object.hasOwn(games, game)) throw new HoyoRequestError("invalid-input", $t("redeem-submit.text_d1b88f9b64"));
   const genshin = game === "gs";
   // Validate the verified CookieToken independently from the activity credential used by the Star Rail role list.
   if (!genshin) openHoYoLabCheckinTransport(source, transport, options, "cookie");
   const { roles } = genshin ? await openHoYoLabGenshinCheckin(source, transport, options)
-    : await openHoYoLabStarRailCheckin({ ...source, cookie: source.activityCookie ?? "" }, transport, options);
-  const host = genshin ? "sg-hk4e-api.hoyolab.com" : "sg-hkrpg-api.hoyolab.com";
-  const gameBiz = genshin ? "hk4e_global" : "hkrpg_global";
+    : game === "sr" ? await openHoYoLabStarRailCheckin({ ...source, cookie: source.activityCookie ?? "" }, transport, options)
+    : await openHoYoLabZzzCheckin({ ...source, cookie: source.activityCookie ?? "" }, transport, options);
+  const host = genshin ? "public-operation-hk4e.hoyoverse.com" : game === "sr" ? "public-operation-hkrpg.hoyoverse.com" : "public-operation-nap.hoyoverse.com";
+  const origin = genshin ? "https://genshin.hoyoverse.com" : game === "sr" ? "https://hsr.hoyoverse.com" : "https://zenless.hoyoverse.com";
+  const gameBiz = genshin ? "hk4e_global" : game === "sr" ? "hkrpg_global" : "nap_global";
+  const deviceId = options.deviceId ?? randomUUID();
   return {
     roles,
     async submit(code: string, role: { readonly uid: string; readonly region: string },
@@ -137,18 +144,20 @@ export async function openHoYoLabRedemption(
       if (!roles.some(bound => bound.uid === role.uid && bound.region === role.region && bound.gameBiz === gameBiz)) {
         throw new HoyoRequestError("invalid-input", $t("redeem-submit.text_d1b88f9b64"));
       }
-      const endpoint = new URL(`https://${host}/common/apicdkey/api/webExchangeCdkeyHyl`);
-      endpoint.search = new URLSearchParams({
-        cdkey: code, game_biz: gameBiz, region: role.region, uid: role.uid, lang: "zh-cn", t: String(Date.now()),
-      }).toString();
+      const endpoint = new URL(`https://${host}/common/apicdkey/api/${genshin ? 'webExchangeCdkey' : 'webExchangeCdkeyRisk'}`);
+      const fields = { cdkey: code, game_biz: gameBiz, region: role.region, uid: role.uid, lang: "zh-cn" };
+      if (genshin) endpoint.search = new URLSearchParams(fields).toString();
+      if (!genshin && !Number.isSafeInteger(Number(role.uid))) throw new HoyoRequestError("invalid-input", $t("redeem-submit.text_d1b88f9b64"));
+      const body = genshin ? undefined : JSON.stringify({ ...fields, uid: Number(role.uid), device_uuid: deviceId, platform: "4", t: Math.floor(Date.now() / 1000) });
       await verifyProfile();
       signal?.throwIfAborted();
       if (!await reserve()) return "duplicate";
       await verifyProfile();
       signal?.throwIfAborted();
-      const result = await requestRedemption(endpoint, source.cookie, "https://act.hoyolab.com/", transport, signal,
+      const result = await requestRedemption(endpoint, source.cookie, `${origin}/`, transport, signal,
         status => status === 401 ? "login-expired" : "blocked",
-        payload => payload?.retcode === -100 ? "login-expired" : responseStatus(payload));
+        payload => payload?.retcode === -100 || payload?.retcode === -1071 ? "login-expired" : responseStatus(payload),
+        { method: genshin ? "GET" : "POST", body, origin });
       return result.status;
     },
   };
@@ -157,13 +166,15 @@ export async function openHoYoLabRedemption(
 async function requestRedemption<T extends InternationalRedeemStatus>(
   endpoint: URL, cookie: string, referer: string, transport: HoyoTransport, signal: AbortSignal | undefined,
   denied: (status: number) => T, read: (payload: Record<string, unknown> | undefined) => T,
+  request: { readonly method: "GET" | "POST"; readonly body?: string; readonly origin?: string } = { method: "GET" },
 ): Promise<{ status: T | "unknown" }> {
   const timeout = AbortSignal.timeout(20_000);
   const deadline = signal ? AbortSignal.any([timeout, signal]) : timeout;
   try {
     const response = await transport(endpoint, {
-      method: "GET", redirect: "error", credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store",
-      signal: deadline, headers: { Cookie: cookie, Referer: referer, Accept: "application/json" },
+      method: request.method, body: request.body, redirect: "error", credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store",
+      signal: deadline, headers: { Cookie: cookie, Referer: referer, Accept: "application/json",
+        ...(request.origin && { Origin: request.origin }), ...(request.body && { "Content-Type": "application/json" }) },
     });
     if (deadline.aborted || response.redirected || (response.url && response.url !== endpoint.href)) {
       void response.body?.cancel().catch(() => undefined);

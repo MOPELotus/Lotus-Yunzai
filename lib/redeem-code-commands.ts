@@ -30,9 +30,9 @@ export function redeemCodeCommands(options: RedeemPreviewOptions = {},
 
     const [title, ...details] = formatRedeemResult({ ...result, codes: [] }).split("\n").filter(Boolean);
     const codes = result.codes.flatMap(({ code, reward }: { code: string; reward: string }) => reward ? [code, reward] : [code]);
-    const manualNote = manual && (gameId === "gs" || gameId === "sr")
+    const manualNote = manual && (gameId === "gs" || gameId === "sr" || gameId === "zzz")
       ? [$t("lib.redeem-code-commands.text_cea4109f97") +
-        $t("lib.redeem-code-commands.text_e237bce40f", { "value1": gameId === "sr" ? $t("lib.redeem-code-commands.text_a2927891f0") : "" })] : [];
+        $t("lib.redeem-code-commands.text_e237bce40f", { "value1": gameId === "sr" ? $t("lib.redeem-code-commands.text_a2927891f0") : gameId === "zzz" ? $t("lib.redeem-code-runner.text_b1110352c9") : "" })] : [];
     return { type: "forward", nodes: [title || $t("lib.redeem-code-commands.text_a9a43c79eb", { "gameName": result.gameName }), ...codes, ...details, ...manualNote] };
   }
 
