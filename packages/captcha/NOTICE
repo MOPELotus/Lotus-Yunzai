@@ -118,3 +118,7 @@ Model comparison reports do not grant redistribution rights for research-only
 candidates. Candidates with unavailable weights, undeclared preprocessing or
 unclear model licenses are identified separately and not silently promoted to
 production defaults.
+
+## captcha-tools-go request retries
+
+This project incorporates portions of gfriendyelin/captcha-tools-go (commit f7eeb37, retry logic referencing b0bcaa5), copyright (c) 2026 gfriendyelin, used under the full NSL license for the adapted request retry logic.

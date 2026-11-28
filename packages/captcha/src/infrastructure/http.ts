@@ -1,7 +1,11 @@
 import { CaptchaError } from '../domain/errors.ts'
+import { retryCaptchaRead } from './retry.ts'
 export class HttpClient {
   constructor(readonly fetchImpl: typeof fetch = fetch) {}
-  async bytes(url: URL | string, signal: AbortSignal, limit = 8 * 1024 * 1024): Promise<Buffer> {
+  async bytes(url: URL | string, signal: AbortSignal, limit = 8 * 1024 * 1024, retry = true): Promise<Buffer> {
+    return retryCaptchaRead(() => this.readBytes(url, signal, limit), signal, { retry })
+  }
+  private async readBytes(url: URL | string, signal: AbortSignal, limit: number): Promise<Buffer> {
     const response = await this.fetchImpl(url, {
       signal,
       headers: {
@@ -10,13 +14,15 @@ export class HttpClient {
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
       },
     })
-    if (!response.ok)
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {})
       throw new CaptchaError(
         response.status === 429 ? 'rate_limited' : 'upstream_http_error',
         `HTTP ${response.status}`,
         response.status >= 500,
       )
-    if (!response.body) throw new CaptchaError('empty_response')
+    }
+    if (!response.body) throw new CaptchaError('empty_response', undefined, true)
     const chunks: Uint8Array[] = []
     let size = 0
     const reader = response.body.getReader()
@@ -31,10 +37,11 @@ export class HttpClient {
     } finally {
       await reader.cancel().catch(() => {})
     }
+    if (!size) throw new CaptchaError('empty_response', undefined, true)
     return Buffer.concat(chunks)
   }
-  async jsonp(url: URL, signal: AbortSignal): Promise<Record<string, any>> {
-    const text = (await this.bytes(url, signal, 1024 * 1024)).toString('utf8').trim()
+  async jsonp(url: URL, signal: AbortSignal, retry = false): Promise<Record<string, any>> {
+    const text = (await this.bytes(url, signal, 1024 * 1024, retry)).toString('utf8').trim()
     const match = text.match(/^(?:[\w$]+)?\(([\s\S]*)\);?$/)
     const parsed = JSON.parse(match ? match[1]! : text) as Record<string, any>
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))

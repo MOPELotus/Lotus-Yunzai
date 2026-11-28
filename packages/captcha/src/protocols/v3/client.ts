@@ -2,6 +2,8 @@ import { createTranslator as createTextTranslator } from "../../../../i18n/index
 import messageCatalog from "../../../i18n/zh-CN.json";
 const $t = createTextTranslator("captcha", messageCatalog.messages);
 // Wire-level V3 port; recognition and scheduling live outside this module.
+import { CaptchaError } from '../../domain/errors.ts'
+import { retryCaptchaRead } from '../../infrastructure/retry.ts'
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -202,16 +204,26 @@ export class GeetestChallenge {
       callback: `geetest_${Date.now()}`,
       ...params,
     }).toString()
-    const result = await this.fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
-      },
-      signal: this.signal || AbortSignal.timeout(20000),
-    })
-    if (!result.ok) throw new Error($t("src.protocols.v3.client.text_2139bea0dc", { "status": result.status }))
-    return parseGeetestResponse(await result.text())
+    const signal = this.signal || AbortSignal.timeout(20000)
+    const text = await retryCaptchaRead(async () => {
+      const result = await this.fetch(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
+        },
+        signal,
+      })
+      if (!result.ok) {
+        await result.body?.cancel().catch(() => {})
+        throw new CaptchaError('upstream_http_error', $t("src.protocols.v3.client.text_2139bea0dc", { "status": result.status }), result.status >= 500)
+      }
+      const body = await result.text()
+      if (!body.length) throw new CaptchaError('empty_response', undefined, true)
+      return body
+    }, signal, { retry: route !== '/ajax.php' })
+    return parseGeetestResponse(text)
   }
+
   mergeConfig(data: Record<string, any> = {}) {
     if (data.challenge !== undefined) {
       if (typeof data.challenge !== 'string' || !/^[\w-]{1,256}$/.test(data.challenge))
@@ -236,13 +248,19 @@ export class GeetestChallenge {
     if (!knownGctScript(url)) throw new Error($t("src.protocols.v3.client.text_5d6e6dc70b"))
     if (!gctCache.has(key)) {
       const pending = (async () => {
-        const response = await this.fetch(url, {
-          signal: this.signal || AbortSignal.timeout(20000),
-        })
-        if (!response.ok) throw new Error($t("src.protocols.v3.client.text_c09671368e", { "status": response.status }))
-        if (response.url) geetestAssetUrl(response.url)
-        const source = Buffer.from(await response.arrayBuffer())
-        if (source.length > 256 * 1024) throw new Error($t("src.protocols.v3.client.text_848fee00b1"))
+        const signal = this.signal || AbortSignal.timeout(20000)
+        const source = await retryCaptchaRead(async () => {
+          const response = await this.fetch(url, { signal })
+          if (!response.ok) {
+            await response.body?.cancel().catch(() => {})
+            throw new CaptchaError('upstream_http_error', $t("src.protocols.v3.client.text_c09671368e", { "status": response.status }), response.status >= 500)
+          }
+          if (response.url) geetestAssetUrl(response.url)
+          const bytes = Buffer.from(await response.arrayBuffer())
+          if (!bytes.length) throw new CaptchaError('empty_response', undefined, true)
+          if (bytes.length > 256 * 1024) throw new Error($t("src.protocols.v3.client.text_848fee00b1"))
+          return bytes
+        }, signal)
         return gctFields(url, source)
       })()
       gctCache.set(key, pending)
@@ -370,10 +388,18 @@ export class GeetestChallenge {
     const origin = new URL(`https://${data.resource_servers[0]!}`),
       url = geetestAssetUrl(data.pic, origin)
     this.gct = await this.loadGct(data.gct_path, origin)
-    const response = await this.fetch(url, { signal: this.signal || AbortSignal.timeout(20000) })
-    if (!response.ok) throw new Error($t("src.protocols.v3.client.text_946fa7616c", { "status": response.status }))
-    const image = Buffer.from(await response.arrayBuffer())
-    if (!image.length || image.length > 8 * 1024 * 1024) throw new Error($t("src.protocols.v3.client.text_4e2ea83a80"))
+    const signal = this.signal || AbortSignal.timeout(20000)
+    const image = await retryCaptchaRead(async () => {
+      const response = await this.fetch(url, { signal })
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {})
+        throw new CaptchaError('upstream_http_error', $t("src.protocols.v3.client.text_946fa7616c", { "status": response.status }), response.status >= 500)
+      }
+      const bytes = Buffer.from(await response.arrayBuffer())
+      if (!bytes.length) throw new CaptchaError('empty_response', undefined, true)
+      if (bytes.length > 8 * 1024 * 1024) throw new Error($t("src.protocols.v3.client.text_4e2ea83a80"))
+      return bytes
+    }, signal)
     return { image, type: data.pic.includes('80/2023-12-04T12/icon') ? 'icon1' : data.pic_type }
   }
   async verify(points: string[]) {

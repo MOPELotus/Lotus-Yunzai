@@ -58,5 +58,21 @@
     "resources/v1.9.8-config.json",
     "resources/v1.9.9-config.json",
     "resources/v4_voice_20261012-voice.json"
+  ],
+  "additionalSources": [
+    {
+      "repository": "https://github.com/gfriendyelin/captcha-tools-go",
+      "commit": "f7eeb37ac3fb55694fdce64134abb2ae57825e03",
+      "implementationCommit": "b0bcaa5ce943665a376d2005e3a32e8089b65a2f",
+      "license": "NSL-1.0",
+      "licenseFile": "third_party/captcha-tools-go/LICENSE",
+      "scope": "read-request-retries-only",
+      "adaptedFiles": [
+        "src/infrastructure/retry.ts",
+        "src/infrastructure/http.ts",
+        "src/protocols/v3/client.ts",
+        "src/protocols/v4/adapter.ts"
+      ]
+    }
   ]
 }

@@ -72,7 +72,7 @@ export class V4Adapter implements ProtocolAdapter {
     const url = new URL(route, 'https://gcaptcha4.geetest.com')
     for (const [key, value] of Object.entries({ callback: `geetest_${Date.now()}`, ...params }))
       if (value !== undefined) url.searchParams.set(key, String(value))
-    return this.http.jsonp(url, signal)
+    return this.http.jsonp(url, signal, route === '/load')
   }
   private resource(resource: string, signal: AbortSignal): Promise<Buffer> {
     const url = new URL(resource, 'https://static.geetest.com/')

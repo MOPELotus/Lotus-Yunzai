@@ -18,6 +18,7 @@ const localErrorCodes = new Set([
   'empty_response', 'invalid_upstream_response', 'upstream_api_error', 'upstream_response_too_large',
   'invalid_answer', 'invalid_v', 'verification_failed', 'answer_type_mismatch', 'invalid_grid',
   'invalid_resource_url', 'proof_identity_mismatch', 'protocol_key_updated', 'unsupported_build',
+  'upstream_http_error', 'rate_limited',
 ]);
 function safeErrorCode(error: unknown): string | undefined {
   if (error instanceof CaptchaError && localErrorCodes.has(error.code)) return error.code;
