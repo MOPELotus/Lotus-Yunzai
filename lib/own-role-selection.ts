@@ -99,7 +99,7 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId: ex
           if (!isCurrent() || signal.aborted) break;
           const old = profile !== undefined && row.uid !== undefined
             ? await legacyArtwork?.(qq, profile, group.game, String(row.uid), signal) : undefined;
-          prepared.push({ ...row, avatar: old?.image ? undefined : avatar, ...old });
+          prepared.push({ ...row, avatar: group.game === "gs" || !old?.image ? avatar : undefined, ...old });
         }
         return { ...group, rows: prepared };
       }));
@@ -107,7 +107,12 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId: ex
       const artwork = await loadProfileRoleArtwork(groups.flatMap(({ rows }) => rows.map(row => row.avatar)), { signal });
       if (!isCurrent() || signal.aborted) return;
       const { png } = await renderProfileCard({ title, subtitle, warnings: instructions, roleGroups: groups.map(({ rows, ...group }) => ({
-        ...group, rows: rows.map(({ avatar, ...row }) => ({ ...row, image: row.image ?? (avatar ? artwork.get(avatar) : undefined) })),
+        ...group, rows: rows.map(({ avatar, ...row }) => {
+          const official = avatar ? artwork.get(avatar) : undefined;
+          return group.game === "gs" && official
+            ? { ...row, image: official, fallbackImage: row.image }
+            : { ...row, image: row.image ?? official };
+        }),
       })), uidList: true }, options);
       if (!isCurrent() || signal.aborted) return;
       if (png.byteLength) return [segment.image(png), [confirmation, ...instructions].filter(Boolean).join("\n")];

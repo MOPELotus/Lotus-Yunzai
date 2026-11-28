@@ -22,6 +22,7 @@ export interface ProfileCardRole {
   readonly level?: string | number;
   readonly active?: boolean;
   readonly image?: Uint8Array;
+  readonly fallbackImage?: Uint8Array;
   readonly banner?: Uint8Array;
   readonly slot?: string;
   readonly badge?: string;
@@ -242,7 +243,7 @@ export async function renderProfileCard(model: ProfileCardModel,
   const images = new Map<Uint8Array, Promise<Image | undefined>>();
   for (const { rows } of groups) {
     for (const row of rows ?? []) {
-      for (const asset of [row.image, row.banner]) {
+      for (const asset of [row.image, row.fallbackImage, row.banner]) {
         if (asset && !images.has(asset)) images.set(asset, loadImage(Buffer.from(asset)).catch(() => undefined));
       }
     }
@@ -284,7 +285,8 @@ export async function renderProfileCard(model: ProfileCardModel,
         });
         else layout.image(banner, 42, y, panelWidth - 43, 64, 33);
       }
-      const avatar = (row.image ? await images.get(row.image) : undefined) ?? (row.uid ? artwork?.defaultFace : undefined);
+      const avatar = (row.image ? await images.get(row.image) : undefined) ??
+        (row.fallbackImage ? await images.get(row.fallbackImage) : undefined) ?? (row.uid ? artwork?.defaultFace : undefined);
       if (avatar || (model.uidList && row.uid)) {
         layout.rect(46, y + 4, 56, 56, white, 28);
         if (avatar) layout.image(avatar, 48, y + 6, 52, 52, 26);
