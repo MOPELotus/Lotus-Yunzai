@@ -99,9 +99,10 @@ test("国服统计仅当前登录可读，网关确认后才查实时库存，�
       expect(JSON.stringify(cleared.params)).toContain("请先登录档案 3");
       expect(await Bun.file(join(root, "requests.json")).exists()).toBe(false);
 
-      sendOneBot("%抽卡统计2");
+      sendOneBot("%抽卡记录2");
       const refused = await onebot.next("send_msg");
       const stats = imageBytes(refused.params);
+      expect(stats.byteLength).toBeLessThanOrEqual(4 * 1024 * 1024);
       expect(refused.echo).toBeString();
       expect(await new Bun.Image(stats).metadata()).toMatchObject({ format: "png" });
       refused.respond(null, "failed");
