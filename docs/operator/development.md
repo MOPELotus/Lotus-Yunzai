@@ -100,6 +100,30 @@
    bun run build:panel
    ```
 
+
+## 宿主业务与 GPU 渲染测试分层说明
+
+本小节仅适用于 `test/host-zzz-inventory.test.ts` 与 `test/host-starrail-gacha-update.test.ts`。
+
+### 测试分类
+
+- **业务测试（`functional` 场景）**：通过模拟渲染能力不可用，仅验证业务逻辑与文本回退路径，不执行 CPU 出图。
+- **GPU 渲染测试（GPU 场景）**：严格使用物理渲染器执行出图并进行 PNG 断言。当原生 GPU 探针不可用时，测试会打印具体原因并自动跳过。
+
+### 运行方式
+
+```bash
+bun test --isolate --timeout 90000 test/host-zzz-inventory.test.ts test/host-starrail-gacha-update.test.ts
+```
+
+> 注：`LOTUS_TEST_DISABLE_GPU=1` 仅用于验证测试在 GPU 不可用时的跳过逻辑，不能作为无 GPU 硬件环境的等价证明。
+
+### 预期结果与验收口径
+
+- **正常 GPU 环境**：全部用例通过。
+- **屏蔽 Vulkan 驱动的独立进程**：2 个通过（`functional` 场景），3 个跳过（GPU 场景）。
+- **验收边界**：测试跳过不视为验收通过；上述分层仅覆盖这两个测试文件，不代表仓库内其他测试均支持无 GPU 运行。
+
 ## 贡献与上游子模块维护
 
 - 子模块更新顺序：`plugins/*` 为独立 Git 子模块。修改插件代码时，应先在对应子模块仓库内完成测试验证并提交，再回到主仓库更新子模块指针并提交。

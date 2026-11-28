@@ -1,9 +1,13 @@
+import {physicalGpuFixture,functionalRenderingPreload,physicalRenderingPreload} from "./physical-gpu-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, readdir, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { zzzTuningPools } from "../packages/hoyo-client/index.ts";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
 import { linkHostBuiltinResources } from "./host-fixture.ts";
+
+const gpu = await physicalGpuFixture();
+if (!gpu.available) console.warn("[GPU]", gpu.reason);
 
 const avatar = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const preload = `
@@ -64,21 +68,23 @@ function imageBytes(params: unknown) {
   return Uint8Array.fromBase64(encoded);
 }
 
-test("正常宿主经 OneBot 群和 Milky 私聊直查不同档案库存，旧别名及防串档", async () => {
+for (const rendering of [false, true]) test.skipIf(rendering && !gpu.available)(`正常宿主经 OneBot 群和 Milky 私聊直查不同档案库存，旧别名及防串档 [${rendering ? "GPU" : "functional"}]`, async () => {
   await withDualGatewayFixture("zzz-inventory-fixture", "disablePrivate: false\n",
     async ({ root, onebot, milky, sendOneBot, sendMilky }) => {
       sendOneBot("%母带2", { message_type: "group", sub_type: "normal", group_id: 600 });
       const group = await onebot.next("send_msg");
-      expect(group.params).toMatchObject({ group_id: 600, message: [{ type: "image" }] });
-      const first = imageBytes(group.params);
-      expect(await new Bun.Image(first).metadata()).toMatchObject({ width: 2240, height: 1524, format: "png" });
+      expect(group.params).toMatchObject({ group_id: 600 });
+      const first = rendering ? imageBytes(group.params) : JSON.stringify(group.params);
+      if (rendering) expect(await new Bun.Image(first as Uint8Array).metadata()).toMatchObject({ width: 2240, height: 1524, format: "png" });
+      else { expect(first).toContain("档案 2"); expect(first).toContain("123456789"); for (const amount of [42,43,44,45,46]) expect(first).toContain(String(amount)); }
       group.respond({ message_id: 156 });
 
       await sendMilky("#zzz存货");
       const friend = await milky.next("send_private_message");
-      expect(friend.params).toMatchObject({ user_id: 43, message: [{ type: "image" }] });
-      const second = imageBytes(friend.params);
-      expect(await new Bun.Image(second).metadata()).toMatchObject({ width: 2240, height: 1524, format: "png" });
+      expect(friend.params).toMatchObject({ user_id: 43 });
+      const second = rendering ? imageBytes(friend.params) : JSON.stringify(friend.params);
+      if (rendering) expect(await new Bun.Image(second as Uint8Array).metadata()).toMatchObject({ width: 2240, height: 1524, format: "png" });
+      else { expect(second).toContain("档案 1"); expect(second).toContain("223456789"); }
       expect(second).not.toEqual(first);
       friend.respond({ message_seq: 157 });
 
@@ -88,10 +94,10 @@ test("正常宿主经 OneBot 群和 Milky 私聊直查不同档案库存，旧�
       expect(JSON.stringify(denied.params)).toContain("只能查询自己");
       expect(await Bun.file(join(root, "requests.json")).json()).toEqual(["123456789", "223456789"]);
       expect(await readdir(join(root, "data", "zzzTuningStats")).catch(() => [])).toEqual([]);
-    }, 8_000, preload, sources);
+    }, 8_000, preload + (rendering ? physicalRenderingPreload : functionalRenderingPreload), sources);
 }, 18_000);
 
-test("国服统计仅当前登录可读，网关确认后才查实时库存，并可读仅含 Cookie 身份的旧逐抽档", async () => {
+test.skipIf(!gpu.available)("国服统计仅当前登录可读，网关确认后才查实时库存，并可读仅含 Cookie 身份的旧逐抽档", async () => {
   await withDualGatewayFixture("zzz-tuning-profile-fixture", "disablePrivate: false\n",
     async ({ root, onebot, sendOneBot }) => {
       sendOneBot("%抽卡记录3");
@@ -134,7 +140,7 @@ test("国服统计仅当前登录可读，网关确认后才查实时库存，�
       const conflicting = await onebot.next("send_msg");
       expect(JSON.stringify(conflicting.params)).toContain("还没有绝区零逐抽记录");
       expect(await Bun.file(join(root, "requests.json")).json()).toEqual(["123456789"]);
-    }, 30_000, preload, async root => {
+    }, 30_000, preload + physicalRenderingPreload, async root => {
       await sources(root);
       const theme = join(root, "data", "zzz", "gacha-theme");
       const graphics = [

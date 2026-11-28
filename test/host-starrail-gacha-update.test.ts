@@ -1,8 +1,12 @@
+import {physicalGpuFixture,functionalRenderingPreload,physicalRenderingPreload} from "./physical-gpu-fixture.ts";
 import { linkHostPackages, linkHostBuiltinResources } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { withDualGatewayFixture } from "./host-dual-gateway-fixture.ts";
+
+const gpu = await physicalGpuFixture();
+if (!gpu.available) console.warn("[GPU]", gpu.reason);
 
 const uid = "100123456";
 const path = `data/legacy-game-history/Lotus-ReFactor/starRailGachaJson/42/${uid}.json`;
@@ -21,16 +25,6 @@ Bun.env.LOTUS_PROFILE_DIR = "./profiles";
 Bun.env.LOTUS_STAR_RAIL_GACHA_THEME_DIR = "./data/starrail/theme";
 const native = globalThis.fetch;
 const { appendFileSync } = require("node:fs");
-const { Canvas } = require("./packages/skia/node_modules/skia-canvas");
-const toBuffer = Canvas.prototype.toBuffer;
-Canvas.prototype.toBuffer = async function (...args) {
-  const output = await toBuffer.call(this, ...args);
-  const engine = this.engine;
-  if (engine.renderer !== "GPU" || !engine.device || /llvmpipe|lavapipe|swiftshader|software/i.test(engine.device))
-    throw Error("fixture requires a physical GPU renderer");
-  appendFileSync("renderers.jsonl", JSON.stringify(engine) + "\\n");
-  return output;
-};
 globalThis.fetch = async (input, options) => {
   const url = new URL(input instanceof Request ? input.url : input);
   if (url.hostname === "127.0.0.1" || url.hostname === "localhost") return native(input, options);
@@ -61,7 +55,7 @@ async function put(root: string, file: string, text: string) {
   await writeFile(join(root, file), text);
 }
 
-test("星铁旧档、国服汇总成功、同 UID 拒绝重入与限频后查询通过真实双协议", async () => {
+for (const rendering of [false, true]) test.skipIf(rendering && !gpu.available)(`星铁旧档、国服汇总成功、同 UID 拒绝重入与限频后查询通过真实双协议 [${rendering ? "GPU" : "functional"}]`, async () => {
   await withDualGatewayFixture("starrail-gacha-update-fixture", "disablePrivate: false\n", async ({ root, sendOneBot, sendMilky, onebot, milky }) => {
     const simulateAck = async (queue: typeof onebot, action: string, id: number, wanted?: string) => {
       const frame = await queue.next(action);
@@ -73,7 +67,8 @@ test("星铁旧档、国服汇总成功、同 UID 拒绝重入与限频后查询
     const png = async (id: number) => {
       const result = await simulateAck(onebot, "send_msg", id);
       const content = /base64:\/\/([A-Za-z0-9+/=]+)/u.exec(result)?.[1];
-      if (!content) throw Error(result.slice(0, 400));
+      if (rendering && !content) throw Error(result.slice(0, 400));
+      if (!rendering) { expect(content).toBeUndefined(); if(id===5)expect(result).toContain("新增 1 条五星记录"); }
       const evidence = Bun.env.LOTUS_SR_UPDATE_EVIDENCE;
       if (evidence && content) await Bun.write(join(evidence, `card-${id}.png`), Buffer.from(content, "base64"));
       expect(result).not.toContain("withheld-fixture");
@@ -108,13 +103,15 @@ test("星铁旧档、国服汇总成功、同 UID 拒绝重入与限频后查询
     await simulateAck(milky, "send_private_message", 9, "显示用汇总记录");
     await sendMilky("*抽卡记录");
     const local = await simulateAck(milky, "send_private_message", 10);
-    expect(local).toContain("base64://");
+    expect(local).toContain(rendering ? "base64://" : "原版详情图暂时无法生成");
+    if (rendering) {
     const engines = (await readFile(join(root, "renderers.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line));
     expect(engines.length).toBeGreaterThan(0);
     if (Bun.env.LOTUS_SR_UPDATE_EVIDENCE) {
       await Bun.write(join(Bun.env.LOTUS_SR_UPDATE_EVIDENCE, "renderers.json"), JSON.stringify(engines, null, 2));
     }
-  }, 10_000, preload, async root => {
+    }
+  }, 10_000, preload + (rendering ? physicalRenderingPreload : functionalRenderingPreload), async root => {
     const plugin = join(import.meta.dir, "../plugins/starrail");
     const installed = join(root, "plugins/starrail");
     await cp(plugin, installed, { recursive: true, filter: file => ![".git", "node_modules", "test"].includes(basename(file)) });
