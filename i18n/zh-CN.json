@@ -4997,7 +4997,7 @@
     "app.gs-panel-cache-task": "原神面板缓存后台刷新",
     "app.sr-panel-cache-task": "星铁面板缓存后台刷新",
     "lib.panel-runtime-settings.footer-label": "模板图片页脚",
-    "lib.panel-runtime-settings.footer-hint": "JSON格式配置，沿用原图背景紧接Lotus-Yunzai署名下一行绘制（支持多行换行），不新增底色块、无background配置；text清空即关闭，color支持auto（依背景选黑白）或十六进制，fontSize为8-32，lineHeight为字号-64，padding为0-32，align支持left/center/right，bold为布尔值；保存并重启后生效。",
+    "lib.panel-runtime-settings.footer-hint": "Skia 自定义页脚（恢复旧 Miao 汉仪文黑字体与文字阴影，保留原图背景）：text 留空关闭，兼容纯文本与换行，支持 <br>、<b>/<strong> 及嵌套 <span style>（color 支持十六进制及 white/black/gold/red/blue/green；font-weight 支持 normal/bold/100-900；font-size 支持 8-32px、larger[父字号1.2倍]、x-large[24px]），不支持其他 HTML/CSS 且不执行 HTML 与外部资源。参数范围：fontSize 8-32，lineHeight 字号至 64，padding 0-32，align=left/center/right，bold 为布尔值，color=auto 按背景自适应黑白。修改保存后需重启生效。",
     "lib.checkin-batch-retry-commands.denied": "仅主人可使用 #全部补签 指令。",
     "lib.checkin-batch-retry-commands.busy": "已有批量补签任务正在执行，请等待完成后再试。",
     "lib.checkin-batch-retry-commands.started": "已开始为全体已注册自动签到档案串行补签今日项目，明细将发往各用户原渠道，完成后向您汇总计数。",

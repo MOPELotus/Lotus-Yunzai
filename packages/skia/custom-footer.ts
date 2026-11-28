@@ -1,6 +1,7 @@
 import type { CanvasRenderingContext2D } from "skia-canvas";
 import { brandTextColor } from "./brand-color.ts";
-import { builtinFontFallback } from "./builtin-fonts.ts";
+import { builtinFooterFontFallback } from "./builtin-fonts.ts";
+import { footerMarkup, type FooterRun, type FooterStyle } from "./footer-markup.ts";
 
 export interface ImageFooterConfig {
   text: string;
@@ -12,7 +13,8 @@ export interface ImageFooterConfig {
   bold: boolean;
 }
 
-type FooterLayout = { height: number; lines: string[] };
+type FooterRow = { runs: FooterRun[]; width: number; height: number };
+type FooterLayout = { height: number; lines: string[]; rows?: FooterRow[] };
 
 const defaults: Readonly<ImageFooterConfig> = Object.freeze({
   text: "",
@@ -74,8 +76,8 @@ function safeWidth(width: number): number {
   return Number.isFinite(width) ? Math.max(0, width) : 0;
 }
 
-function setFont(ctx: CanvasRenderingContext2D, config: ImageFooterConfig): void {
-  ctx.font = `${config.bold ? "bold" : "normal"} ${config.fontSize}px ${builtinFontFallback}`;
+function setFont(ctx: CanvasRenderingContext2D, config: Pick<FooterStyle, "bold" | "fontSize">): void {
+  ctx.font = `${config.bold ? "bold" : "normal"} ${config.fontSize}px ${builtinFooterFontFallback}`;
 }
 
 export function layoutImageFooter(
@@ -91,6 +93,37 @@ export function layoutImageFooter(
   const lines: string[] = [];
   ctx.save();
   try {
+    const rich = footerMarkup(config.text, config);
+    if (rich) {
+      const rows: FooterRow[] = [];
+      let row: FooterRow = { runs: [], width: 0, height: config.lineHeight };
+      const finish = () => { rows.push(row); row = { runs: [], width: 0, height: config.lineHeight }; };
+      for (const run of rich) {
+        setFont(ctx, run);
+        for (const character of run.text) {
+          if (character === '\n') { finish(); continue; }
+          const last = row.runs.at(-1);
+          const same = last && last.fontSize === run.fontSize && last.bold === run.bold && last.color === run.color;
+          const priorWidth = same ? ctx.measureText(last.text).width : 0;
+          const nextWidth = ctx.measureText(same ? last.text + character : character).width;
+          const added = nextWidth - priorWidth;
+          if (row.runs.length && row.width + added > available) finish();
+          const tail = row.runs.at(-1);
+          if (tail && tail.fontSize === run.fontSize && tail.bold === run.bold && tail.color === run.color) {
+            const previous = ctx.measureText(tail.text).width;
+            tail.text += character;
+            row.width += ctx.measureText(tail.text).width - previous;
+          } else {
+            row.runs.push({ ...run, text: character });
+            row.width += ctx.measureText(character).width;
+          }
+          row.height = Math.max(row.height, run.fontSize * config.lineHeight / config.fontSize);
+        }
+      }
+      finish();
+      return { height: 2 * padding + rows.reduce((sum, entry) => sum + entry.height, 0),
+        lines: rows.map(entry => entry.runs.map(run => run.text).join('')), rows };
+    }
     setFont(ctx, config);
     // At most 2000 measurements, each on at most 2000 UTF-16 units.
     for (const paragraph of config.text.split("\n")) {
@@ -138,9 +171,45 @@ export function paintImageFooter(
     ctx.textAlign = config.align;
     ctx.fillStyle = config.color === "auto" ? "#fff" : config.color;
     if (available <= 0) return;
+    // The original Miao copyright uses a 1px offset / 1px blur text shadow.
+    // Canvas shadow distances use device pixels, unlike the transformed glyphs.
+    const transform = ctx.getTransform();
+    const scale = Math.hypot(transform.a, transform.b) || 1;
+    ctx.shadowOffsetX = scale;
+    ctx.shadowOffsetY = scale;
+    ctx.shadowBlur = scale;
+    const shadow = (color: string) => {
+      ctx.shadowColor = color === '#000' || color === '#000000' ? '#fff' : '#000';
+    };
+    if (layout.rows) {
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      let y = top + padding;
+      for (const row of layout.rows) {
+        let left = config.align === 'left' ? padding : config.align === 'right' ? w - padding - row.width : (w - row.width) / 2;
+        // Sample all run backgrounds before drawing any glyphs or shadows.
+        const colors = row.runs.map(run => {
+          setFont(ctx, run);
+          const color = run.color === 'auto' ? brandTextColor(ctx, run.text, left, y + row.height / 2) : run.color;
+          left += ctx.measureText(run.text).width;
+          return color;
+        });
+        left = config.align === 'left' ? padding : config.align === 'right' ? w - padding - row.width : (w - row.width) / 2;
+        row.runs.forEach((run, index) => {
+          setFont(ctx, run);
+          ctx.fillStyle = colors[index]!;
+          shadow(colors[index]!);
+          ctx.fillText(run.text, left, y + row.height / 2);
+          left += ctx.measureText(run.text).width;
+        });
+        y += row.height;
+      }
+      return;
+    }
     for (let i = 0; i < Math.min(layout.lines.length, 2000); i++) {
       const y = top + padding + i * config.lineHeight;
       ctx.fillStyle = config.color === "auto" ? brandTextColor(ctx, layout.lines[i]!, x, y, available) : config.color;
+      shadow(String(ctx.fillStyle));
       ctx.fillText(layout.lines[i]!, x, y, available);
     }
   } finally {
