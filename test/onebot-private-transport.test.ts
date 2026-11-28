@@ -155,3 +155,13 @@ test("OneBot 批量仅选择本连接未处理且身份一致的原邀请标识"
   expect(await connection().calls.reviewObservedOwnerRequests("invite", () => true, scope, review)).toEqual({ status: "not-found" });
   expect(frames).toHaveLength(1);
 });
+
+test('forward receipts may arrive after the ordinary five-second request deadline', async () => {
+  const {calls,send,frames}=connection();
+  const ordinary=calls.sendForward(send,{user_id:42},[{type:'node'}]);
+  const confirmed=calls.sendForwardConfirmed(send,{user_id:42},[{type:'node'}]);
+  await Bun.sleep(5_500);
+  for(const frame of frames)calls.receive({echo:frame.echo,status:'ok',retcode:0,data:{message_id:123}});
+  expect(await ordinary).toBe(true);
+  expect(await confirmed).toBe('confirmed');
+},10_000);

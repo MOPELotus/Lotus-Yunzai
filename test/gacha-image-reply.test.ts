@@ -23,15 +23,14 @@ function pageOrder(nodes: readonly MessageReply[]) {
 
 test("keeps the exact budget ordinary forward at 4×", async () => {
   const render = pages(8, 4);
-  const reply = await gachaImageReply({ ...base, ...render, inlineImageByteLimit: 24 });
+  const reply = await gachaImageReply({ ...base, ...render, });
   expect(reply).toMatchObject({ type: "forward" });
   expect(render.calls).toEqual([[1, 4], [2, 4], [3, 4]]);
 });
 
 test("aggregate bytes do not split a merged forward", async () => {
   const render = pages(8, 4), groups: number[][] = [];
-  const reply = await gachaImageReply({ ...base, ...render, inlineImageByteLimit: 13,
-    async forward(nodes) { groups.push(pageOrder(nodes)); return true; },
+  const reply = await gachaImageReply({ ...base, ...render, async forward(nodes) { groups.push(pageOrder(nodes)); return true; },
   });
   expect(reply).toEqual([]);
   expect(groups).toEqual([[1, 2, 3]]);
@@ -42,8 +41,7 @@ test("only the 99-image node limit splits a merged forward", async () => {
   const groups: number[][] = [];
   const headings: MessageReply[] = [];
   const reply = await gachaImageReply({
-    ...base, total: 101, ...pages(8, 4), inlineImageByteLimit: 8,
-    async forward(nodes) {
+    ...base, total: 101, ...pages(8, 4), async forward(nodes) {
       groups.push(pageOrder(nodes));
       headings.push(nodes[0]!);
       return true;
@@ -58,52 +56,47 @@ test("rejected and ambiguous forward attempts stop without repeating or sending 
   for (const uncertain of [false, true]) {
     const sent: number[][] = [];
     const reply = await gachaImageReply({
-      ...base, ...pages(8, 4), inlineImageByteLimit: 8,
-      async forward(nodes) {
+      ...base, ...pages(8, 4), async forward(nodes) {
         sent.push(pageOrder(nodes));
         if (uncertain) throw new Error("unknown receipt");
         return false;
       },
     });
     expect(sent).toEqual([[1,2,3]]);
-    expect(reply).toContain(uncertain ? "结果未确认" : "未发送");
+    expect(reply).toEqual([]);
   }
 });
 
 test("checks actual role again between confirmed split sends", async () => {
   let sends = 0;
   const reply = await gachaImageReply({
-    ...base, total:100, ...pages(8, 4), inlineImageByteLimit: 8, verifyRole: async () => sends === 0,
+    ...base, total:100, ...pages(8, 4), verifyRole: async () => sends === 0,
     async forward() { sends++; return true; },
   });
   expect(sends).toBe(1);
   expect(reply).toBe(base.changedRoleMessage);
 });
 
-test("a single 2× page above the byte limit is never offered for sending", async () => {
-  let forwards = 0;
-  const reply = await gachaImageReply({
-    ...base, ...pages(16, 9), inlineImageByteLimit: 8,
-    async forward() { forwards++; return true; },
-  });
-  expect(forwards).toBe(0);
-  expect(reply).toContain("单页图片仍超过");
+test("a large pool image is not rejected by an artificial byte gate", async () => {
+  const renderer=pages(9 * 1024 * 1024,9 * 1024 * 1024);
+  const reply=await gachaImageReply({...base,...renderer,total:1,});
+  expect(reply).toMatchObject({type:"image"});
+  expect(renderer.calls).toEqual([[1,4]]);
 });
 
-test("低配按原分页一次出图，单页超限时保留文字回执", async () => {
+test("低配保留用户选择的画质并且不以字节门禁拦截", async () => {
   const render = pages(8, 4);
   const sent: number[][] = [];
   setImageRenderPreset("low");
   try {
     const reply = await gachaImageReply({
-      ...base, ...render, inlineImageByteLimit: 8,
-      async forward(nodes) { sent.push(pageOrder(nodes)); return true; },
+      ...base, ...render, async forward(nodes) { sent.push(pageOrder(nodes)); return true; },
     });
     expect(reply).toEqual([]);
     expect(sent).toEqual([[1, 2, 3]]);
     expect(render.calls).toEqual([[1, 1], [2, 1], [3, 1]]);
     const oversized = pages(8, 9);
-    expect(await gachaImageReply({ ...base, ...oversized, inlineImageByteLimit: 8 })).toContain("单页图片仍超过");
+    expect(await gachaImageReply({ ...base, ...oversized, total: 1, })).toMatchObject({type:"image"});
     expect(oversized.calls).toEqual([[1, 1]]);
   } finally {
     setImageRenderPreset("standard");
@@ -112,7 +105,7 @@ test("低配按原分页一次出图，单页超限时保留文字回执", async
 
 test('one original image is sent directly without a merged forward',async()=>{
  const renderer=pages(8,4);
- const reply=await gachaImageReply({...base,...renderer,total:1,inlineImageByteLimit:8});
+ const reply=await gachaImageReply({...base,...renderer,total:1,});
  expect(reply).toMatchObject({type:'image'});
  expect(renderer.calls).toEqual([[1,4]]);
 });

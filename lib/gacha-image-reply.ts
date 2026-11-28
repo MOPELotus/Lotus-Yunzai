@@ -12,18 +12,15 @@ interface GachaImageReplyOptions {
   readonly total: number;
   readonly title: string;
   readonly signal: AbortSignal;
-  readonly inlineImageByteLimit?: number;
   readonly forward?: MessageEvent["forward"];
-  readonly splitPage?: (page: number) => number | undefined;
   readonly render: (page: number, scale: Scale) => Promise<{ readonly png: Uint8Array }>;
   readonly verifyRole: () => Promise<boolean>;
   readonly changedRoleMessage: string;
 }
 
 export async function gachaImageReply({
-  total, title, signal, inlineImageByteLimit, forward, render, splitPage, verifyRole, changedRoleMessage,
+  total, title, signal, forward, render, verifyRole, changedRoleMessage,
 }: GachaImageReplyOptions): Promise<CommandReply | undefined> {
-  const limit = Math.min(inlineImageByteLimit ?? 8 * 1024 * 1024, 8 * 1024 * 1024);
   const image = async (page: number, scale: Scale): Promise<Image> => {
     signal.throwIfAborted();
     const { png } = await render(page, scale);
@@ -31,21 +28,15 @@ export async function gachaImageReply({
   };
   const roleIsCurrent = async () => !signal.aborted && await verifyRole() && !signal.aborted;
   const scale = nativeImageRasterScale();
-  const tooLarge = $t("lib.gacha-image-reply.text_5b90ea75d3");
 
   const high: Image[] = [];
   for (let page = 1; page <= total; page++) {
     const card = await image(page, scale);
-    if (card.file.byteLength > limit) {
-      const next = splitPage?.(page);
-      if (next !== undefined && next > total) { total = next; page--; continue; }
-      return tooLarge;
-    }
     high.push(card);
   }
   const batches: Image[][] = [];
   for (let start = 0; start < high.length; start += 99) batches.push(high.slice(start, start + 99));
-  if (!batches?.length) return total === 0 ? [] : tooLarge;
+  if (!batches.length) return [];
   if (!await roleIsCurrent()) return signal.aborted ? undefined : changedRoleMessage;
   if (total === 1) return batches[0]?.[0];
   if (batches.length === 1 && !forward) return { type: "forward", nodes: [title, ...batches[0]!] };
@@ -55,10 +46,10 @@ export async function gachaImageReply({
     if (index && !await roleIsCurrent()) return signal.aborted ? undefined : changedRoleMessage;
     try {
       if (!await forward([batches.length === 1 ? title : $t("lib.gacha-image-reply.text_11d4132897", { "title": title, "value2": index + 1, "length": batches.length }), ...pages])) {
-        return $t("lib.gacha-image-reply.text_0f1a420ea5", { "value1": index + 1 });
+        return [];
       }
     } catch {
-      return $t("lib.gacha-image-reply.text_5af9e46976", { "value1": index + 1 });
+      return [];
     }
   }
   return [];

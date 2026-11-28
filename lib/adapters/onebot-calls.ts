@@ -489,9 +489,9 @@ export class OneBotCalls {
     }
   }
 
-  async #confirmAction(send: Send, action: string, params: object, signal?: AbortSignal): Promise<boolean> {
+  async #confirmAction(send: Send, action: string, params: object, signal?: AbortSignal, timeout = 5_000): Promise<boolean> {
     try {
-      await this.#request(send, action, params, signal);
+      await this.#request(send, action, params, signal, timeout);
       return true;
     } catch (error) {
       if (error instanceof OneBotRejectedError) return false;
@@ -685,7 +685,7 @@ export class OneBotCalls {
   async sendForward(send: Send, target: { group_id: number } | { user_id: number }, messages: readonly object[]): Promise<boolean> {
     const action = "group_id" in target ? "send_group_forward_msg" : "send_private_forward_msg";
     try {
-      return await this.#confirmAction(send, action, { ...target, messages });
+      return await this.#confirmAction(send, action, { ...target, messages }, undefined, 120_000);
     } catch (error) {
       if (error instanceof OneBotNotSentError) return false;
       throw error;
@@ -696,7 +696,7 @@ export class OneBotCalls {
     signal?: AbortSignal, recallSeconds?: number): Promise<ChatFileResult> {
     const action = "group_id" in target ? "send_group_forward_msg" : "send_private_forward_msg";
     try {
-      const result = await this.#request(send, action, { ...target, messages }, signal);
+      const result = await this.#request(send, action, { ...target, messages }, signal, 120_000);
       const messageId = this.#messageId(result);
       if (!this.#closed && !signal?.aborted && messageId !== undefined && recallSeconds !== undefined) {
         this.#scheduleRecall(send, messageId, recallSeconds);

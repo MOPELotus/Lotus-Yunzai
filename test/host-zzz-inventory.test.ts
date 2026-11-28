@@ -107,8 +107,8 @@ test("国服统计仅当前登录可读，网关确认后才查实时库存，�
       expect(refused.echo).toBeString();
       expect(await new Bun.Image(stats).metadata()).toMatchObject({ format: "png" });
       refused.respond(null, "failed");
-      const rejected = await onebot.next("send_msg");
-      expect(JSON.stringify(rejected.params)).toContain("未发送");
+      await Bun.sleep(75);
+      expect(onebot.calls).toHaveLength(0);
       expect(await Bun.file(join(root, "requests.json")).exists()).toBe(false);
 
       sendOneBot("%角色记录2");
