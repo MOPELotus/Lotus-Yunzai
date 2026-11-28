@@ -1152,6 +1152,10 @@
     "lib.update-report": {
       "description": "更新命令与更新报告的中文国际化文案，复用 TRSS 简洁术语与结构",
       "source": "lib/update-report.ts"
+    },
+    "lib.hoyolab-login-web": {
+      "description": "国际服网页登录（一次性网页登录、HoYoLAB 账密、极验与邮箱二次验证、国际服独立档案与 SToken 续期）",
+      "source": "lib/hoyolab-login-web.ts"
     }
   },
   "messages": {
@@ -5005,7 +5009,34 @@
     "lib.update-command.phase.waiting": "{stage}（已耗时 {seconds} 秒）",
     "lib.update-report.completed": "{name} 更新完成\n更新时间：{date}",
     "lib.update-report.title": "{name} 更新日志（共 {count} 条）",
-    "lib.update-report.read-failed": "读取更新日志失败"
+    "lib.update-report.read-failed": "读取更新日志失败",
+    "lib.hoyolab-login-web.title": "HoYoLAB 国际服登录",
+    "lib.hoyolab-login-web.account": "邮箱或账号",
+    "lib.hoyolab-login-web.password": "密码",
+    "lib.hoyolab-login-web.submit": "登录",
+    "lib.hoyolab-login-web.emailCode": "邮箱验证码",
+    "lib.hoyolab-login-web.verifyEmail": "验证",
+    "lib.hoyolab-login-web.resend": "重新发送",
+    "lib.hoyolab-login-web.captcha": "人机验证",
+    "lib.hoyolab-login-web.cancel": "取消",
+    "lib.hoyolab-login-web.intro": "密码仅用于本次登录验证，系统不会保存您的密码。请勿将此登录链接分享给他人。",
+    "lib.hoyolab-login-web.link": "请打开以下链接完成档案 {id} 的国际服登录（有效期 {minutes} 分钟，请勿转发）：\n{url}",
+    "lib.hoyolab-login-web.unavailable": "未配置网页登录地址，请联系管理员处理。",
+    "lib.hoyolab-login-web.ownOnly": "请由本人于当前 QQ 会话中发起并完成操作。",
+    "lib.hoyolab-login-web.busy": "当前已有进行中的登录任务，请勿重复操作。",
+    "lib.hoyolab-login-web.expired": "登录链接已过期，请重新发起登录。",
+    "lib.hoyolab-login-web.failed": "登录失败（错误码：{code}），请稍后重试。",
+    "lib.hoyolab-login-web.email": "验证码已发送至您的邮箱，请查收并填写。",
+    "lib.hoyolab-login-web.captchaRequired": "请先完成人机验证。",
+    "lib.hoyolab-login-web.success": "国际服网页登录成功，已保存档案 {id} 并同步国际服角色。发送 #登录列表 查看档案，发送 #注册自动签到{id} 开启自动签到。",
+    "lib.hoyolab-login-web.cancelled": "已取消本次登录。",
+    "lib.hoyolab-login-web.changed": "目标档案状态已变更，请重新发起登录。",
+    "lib.hoyolab-login-web.network": "网络请求失败，请稍后重试。",
+    "lib.hoyolab-login-web.invalid": "输入内容格式不正确，请检查后重试。",
+    "lib.hoyolab-login-web.secure": "为保障账号安全，请使用 HTTPS 或本机地址进行登录。",
+    "lib.hoyolab-login-web.retryLimit": "尝试次数过多，请重新发起登录。",
+    "lib.hoyolab-login-web.section": "国际服网页登录（一次性网页登录、HoYoLAB 账密、极验与邮箱二次验证、国际服独立档案与 SToken 续期）",
+    "lib.hoyolab-login-web.renewFailed": "国际服档案凭据续期失败，请重新登录。"
   },
   "parameters": {
     "lib.update-checkout.git-failed": {"step": "执行失败的 Git 命令步骤名称", "code": "Git 命令返回的进程退出码", "details": "经脱敏处理的 Git 失败诊断信息"},

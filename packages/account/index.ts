@@ -271,7 +271,9 @@ function readIdentity(value: unknown, qq: string, id: number) {
   const cookie = text(account.cookie);
   const stoken = text(account.stoken);
   const stokenCookie = text(account.stoken_cookie);
-  const login = Boolean(cookie && (stoken || stokenCookie));
+  const os = record(record(data.games).os);
+  const domestic = Boolean(cookie && (stoken || stokenCookie));
+  const login = domestic || Boolean(verifiedInternationalAccount(os, os.cookie));
   return {
     summary: { id, name: text(profile.name), enabled: data.enabled === true,
       loggedIn: login, deviceBound: device.bound === true && Boolean(deviceId) },
@@ -285,8 +287,8 @@ function readIdentity(value: unknown, qq: string, id: number) {
         raw.android_version, raw.osVersion, raw.androidVersion].map(text).find(Boolean) ?? "",
       raw,
     },
-    roles: record(account.game_roles),
-    selected: record(account.current_uid),
+    roles: record(!domestic && verifiedInternationalAccount(os, os.cookie) ? os.game_roles : account.game_roles),
+    selected: record(!domestic && verifiedInternationalAccount(os, os.cookie) ? os.current_uid : account.current_uid),
   };
 }
 
@@ -592,7 +594,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
 
   async function readLoggedIn(qq: string, id: number) {
     const profile = await read(qq, id);
-    if (!profile.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
+    if (!profile.summary.loggedIn || !profile.account.cookie || !(profile.account.stoken || profile.account.stokenCookie)) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
     return profile;
   }
 
@@ -603,7 +605,11 @@ export function createProfileStore(directory: string | URL = new URL("../../data
 
   async function readRoleContext(qq: string, id: number, game: Game, uid: string | undefined, requireSelected: boolean) {
     if (!profileGames.includes(game)) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
-    const profile = await readLoggedIn(qq, id);
+    const profile = await read(qq, id);
+    if (!profile.account.cookie || !(profile.account.stoken || profile.account.stokenCookie)) {
+      if (profile.summary.loggedIn) throw new ProfileError("role-missing", $t("index.text_8edebd665e"));
+      throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
+    }
     const roles = normalizeGameRoles(profile.roles[game]);
     const selection = profile.selected[game];
     const activeUid = uid === undefined ? accountId(selection) : uid;
@@ -705,6 +711,72 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     },
     async verifyLoginSlot(slot: ProfileLoginSlot) {
       await slotSnapshot(join(root, slotPath(slot)), slot);
+    },
+    async internationalCredentials(qq: string, id: number) {
+      const { document, revision } = await readDocument(qq, id);
+      const os = record(record(document.games).os);
+      const account = verifiedInternationalAccount(os, os.cookie);
+      if (!account || !text(os.stoken) || !text(os.mid) || !text(os.device_id)) return;
+      return { accountId: account.accountId, realm: account.realm, stoken: text(os.stoken), mid: text(os.mid),
+        deviceId: text(os.device_id), revision, refreshedAt: text(os.refreshed_at) };
+    },
+    async saveInternationalRefreshed(qq: string, id: number, expectedRevision: string, result: {
+      readonly cookie: string; readonly activityCookie: string; readonly accountId: string; readonly realm: "SG" | "US" | "EU";
+      readonly stoken: string; readonly mid: string; readonly deviceId: string;
+    }, signal?: AbortSignal) {
+      if (![result.cookie, result.activityCookie].every(value => /^[\x20-\x7e]{1,16384}$/u.test(value))) invalidCheckinSettings();
+      return updateCheckinProfile(qq, id, expectedRevision, document => {
+        const games = record(document.games), os = record(games.os);
+        if (os.verified_account_id !== result.accountId || os.verified_realm !== result.realm || os.stoken !== result.stoken ||
+          os.mid !== result.mid || os.device_id !== result.deviceId) throw changedProfile();
+        return { ...document, games: { ...games, os: { ...os, cookie: result.cookie,
+          verified_activity_cookie: result.activityCookie, refreshed_at: new Date().toISOString() } } };
+      }, signal);
+    },
+    async saveInternationalLogin(slot: ProfileLoginSlot, result: {
+      readonly cookie: string; readonly activityCookie: string; readonly accountId: string; readonly realm: "SG" | "US" | "EU";
+      readonly stoken: string; readonly mid: string; readonly deviceId: string;
+    }, roles: GameRoles, signal?: AbortSignal, groupId?: number) {
+      const filename = slotPath(slot);
+      if (!/^[1-9]\d{0,19}$/u.test(result.accountId) || !["SG", "US", "EU"].includes(result.realm) ||
+        !/^v2_[A-Za-z0-9._~+/%=-]{1,4093}$/u.test(result.stoken) ||
+        !/^[A-Za-z0-9_-]{1,128}$/u.test(result.mid) || !/^[A-Za-z0-9_-]{1,128}$/u.test(result.deviceId) ||
+        ![result.cookie, result.activityCookie].every(value => /^[\x20-\x7e]{1,16384}$/u.test(value)) ||
+        groupId !== undefined && (!Number.isSafeInteger(groupId) || groupId < 1)) invalidCheckinSettings();
+      await mkdir(root, { recursive: true, mode: 0o700 });
+      const path = join(await realpath(root), filename);
+      return serializeWrite(path, async () => {
+        signal?.throwIfAborted();
+        const snapshot = await slotSnapshot(path, slot);
+        const document = snapshot ? record(Bun.YAML.parse(snapshot.toString("utf8"))) : {
+          version: 1, enabled: false, user: { qq: slot.qq }, profile: { id: slot.profileId, name: slot.profileId === 1 ? "default" : `profile-${slot.profileId}` },
+        };
+        const games = record(document.games), os = record(games.os);
+        const same = os.verified_account_id === result.accountId && os.verified_realm === result.realm;
+        const roleState = same ? { roles: record(os.game_roles), selected: record(os.current_uid) } : { roles: {}, selected: {} };
+        const storedRoles = rolesForStorage(roles, roleState);
+        const profile = record(document.profile), notify = record(profile.notify);
+        const groups = Array.isArray(notify.fallback_groups) ? notify.fallback_groups : [];
+        const updated = { ...document,
+          profile: groupId === undefined || groups.some(value => accountId(value) === String(groupId)) ? profile :
+            { ...profile, notify: { ...notify, fallback_groups: [...groups, String(groupId)] } },
+          games: { ...games, os: { ...os, enable: true, cookie: result.cookie, verified_activity_cookie: result.activityCookie,
+            verified_account_id: result.accountId, verified_realm: result.realm, stoken: result.stoken, mid: result.mid,
+            device_id: result.deviceId, refreshed_at: new Date().toISOString(), ...storedRoles,
+            ...Object.fromEntries(([['gs', 'genshin'], ['sr', 'honkai_sr'], ['zzz', 'zzz']] as const).map(([key, game]) =>
+              [game, { ...record(os[game]), checkin: same && Object.hasOwn(record(os[game]), 'checkin') ? record(os[game]).checkin === true : roles[key].length > 0 }])),
+          } },
+        };
+        // Retain domestic credentials and registration; overseas tokens never enter account.*.
+        const revision = await writeProfileDocument(path, updated, slot.revision, signal);
+        loginSlots.delete(slot); loginDevices.delete(slot);
+        return { revision };
+      });
+    },
+    async checkinAccountContext(qq: string, id = 1) {
+      const { account, device, revision, summary } = await read(qq, id);
+      if (!summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
+      return { qq, profileId: id, account, device, revision };
     },
     async saveLogin(slot: ProfileLoginSlot, result: ProfileLoginResult, signal?: AbortSignal) {
       const filename = slotPath(slot);
@@ -906,6 +978,10 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         }
         if (accountId(state.selected[game]) === uid) return document;
         const account = record(document.account);
+        if (!state.account.cookie || !(state.account.stoken || state.account.stokenCookie)) {
+          const games = record(document.games), os = record(games.os);
+          return { ...document, games: { ...games, os: { ...os, current_uid: { ...state.selected, [game]: uid } } } };
+        }
         return { ...document, account: { ...account, current_uid: { ...state.selected, [game]: uid } } };
       }, signal, undefined, canCommit);
     },
@@ -1031,7 +1107,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const cn = record(record(document.games).cn);
       const community = record(document.mihoyobbs);
       const displayName = checkinLabel(state, text(record(document.user).nickname), `QQ ${qq}`);
-      const games = configuredCnCheckins(cn);
+      const games = configuredCnCheckins(state.account.cookie && (state.account.stoken || state.account.stokenCookie) ? cn : { ...cn, enable: false });
       const communityForums = configuredCommunityForums(community);
       return {
         revision, enabled: state.summary.enabled, loggedIn: state.summary.loggedIn, displayName, games, communityForums,
@@ -1125,7 +1201,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const os = record(record(document.games).os);
       const account = verifiedInternationalAccount(os, os.verified_activity_cookie);
       if (!state.summary.loggedIn || !account) return;
-      return { ...account, revision, selectedUid: accountId(state.selected[game]) };
+      return { ...account, revision, selectedUid: accountId(record(os.current_uid)[game]) || accountId(state.selected[game]) };
     },
     async internationalRedeemContext(qq: string, id: number, game: "gs" | "sr") {
       const { document, state, revision } = await readDocument(qq, id);
@@ -1133,7 +1209,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const account = verifiedInternationalAccount(os, os.cookie);
       if (!state.summary.loggedIn || !account) return;
       const activity = verifiedInternationalAccount(os, os.verified_activity_cookie);
-      return { ...account, revision, selectedUid: accountId(state.selected[game]), activityCookie: activity?.cookie };
+      return { ...account, revision, selectedUid: accountId(record(os.current_uid)[game]) || accountId(state.selected[game]), activityCookie: activity?.cookie };
     },
     async internationalCheckin(qq: string, id: number, game: "genshin" | "honkai_sr" | "zzz" | "tears_of_themis" | "honkai3rd") {
       const { document, state, revision } = await readDocument(qq, id);
@@ -1240,9 +1316,10 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       return updateCheckinProfile(qq, id, expectedRevision, (document, state) => {
         if (!state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
         const games = record(document.games);
-        const { verified_activity_cookie: _previous, ...os } = record(games.os);
+        const { verified_activity_cookie: _previous, stoken, mid, device_id, refreshed_at, ...os } = record(games.os);
+        const same = os.verified_account_id === verified.accountId && os.verified_realm === verified.realm;
         return { ...document, games: { ...games, os: {
-          ...os, cookie: verified.cookie, enable: true,
+          ...os, ...(same && { stoken, mid, device_id, refreshed_at }), cookie: verified.cookie, enable: true,
           verified_account_id: verified.accountId, verified_realm: verified.realm,
           ...(verified.activityCookie && { verified_activity_cookie: verified.activityCookie }),
         } } };
@@ -1306,9 +1383,13 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         stoken_cookie: "", updated_at: "", roles_updated_at: "", role_sync_error: "",
       });
       if (current) {
-        await updateCheckinProfile(qq, id, current.revision, document => ({ ...document, account: cleared(record(document.account)) }),
+        await updateCheckinProfile(qq, id, current.revision, document => ({ ...document, account: cleared(record(document.account)), games: { ...record(document.games), os: {} } }),
           current.signal, current.verify, current.canCommit);
-      } else await updateAccount(qq, id, profileFilename(qq, id), cleared);
+      } else {
+        const current = await readDocument(qq, id);
+        await updateCheckinProfile(qq, id, current.revision, document => ({ ...document,
+          account: cleared(record(document.account)), games: { ...record(document.games), os: {} } }));
+      }
     },
     requestContext(qq: string, id: number, game: Game, uid?: string) {
       return readRoleContext(qq, id, game, uid, false);
@@ -1324,8 +1405,8 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     async requestContextsForRead(qq: string, id: number, games: readonly Game[]) {
       if (games.some((game) => !profileGames.includes(game))) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
       const profile = await read(qq, id);
-      const sources = requestsFor(profile, qq, id, games);
-      if (profile.summary.loggedIn) return { sources };
+      const sources = profile.account.cookie ? requestsFor(profile, qq, id, games) : [];
+      if (profile.summary.loggedIn && profile.account.cookie && (profile.account.stoken || profile.account.stokenCookie)) return { sources };
       if (!hasLegacyGameCookie(profile.account)) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
       return {
         sources,

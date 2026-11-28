@@ -192,6 +192,8 @@ import { panelGroupManagement } from "./lib/panel-group-management.ts";
 import { panelGroupCleanup } from "./lib/panel-group-cleanup.ts";
 import { panelGuobaRoutes } from "./lib/panel-guoba-routes.ts";
 import { webMountPage } from "./lib/panel-web-mount.ts";
+import { createHoYoLabLoginWeb, isHoYoLabLoginCommand } from "./lib/hoyolab-login-web.ts";
+import { createHoYoLabCredentialRenewal } from "./lib/hoyolab-login-renewal.ts";
 import { isPassportLoginInput, passportLoginCommands } from "./lib/passport-login.ts";
 import { repairLegacyPassportCookies, scheduleLegacyPassportCookieRepair } from "./lib/passport-cookie-repair.ts";
 import { createPluginLoadingReporter, parsePluginLoadMilliseconds, pluginProbeTokenEnvironment } from "./lib/plugin-load-progress.ts";
@@ -487,6 +489,7 @@ if (import.meta.main) {
   let captchaService: ReturnType<typeof createCaptchaService> | undefined;
   let manualCaptcha: ReturnType<typeof import("./lib/captcha/manual-relay.ts").createManualCaptchaRelay> | undefined;
   let miyousheWeb: ReturnType<typeof createMiyousheWeb> | undefined;
+  let hoyolabLoginWeb: ReturnType<typeof createHoYoLabLoginWeb> | undefined;
   let panelOwnerSession: ReturnType<typeof createPanelOwnerSession> | undefined;
   let shopPlans: ReturnType<typeof createMiyousheShopPlans> | undefined;
   let milkyOnline: { id: number; startedAt: number; signal: AbortSignal; send: MilkySession["send"];
@@ -2136,7 +2139,7 @@ if (import.meta.main) {
     const scope = allowNew && event.msg ? ownCheckinSession(event, []) : undefined;
     if (scope && event.message_type === "group") {
       const command = normalizeGameCommand(event).msg;
-      const personal = isPassportLoginInput(event.msg) || isDeviceBindingInput(command) || isDeviceBindingPayload(event.msg) ||
+      const personal = isHoYoLabLoginCommand(event.msg) || isPassportLoginInput(event.msg) || isDeviceBindingInput(command) || isDeviceBindingPayload(event.msg) ||
         isDeviceBindingPayload(event.raw_message) || !!matchOwnRoleSelection(command) || !!matchArkSelfRank(event.msg) ||
         !!matchGameProfileCommand(command) || matchRetiredUidCommand(command) || !!matchPublicUidQuery(command) ||
         (!!matchPanelSignatureCommand(event.msg) && matchPanelSignatureCommand(event.msg)?.action !== "export") ||
@@ -2241,7 +2244,7 @@ if (import.meta.main) {
         atlasCommand || updateCheck || updateNoticeChange || isUpdateCommand(event.msg) || isInstallCommand(event.msg) || isLogCommand(event.msg) ||
         isLogLevelCommand(event.msg) || isRecallCommand(event) ||
         isAccountLoginMutation(event.msg) || matchesAccountCookieStatus(event.msg) ||
-        isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) || isManualRedeemCommand(event.msg) ||
+        isHoYoLabLoginCommand(event.msg) || isMiyousheWebCommand(event.msg) || isPreviewRedeemSetting(event.msg) || isManualRedeemCommand(event.msg) ||
         zzzLinkEntry.test(event.msg) || starRailLinkEntry.test(event.msg) ||
         /^(?:#?取消$|#批量刷新签到(?:\s|$))/u.test(event.msg) ||
         [event.msg, event.raw_message].some(value => isCloudTokenInput(value) || isHoYoLabCookieInput(value) ||
@@ -2313,7 +2316,7 @@ if (import.meta.main) {
     const originalMessage = [event.msg, event.raw_message];
     const gameAccountCommand = normalizeGameCommand(event).msg;
     const protectedModule = originalMessage.some(isCloudTokenInput) ? "@lotus-yunzai/cloud-profile"
-      : originalMessage.some(isHoYoLabCookieInput) ? "@lotus-yunzai/hoyolab-profile" : isPassportLoginInput(event.msg) ? "@lotus-yunzai/passport-login"
+      : originalMessage.some(isHoYoLabCookieInput) ? "@lotus-yunzai/hoyolab-profile" : isHoYoLabLoginCommand(event.msg) ? "@lotus-yunzai/hoyolab-login" : isPassportLoginInput(event.msg) ? "@lotus-yunzai/passport-login"
       : isDeviceBindingInput(event.msg) || isDeviceBindingInput(gameAccountCommand) || isDeviceBindingPayload(event.msg) || isDeviceBindingPayload(event.raw_message) ? "@lotus-yunzai/device" : undefined;
     if (protectedModule) {
       if (allowNew) {
@@ -3209,7 +3212,10 @@ if (import.meta.main) {
     const zzzRankClient = createProfileHoyoClient(checkinProfiles, hoyoTransport);
     const gameCheckin = gameCheckinCommands(profileDirectory, lifecycle.signal,
       { manualRelay: () => manualCaptcha, audit: checkinAudit, transport: hoyoTransport, scheduleStore: checkinScheduleStore,
-        prepareDevice: (qq, profileId) => generatedDevices.refresh(qq, profileId) });
+        async prepareDevice(qq, profileId) {
+          const account = await checkinProfiles.checkinAccountContext(qq, profileId);
+          if (account.account.cookie && (account.account.stoken || account.account.stokenCookie)) return generatedDevices.refresh(qq, profileId);
+        } });
     runNamedCheckin = gameCheckin.runNamed;
     const previewSignal = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
     const previewOptions = {
@@ -3559,6 +3565,22 @@ if (import.meta.main) {
         console.warn($t("app.text_64eebb4891"));
       }
     }
+    hoyolabLoginWeb = createHoYoLabLoginWeb({
+      directory: profileDirectory, signal: lifecycle.signal, publicBase: () => shopSettings.origin ?? fileBase,
+      transport: hoyoTransport, assetDirectory: new URL("web/hoyolab-login/", root),
+      async onLogin(qq, profileId, revision) {
+        if (!checkinRuntime || lifecycle.signal.aborted) return;
+        const current = await checkinProfiles.checkinSettings(qq, profileId);
+        if (current.enabled && current.revision === revision) await checkinRuntime.addRegisteredProfile({
+          qq, profileId, name: current.displayName, enabled: true, schedule: current.schedule,
+        });
+      },
+    });
+    commands.registerModule(hoyolabLoginWeb.commands);
+    const internationalRenewal = createHoYoLabCredentialRenewal(checkinProfiles, hoyoTransport, AbortSignal.any([lifecycle.signal, handoffSession.signal]), {
+      withIdleSlot: run => checkinScheduleStore.withExecutionLock(checkinScheduleClock().date, run),
+    });
+    if (!probingUpdate) whenModuleTasksActive(() => internationalRenewal.start());
     commands.registerModule(passportLoginCommands(profileDirectory, lifecycle.signal, async (qq, profileId, revision) => {
       void generatedDevices.refresh(qq, profileId).catch(() => {
         if (!lifecycle.signal.aborted) console.warn($t("app.text_0edaecd48a"));
@@ -3702,6 +3724,7 @@ if (import.meta.main) {
     const milkyTransport = milkyWebhook ?? milkyWs;
     if (milkyWebhookPath) legacy.httpRoutes.reserve(milkyWebhookPath);
     if (miyousheWeb) legacy.httpRoutes.reserveMount(miyousheWeb.mount);
+    if (hoyolabLoginWeb) legacy.httpRoutes.reserveMount(hoyolabLoginWeb.mount);
     stopMilky = milkyTransport && (async () => {
       await milkyNoticeReceipts.closed;
       await milkyTransport.stop();
@@ -4381,7 +4404,7 @@ if (import.meta.main) {
           return panelTransfer?.source.serve(request) ?? new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
         }
         return await manualCaptcha?.handlePublic(request) ?? publicFiles.handle(request) ?? mediaDelivery.handle(request) ??
-          await miyousheWeb?.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
+          await hoyolabLoginWeb?.handle(request) ?? await miyousheWeb?.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
           await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       };
       if (updateProbeToken && updateProbePort !== undefined && process.connected === true && typeof process.send === "function") {
@@ -4495,6 +4518,7 @@ if (import.meta.main) {
       await Promise.allSettled([...pending, stopPowerSchedule?.(), stopRestartSchedule?.(), stopUpdateSchedule?.(), updateNotices.stop(),
         moduleTasks.stop(), stopMilky?.(), checkinRuntime?.stop(), dailyNoteReminders?.stop()]);
       miyousheWeb?.close();
+      hoyolabLoginWeb?.close();
       panelOwnerSession?.close();
       await mediaDelivery.close();
       await plugins?.dispose();

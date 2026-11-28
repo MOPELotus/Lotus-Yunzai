@@ -901,3 +901,5 @@ export function createProfileHoyoClient(
 }
 
 export { getDefaultCaptchaSolver, setDefaultCaptchaSolver, type CaptchaSolver, type CaptchaRun, type CaptchaChallenge, type CaptchaProof, type CaptchaEvent } from "./captcha.ts";
+
+export { createHoYoLabLogin, HoYoLabLoginError, type HoYoLabLoginStep, type HoYoLabLoginCredentials, type HoYoLabSessionCredentials } from "./hoyolab-login.ts";

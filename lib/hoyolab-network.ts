@@ -4,6 +4,7 @@ const $t = createTextTranslator("core", messageCatalog.messages);
 import { HoyoRequestError, withHoyoReadRetries } from "@lotus-yunzai/hoyo-client";
 
 const internationalOrigins = new Set([
+  "https://sg-public-api.hoyoverse.com",
   "https://passport-api-sg.hoyolab.com",
   "https://passport-api-us.hoyolab.com",
   "https://passport-api-eu.hoyolab.com",

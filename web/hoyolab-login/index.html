@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>HoYoLAB · Lotus-Yunzai</title><link rel="stylesheet" href="/hoyolab-login/login.css"><script src="/hoyolab-login/login.js" defer></script></head>
+<body><main><p class="brand">Lotus-Yunzai</p><h1 data-i18n="title">HoYoLAB</h1><p data-i18n="intro"></p><p id="status" role="status" aria-live="polite"></p>
+<form id="password-form" hidden><label><span data-i18n="account"></span><input name="account" autocomplete="username" maxlength="245" required></label><label><span data-i18n="password"></span><input name="password" type="password" autocomplete="current-password" maxlength="245" required></label><button data-i18n="submit"></button></form>
+<form id="email-form" hidden><label><span data-i18n="emailCode"></span><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><button data-i18n="verifyEmail"></button><button type="button" id="resend" data-i18n="resend"></button></form>
+<button id="captcha" data-i18n="captcha" hidden></button><button id="retry" data-i18n="submit" hidden></button><button id="cancel" data-i18n="cancel" hidden></button><div id="geetest"></div></main></body></html>

@@ -22,7 +22,7 @@ export function createGeneratedDeviceRefresh(profiles: ReturnType<typeof createP
         const previous = await profiles.accountContext(target.qq, target.profileId);
         const plan = await profiles.prepareGeneratedDevice(target.qq, target.profileId, signal);
         if (previous.revision !== plan.source.revision) generated++;
-      } catch { signal.throwIfAborted(); failed++; }
+      } catch (error) { signal.throwIfAborted(); if (!(error instanceof ProfileError && error.code === "login-required")) failed++; }
     }
     return { generated, failed };
   }
@@ -69,7 +69,10 @@ export function createGeneratedDeviceRefresh(profiles: ReturnType<typeof createP
       if (!target.loggedIn) continue;
       let skipped = false;
       try { skipped = Boolean((await refresh(target.qq, target.profileId)).skipped); }
-      catch { signal.throwIfAborted(); report($t("lib.generated-device-runtime.text_49e805b40f")); }
+      catch (error) { signal.throwIfAborted();
+        if (error instanceof ProfileError && error.code === "login-required") skipped = true;
+        else report($t("lib.generated-device-runtime.text_49e805b40f"));
+      }
       if (!skipped) await wait(1000, undefined, { signal });
     }
   }

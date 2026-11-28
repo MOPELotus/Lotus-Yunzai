@@ -1,4 +1,4 @@
-import type { createProfileStore } from "@lotus-yunzai/account";
+import { ProfileError, type createProfileStore } from "@lotus-yunzai/account";
 import { needsLegacyCookieRepair, type createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
 
 type Profiles = Pick<ReturnType<typeof createProfileStore>, "listCheckinProfiles" | "accountContext">;
@@ -16,7 +16,7 @@ export async function repairLegacyPassportCookies(profiles: Profiles, client: Cl
       if (!needsLegacyCookieRepair(source.account)) continue;
       await client.refreshCredentials(source);
       repaired++;
-    } catch { failed++; }
+    } catch (error) { if (!(error instanceof ProfileError && error.code === "login-required")) failed++; }
   }
   return { repaired, failed };
 }

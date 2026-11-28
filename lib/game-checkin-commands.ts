@@ -311,7 +311,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       settings = await profiles.checkinSettings(qq, profileId);
       knownRevision = settings.revision;
       if (input.source !== "manual" && !settings.enabled) return { status: "busy" };
-      account = await profiles.accountContext(qq, profileId);
+      account = await profiles.checkinAccountContext(qq, profileId);
       if (account.revision !== settings.revision) return { status: "busy", reply: changed };
     } catch (error) {
       if (signal.aborted) return { status: "busy" };
@@ -336,7 +336,7 @@ export function gameCheckinCommands(directory: string | undefined, lifecycleSign
       async function verifyCurrent() {
         verifyDay();
         await input.verifySession?.();
-        const current = await profiles.accountContext(qq, profileId).catch(() => undefined);
+        const current = await profiles.checkinAccountContext(qq, profileId).catch(() => undefined);
         verifyDay();
         if (current?.revision !== revision) throw new ProfileError("changed", changed);
       }
