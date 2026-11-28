@@ -794,7 +794,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         const updated = { ...document,
           profile: groupId === undefined || groups.some(value => accountId(value) === String(groupId)) ? profile :
             { ...profile, notify: { ...notify, fallback_groups: [...groups, String(groupId)] } },
-          games: { ...games, os: { ...os, enable: true, cookie: result.cookie, verified_activity_cookie: result.activityCookie,
+          games: { ...games, os: { ...os, enable: same && typeof os.enable === "boolean" ? os.enable : true, cookie: result.cookie, verified_activity_cookie: result.activityCookie,
             verified_account_id: result.accountId, verified_realm: result.realm, stoken: result.stoken, mid: result.mid,
             device_id: result.deviceId, refreshed_at: new Date().toISOString(), ...storedRoles,
             ...Object.fromEntries(([['gs', 'genshin'], ['sr', 'honkai_sr'], ['zzz', 'zzz']] as const).map(([key, game]) =>
@@ -1249,7 +1249,7 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       if (!state.summary.loggedIn || !account) return;
       return { ...account, revision, selectedUid: accountId(record(os.current_uid)[game]) || accountId(state.selected[game]) };
     },
-    async internationalRedeemContext(qq: string, id: number, game: "gs" | "sr") {
+    async internationalRedeemContext(qq: string, id: number, game: Game) {
       const { document, state, revision } = await readDocument(qq, id);
       const os = record(record(document.games).os);
       const account = verifiedInternationalAccount(os, os.cookie);

@@ -5044,7 +5044,11 @@
     "lib.hoyolab-login-web.section": "国际服网页登录（一次性网页登录、HoYoLAB 账密、极验与邮箱二次验证、国际服独立档案与 SToken 续期）",
     "lib.hoyolab-login-web.renewFailed": "国际服档案凭据续期失败，请重新登录。",
     "lib.account-international.internationalRoles": "国际服UID：原神{gs}、星铁{sr}、绝区零{zzz}",
-    "lib.account-international.internationalGroup": "{game} 国际服"
+    "lib.account-international.internationalGroup": "{game} 国际服",
+    "lib.hoyolab-profile-commands.stoken-usage": "私聊格式：#绑定国际服SToken[档案号] stuid=账号ID; stoken=v2_...; mid=...; ma_passport_region=SG（默认档案1，region可选SG/US/EU）",
+    "lib.hoyolab-profile-commands.stoken-invalid": "需要提供有效的v2 SToken及对应的账号ID和mid",
+    "lib.hoyolab-profile-commands.stoken-failed": "导入失败，请检查凭据完整性或稍后重试",
+    "lib.redeem-code-runner.international-scan-failed": "[{game}]国际服兑换码扫描未完成"
   },
   "parameters": {
     "lib.update-checkout.git-failed": {"step": "执行失败的 Git 命令步骤名称", "code": "Git 命令返回的进程退出码", "details": "经脱敏处理的 Git 失败诊断信息"},

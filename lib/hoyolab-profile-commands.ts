@@ -2,11 +2,15 @@ import { createTranslator as createTextTranslator } from "../packages/i18n/index
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
 import { createProfileStore, MAX_PROFILE_ID, ProfileError } from "@lotus-yunzai/account";
+import { randomUUID } from "node:crypto";
+import { createHoYoLabLogin, fetchHoYoLabLoginRoles } from "../packages/hoyo-client/hoyolab-login.ts";
 import { HoyoRequestError, verifyHoYoLabCookie } from "@lotus-yunzai/hoyo-client";
 import type { CommandContext, CommandModule, CommandReply } from "./commands.ts";
 
-const cookieInput = /^\s*[#＃井/]\s*绑定\s*(?:国际服|海外服)\s*cookie/iu;
-const cookieBinding = /^\s*[#＃井/]\s*绑定\s*(?:国际服|海外服)\s*cookie([0-9]*)\s+([^\r\n]+)$/iu;
+const cookieInput = /^\s*[#＃井/]\s*(?:绑定|导入)\s*(?:国际服|海外服)\s*(?:cookie|stoken)/iu;
+const tokenBinding = /^\s*[#＃井/]\s*(?:绑定|导入)\s*(?:国际服|海外服)\s*stoken([0-9]*)\s+([^\r\n]+)$/iu;
+const tokenInput = /^\s*[#＃井/]\s*(?:绑定|导入)\s*(?:国际服|海外服)\s*stoken/iu;
+const cookieBinding = /^\s*[#＃井/]\s*(?:绑定|导入)\s*(?:国际服|海外服)\s*cookie([0-9]*)\s+([^\r\n]+)$/iu;
 const toggle = /^#(启用|开启|关闭|禁用)(?:国际服|海外服)(?:签到)?([0-9]*)$/u;
 const language = /^#设置(?:国际服|海外服)语言([0-9]*)\s+([A-Za-z_-]{1,32})$/u;
 
@@ -64,6 +68,53 @@ export function hoyoLabProfileCommands(directory: string | undefined, signal: Ab
     }
   }
 
+  async function bindToken(message: string, context: CommandContext) {
+    if (context.message_type !== "private") return $t("lib.hoyolab-profile-commands.stoken-usage");
+    const match = tokenBinding.exec(message);
+    if (!match || match[2]!.length > 16384) return $t("lib.hoyolab-profile-commands.stoken-usage");
+    const id = Number(match[1] || 1);
+    if ((match[1] && !/^[1-9]\d{0,2}$/u.test(match[1])) || id < 1 || id > MAX_PROFILE_ID) return $t("lib.hoyolab-profile-commands.text_3dd62228d2");
+    const session = context.privateCredentialSignal, user = context.user_id;
+    if (context.isDelegated || !session || session.aborted || !user || !Number.isSafeInteger(user) || user < 1)
+      return $t("lib.hoyolab-profile-commands.stoken-usage");
+    const fields = new Map<string, string>();
+    for (const pair of match[2]!.split(';')) {
+      if (!pair.trim()) continue;
+      const separator = pair.indexOf('=');
+      if (separator < 1) return $t("lib.hoyolab-profile-commands.stoken-invalid");
+      const key = pair.slice(0, separator).trim(), value = pair.slice(separator + 1).trim();
+      if (fields.has(key) && fields.get(key) !== value) return $t("lib.hoyolab-profile-commands.stoken-invalid");
+      fields.set(key, value);
+    }
+    const ids = new Set(['stuid','stuid_v2','ltuid','ltuid_v2','account_id','account_id_v2'].flatMap(key => fields.has(key) ? [fields.get(key)!] : []));
+    const mids = new Set(['mid','stmid_v2','ltmid_v2','account_mid_v2'].flatMap(key => fields.has(key) ? [fields.get(key)!] : []));
+    const [accountId] = ids, [mid] = mids;
+    const stoken = fields.get('stoken') ?? fields.get('stoken_v2');
+    const realm = fields.get('ma_passport_region')?.toUpperCase() ?? 'SG';
+    if (fields.get('stoken') && fields.get('stoken_v2') && fields.get('stoken') !== fields.get('stoken_v2') ||
+      ids.size !== 1 || mids.size !== 1 || !/^[1-9]\d{0,19}$/u.test(accountId ?? '') ||
+      !/^[A-Za-z0-9._~-]{1,128}$/u.test(mid ?? '') || !/^v2_[A-Za-z0-9._~+/%=-]{1,4093}$/u.test(stoken ?? '') ||
+      !['SG','US','EU'].includes(realm)) return $t("lib.hoyolab-profile-commands.stoken-invalid");
+    const scoped = AbortSignal.any([signal, session]);
+    let saved = false;
+    try {
+      const slot = await profiles.openLoginSlot(String(user), id);
+      const verify = async () => { scoped.throwIfAborted(); await profiles.verifyLoginSlot(slot); scoped.throwIfAborted(); };
+      await verify();
+      const result = await createHoYoLabLogin(transport).exchange({ accountId: accountId!, mid: mid!, stoken: stoken!,
+        deviceId: randomUUID(), realm: realm as 'SG' | 'US' | 'EU' }, scoped);
+      await verify();
+      const roles = await fetchHoYoLabLoginRoles(result, transport, scoped);
+      await verify();
+      await profiles.saveInternationalLogin(slot, result, roles, scoped);
+      saved = true;
+      if (!scoped.aborted) return await viewProfile(id, context);
+    } catch {
+      if (scoped.aborted) return;
+      return saved ? $t("lib.hoyolab-profile-commands.text_33ac99d56c", {id}) : $t("lib.hoyolab-profile-commands.stoken-failed");
+    }
+  }
+
   return {
     name: "@lotus-yunzai/hoyolab-profile",
     commands: {},
@@ -71,7 +122,7 @@ export function hoyoLabProfileCommands(directory: string | undefined, signal: Ab
       if (signal.aborted) return;
       const message = context.normalizedMessage;
       if (isHoYoLabCookieInput(message) || isHoYoLabCookieInput(context.raw_message ?? "")) {
-        return bindCookie(message, context);
+        return tokenInput.test(message) ? bindToken(message, context) : bindCookie(message, context);
       }
 
       const sign = toggle.exec(message);
