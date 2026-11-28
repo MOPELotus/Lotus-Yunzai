@@ -220,7 +220,7 @@ function normalize(data: Json, game: Game, uid: string, region: string, gameBiz:
 export async function readDailyNote(source: ProfileRequestContext, transport: HoyoTransport,
   { signal }: DailyNoteOptions = {}, verifyProfile?: () => Promise<void>): Promise<DailyNoteSnapshot> {
   const { data, region } = await readCnGameRecord(source, transport, { kind: "daily-note", signal }, verifyProfile);
-  return normalize(data, source.game, source.role.uid, region);
+  return normalize(data, source.game, source.role.uid, region, source.role.gameBiz || undefined);
 }
 
 export async function readHoYoLabZzzDailyNote(

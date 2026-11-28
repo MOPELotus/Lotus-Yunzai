@@ -44,8 +44,8 @@ function verify(data: Json, uid: string, region: string) {
   for (const row of [data, record(data.role)]) {
     if (!row) continue;
     if (["uid", "role_id", "game_uid"].some(key => Object.hasOwn(row, key) && String(row[key]) !== uid) ||
-        ["server", "region"].some(key => Object.hasOwn(row, key) && genshinResponseRegion(row[key]) !== region) ||
-        (Object.hasOwn(row, "game_biz") && row.game_biz !== "hk4e_cn")) {
+        ["server", "region"].some(key => Object.hasOwn(row, key) && !(region.startsWith("os_") && row[key] === "") && genshinResponseRegion(row[key]) !== region) ||
+        (Object.hasOwn(row, "game_biz") && row.game_biz !== (region.startsWith("os_") ? "hk4e_global" : "hk4e_cn"))) {
       throw new HoyoRequestError("response", $t("genshin-gcg.text_526cbdd718"));
     }
   }

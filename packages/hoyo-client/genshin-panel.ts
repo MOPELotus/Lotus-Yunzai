@@ -27,8 +27,8 @@ export function verifyRole(data: Json, uid: string, region: string, label = $t("
   for (const row of [data, object(data.role)]) {
     if (!row) continue;
     if (["role_id", "game_uid", "uid"].some(key => Object.hasOwn(row, key) && String(row[key]) !== uid) ||
-        ["region", "server"].some(key => Object.hasOwn(row, key) && genshinResponseRegion(row[key]) !== region) ||
-        (Object.hasOwn(row, "game_biz") && row.game_biz !== "hk4e_cn")) {
+        ["region", "server"].some(key => Object.hasOwn(row, key) && !(region.startsWith("os_") && row[key] === "") && genshinResponseRegion(row[key]) !== region) ||
+        (Object.hasOwn(row, "game_biz") && row.game_biz !== (region.startsWith("os_") ? "hk4e_global" : "hk4e_cn"))) {
       throw new HoyoRequestError("response", $t("genshin-panel.text_41b1813f8f", { "label": label }));
     }
   }

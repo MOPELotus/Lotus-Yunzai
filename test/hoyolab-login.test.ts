@@ -239,8 +239,10 @@ test("mixed domestic and overseas login lists both regions and selects overseas 
   const controller=new AbortController();
   await store.selectCatalogRole("42",1,"gs","800000001",catalog.revision,controller.signal,()=>true);
   expect((await store.savedRole("42",1,"gs")).region).toBe("os_asia");
-  await expect(store.requestSelectedContext("42",1,"gs")).rejects.toMatchObject({code:"role-missing"});
-  await expect(store.requestContext("42",1,"gs")).rejects.toMatchObject({code:"role-missing"});
+  const international = await store.requestSelectedContext("42",1,"gs");
+  expect(international.international?.accountId).toBe(credentials.accountId);
+  expect(international.account.cookie).toBe("");
+  expect((await store.requestContext("42",1,"gs")).role.region).toBe("os_asia");
   expect((await store.accountContext("42",1)).account.cookie).toBe("domestic-cookie");
   const view=await store.describe("42",1);
   expect(view.international.roles.gs).toHaveLength(1);

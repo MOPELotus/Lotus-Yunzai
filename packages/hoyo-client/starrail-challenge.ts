@@ -10,7 +10,7 @@ import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { observeCnRead } from "./cn-read-diagnostics.ts";
-import { GameRecordRequestError, isUnspecifiedCnRecordRegion, readGameRecordPayload } from "./game-record.ts";
+import { GameRecordRequestError, gameRecordHeaders, isUnspecifiedCnRecordRegion, readGameRecordPayload } from "./game-record.ts";
 
 const routes = { hall: "challenge", story: "challenge_story", boss: "challenge_boss", peak: "challenge_peak" } as const;
 export type StarRailChallengeKind = keyof typeof routes;
@@ -111,14 +111,17 @@ function verifyResult(data: Json, { uid }: Source["role"], region: string) {
 
 export async function readStarRailChallenge(source: ProfileRequestContext, transport: HoyoTransport,
   options: StarRailChallengeOptions, verifyProfile?: () => Promise<void>) {
-  const detectedRegion = starRailChallengeRegion(source.role);
+  const overseas = source.international;
+  const detectedRegion = overseas ? source.role.gameBiz === "hkrpg_global" && /^[1-9]\d{8,9}$/u.test(source.role.uid) &&
+    ["prod_official_usa", "prod_official_eur", "prod_official_asia", "prod_official_cht"].includes(source.role.region) ? source.role.region : undefined
+    : starRailChallengeRegion(source.role);
   if (!detectedRegion) throw new HoyoRequestError("invalid-input", $t("starrail-challenge.text_594b1c433e"));
   const region: string = detectedRegion;
   const { kinds, simple, period, signal } = options;
   if (source.game !== "sr" || kinds.length < 1 || kinds.length > 4 || kinds.some(kind => !Object.hasOwn(routes, kind))) {
     throw new HoyoRequestError("invalid-input", $t("starrail-challenge.text_f1e28e5bcc"));
   }
-  const origin = "https://api-takumi-record.mihoyo.com";
+  const origin = overseas ? "https://bbs-api-os.hoyolab.com" : "https://api-takumi-record.mihoyo.com";
   const timeout = AbortSignal.timeout(25_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
   const interrupted = () => new HoyoRequestError("transport", $t("starrail-challenge.text_83db12b536"));
@@ -128,7 +131,7 @@ export async function readStarRailChallenge(source: ProfileRequestContext, trans
     if (deadline.aborted) throw interrupted();
   }
   async function request(kind: StarRailChallengeKind, schedule: StarRailChallengePeriod, detailed: boolean) {
-    const path = `/game_record/app/hkrpg/api/${routes[kind]}`;
+    const path = `/game_record/${overseas ? "" : "app/"}hkrpg/api/${routes[kind]}`;
     const endpoint = new URL(path, origin);
     endpoint.searchParams.set("role_id", source.role.uid);
     endpoint.searchParams.set("schedule_type", schedule);
@@ -137,9 +140,9 @@ export async function readStarRailChallenge(source: ProfileRequestContext, trans
       endpoint.searchParams.set("isPrev", "");
       endpoint.searchParams.set("need_all", "true");
     }
-    const headers = requestHeaders(source, source.account.cookie, endpoint.searchParams);
+    const headers = overseas ? gameRecordHeaders(source, endpoint.search.slice(1)) : requestHeaders(source, source.account.cookie, endpoint.searchParams);
     await guard();
-    await addRecordFingerprint(headers, transport, deadline, guard);
+    if (!overseas) await addRecordFingerprint(headers, transport, deadline, guard);
     const diagnostics = observeCnRead(path, "GET", signal, timeout);
     let response: Response | undefined;
     for (let attempt = 0; attempt < 3; attempt++) {

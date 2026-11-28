@@ -97,7 +97,7 @@ export function normalizeZzzExploration(input: unknown, identity: Identity, page
   for (const key of ["region", "server"]) {
     if (data[key] !== undefined && data[key] !== identity.region) invalid($t("zzz-exploration.text_e6dcb75782"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-exploration.text_a81ce382a1"));
+  if (data.game_biz !== undefined && data.game_biz !== (identity.region.endsWith("_cn") ? "nap_cn" : "nap_global")) invalid($t("zzz-exploration.text_a81ce382a1"));
   const raw = list(data.area_collections, $t("zzz-exploration.text_3382870bc4"));
   const first = whole ? 0 : (page - 1) * rowsPerPage;
   const end = whole ? Infinity : first + rowsPerPage;

@@ -35,7 +35,7 @@ function identity(data: Json, uid: string, region: string) {
         throw new HoyoRequestError("response", $t("starrail-roster.text_6faec598a4"));
       }
     }
-    if (row && Object.hasOwn(row, "game_biz") && row.game_biz !== "hkrpg_cn") {
+    if (row && Object.hasOwn(row, "game_biz") && row.game_biz !== (region.startsWith("prod_official_") ? "hkrpg_global" : "hkrpg_cn")) {
       throw new HoyoRequestError("response", $t("starrail-roster.text_3b4eb48e81"));
     }
   }

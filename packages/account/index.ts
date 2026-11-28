@@ -287,6 +287,7 @@ function readIdentity(value: unknown, qq: string, id: number) {
         raw.android_version, raw.osVersion, raw.androidVersion].map(text).find(Boolean) ?? "",
       raw,
     },
+    overseasRoles: verifiedInternationalAccount(os, os.cookie) ? record(os.game_roles) : {},
     roles: record(!domestic && verifiedInternationalAccount(os, os.cookie) ? os.game_roles : account.game_roles),
     selected: record(!domestic && verifiedInternationalAccount(os, os.cookie) ? os.current_uid : account.current_uid),
   };
@@ -421,7 +422,7 @@ async function writeProfileDocument(path: string, document: unknown, expected: s
   }
 }
 
-function rolesForStorage(roles: GameRoles, previous: { roles: Record<string, unknown>; selected: Record<string, unknown> }) {
+function rolesForStorage(roles: GameRoles, previous: { roles: Record<string, unknown>; selected: Record<string, unknown>; overseasRoles?: Record<string, unknown> }) {
   const catalog = { ...previous.roles };
   const selected = { ...previous.selected };
   for (const game of profileGames) {
@@ -437,7 +438,9 @@ function rolesForStorage(roles: GameRoles, previous: { roles: Record<string, unk
         ...(avatar ? { game_head_icon: avatar } : {}),
       };
     });
-    selected[game] = list.find((role) => role.uid === accountId(selected[game]))?.uid
+    const keepOverseas = normalizeGameRoles(previous.overseasRoles?.[game]).some(role => role.uid === accountId(selected[game])) &&
+      list.every(role => !role.gameBiz.endsWith("_global"));
+    selected[game] = keepOverseas ? accountId(selected[game]) : list.find((role) => role.uid === accountId(selected[game]))?.uid
       ?? list.find((role) => role.chosen)?.uid ?? list[0]?.uid ?? "";
   }
   return { game_roles: catalog, current_uid: selected };
@@ -608,32 +611,38 @@ export function createProfileStore(directory: string | URL = new URL("../../data
 
   function requestFor(profile: Awaited<ReturnType<typeof readLoggedIn>>, qq: string, profileId: number,
     game: Game, role: GameRole) {
-    return { qq, profileId, game, role, account: profile.account, device: profile.device, revision: profile.revision };
+    const context = { qq, profileId, game, role, account: profile.account, device: profile.device, revision: profile.revision };
+    return context as typeof context & { international?: { readonly cookie: string; readonly accountId: string;
+      readonly realm: "SG" | "US" | "EU"; readonly language: string; readonly deviceId: string; readonly passportCookie: string } };
   }
 
   async function readRoleContext(qq: string, id: number, game: Game, uid: string | undefined, requireSelected: boolean) {
     if (!profileGames.includes(game)) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
-    const profile = await read(qq, id);
-    if (!profile.account.cookie || !(profile.account.stoken || profile.account.stokenCookie)) {
-      if (profile.summary.loggedIn) throw new ProfileError("role-missing", $t("index.text_8edebd665e"));
-      throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
-    }
-    const roles = normalizeGameRoles(profile.roles[game]);
-    const selection = profile.selected[game];
+    const { document, state, revision } = await readDocument(qq, id);
+    if (!state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
+    const roles = availableProfileRoles(document, state, game);
+    const selection = state.selected[game];
     const activeUid = uid === undefined ? accountId(selection) : uid;
-    if (activeUid && !roles.some(role => role.uid === activeUid)) {
-      const { document } = await readDocument(qq, id);
-      const os = record(record(document.games).os);
-      if (verifiedInternationalAccount(os, os.cookie) && normalizeGameRoles(record(os.game_roles)[game]).some(role => role.uid === activeUid)) {
-        throw new ProfileError("role-missing", $t("index.text_8edebd665e"));
-      }
-    }
     const hasSelection = selection !== undefined && selection !== null && selection !== "";
     const allowFallback = uid === undefined && !(requireSelected && hasSelection);
-    const role = roles.find((item) => item.uid === activeUid) ??
-      (allowFallback ? roles.find((item) => item.chosen) ?? roles[0] : undefined);
+    const role = roles.find(item => item.uid === activeUid) ?? (allowFallback ? roles.find(item => item.chosen) ?? roles[0] : undefined);
     if (!role) throw new ProfileError("role-missing", $t("index.text_8edebd665e"));
-    return requestFor(profile, qq, id, game, role);
+    if (role.gameBiz.endsWith("_global")) {
+      const os = record(record(document.games).os);
+      const international = verifiedInternationalAccount(os, os.verified_activity_cookie);
+      // Legacy imported overseas roles remain available for local archive queries without sending domestic credentials.
+      const empty = readIdentity({}, qq, id);
+      if (!international) return requestFor({ ...empty, revision }, qq, id, game, role);
+      if (!normalizeGameRoles(record(os.game_roles)[game]).some(item =>
+        item.uid === role.uid && item.region === role.region && item.gameBiz === role.gameBiz)) {
+        return requestFor({ ...empty, revision }, qq, id, game, role);
+      }
+      // Keep overseas credentials outside the domestic account and device fields.
+      return { ...requestFor({ ...empty, revision }, qq, id, game, role),
+        international: { ...international, deviceId: text(os.device_id), passportCookie: text(os.cookie) } };
+    }
+    if (!state.account.cookie || !(state.account.stoken || state.account.stokenCookie)) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
+    return requestFor({ ...state, revision }, qq, id, game, role);
   }
 
   function requestsFor(profile: Awaited<ReturnType<typeof read>>, qq: string, id: number, games: readonly Game[]) {
@@ -1421,12 +1430,21 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     },
     async requestContexts(qq: string, id: number, games: readonly Game[] = profileGames) {
       if (games.some((game) => !profileGames.includes(game))) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
-      const profile = await readLoggedIn(qq, id);
-      return requestsFor(profile, qq, id, games);
+      const { document, state } = await readDocument(qq, id);
+      if (!state.summary.loggedIn) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));
+      return Promise.all([...new Set(games)].flatMap(game => availableProfileRoles(document, state, game)
+        .map(role => readRoleContext(qq, id, game, role.uid, false))));
     },
     async requestContextsForRead(qq: string, id: number, games: readonly Game[]) {
       if (games.some((game) => !profileGames.includes(game))) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
-      const profile = await read(qq, id);
+      const { document, state, revision } = await readDocument(qq, id);
+      const profile = { ...state, revision };
+      const os = record(record(document.games).os);
+      if (verifiedInternationalAccount(os, os.verified_activity_cookie)) {
+        const sources = await Promise.all([...new Set(games)].flatMap(game => availableProfileRoles(document, state, game)
+          .map(role => readRoleContext(qq, id, game, role.uid, false))));
+        return { sources };
+      }
       const sources = profile.account.cookie ? requestsFor(profile, qq, id, games) : [];
       if (profile.summary.loggedIn && profile.account.cookie && (profile.account.stoken || profile.account.stokenCookie)) return { sources };
       if (!hasLegacyGameCookie(profile.account)) throw new ProfileError("login-required", $t("index.text_ec1c922d00"));

@@ -123,7 +123,7 @@ export function normalizeZzzHoloBoss(value: unknown, identity: Identity): ZzzHol
   for (const key of ["region", "server"]) {
     if (data[key] !== undefined && data[key] !== identity.region) invalid($t("zzz-holo-boss.text_e6dcb75782"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-holo-boss.text_a81ce382a1"));
+  if (data.game_biz !== undefined && data.game_biz !== (identity.region.endsWith("_cn") ? "nap_cn" : "nap_global")) invalid($t("zzz-holo-boss.text_a81ce382a1"));
   if (data.schedule_type !== undefined && count(data.schedule_type, 2) !== identity.scheduleType) invalid($t("zzz-holo-boss.text_4a703a03f5"));
   const rooms = data.list ?? [];
   if (!Array.isArray(rooms) || rooms.length > 8) invalid($t("zzz-holo-boss.text_3ed0782680"));

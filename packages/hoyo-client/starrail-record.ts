@@ -9,7 +9,8 @@ import { readCnGameRecord } from "./game-record.ts";
 export async function readStarRailPersonalRecord(source: ProfileRequestContext, transport: HoyoTransport,
   { signal }: { readonly signal?: AbortSignal }, verifyProfile?: () => Promise<void>) {
   const { role } = source;
-  if (source.game !== "sr" || role.gameBiz !== "hkrpg_cn" || !/^(?:prod_gf_cn|prod_qd_cn)$/u.test(role.region)) {
+  if (source.game !== "sr" || (source.international ? role.gameBiz !== "hkrpg_global" || !/^prod_official_(?:usa|eur|asia|cht)$/u.test(role.region)
+    : role.gameBiz !== "hkrpg_cn" || !/^(?:prod_gf_cn|prod_qd_cn)$/u.test(role.region))) {
     throw new HoyoRequestError("invalid-input", $t("starrail-record.text_a3498c8358"));
   }
   const { data, region } = await readCnGameRecord(source, transport, { kind: "starrail-index", signal }, verifyProfile);

@@ -108,11 +108,11 @@ export async function readZzzGameRecord(source: ProfileRequestContext, transport
   { signal }: { readonly signal?: AbortSignal } = {}, verifyProfile?: () => Promise<void>): Promise<ZzzGameRecordSnapshot> {
   const { data: index, region } = await readCnGameRecord(source, transport, { kind: "zzz-index", signal }, verifyProfile);
   const { uid } = source.role;
-  verifyRecordRole(index, uid, region, "nap_cn");
+  verifyRecordRole(index, uid, region, source.role.gameBiz || "nap_cn");
   return readRecord(uid, region, index, async part => {
     const kind = part === "avatar" ? "zzz-avatar" : "zzz-buddy";
     const { data } = await readCnGameRecord(source, transport, { kind, signal }, verifyProfile);
-    verifyRecordRole(data, uid, region, "nap_cn");
+    verifyRecordRole(data, uid, region, source.role.gameBiz || "nap_cn");
     return data;
   });
 }
@@ -121,7 +121,7 @@ export async function readZzzOwnedBuddyRoster(source: ProfileRequestContext, tra
   { signal }: { readonly signal?: AbortSignal } = {}, verifyProfile?: () => Promise<void>): Promise<ZzzOwnedBuddyRoster> {
   const { uid } = source.role;
   const { data, region } = await readCnGameRecord(source, transport, { kind: "zzz-owned-buddy", signal }, verifyProfile);
-  verifyRecordRole(data, uid, region, "nap_cn");
+  verifyRecordRole(data, uid, region, source.role.gameBiz || "nap_cn");
   return { uid, region, buddies: entries(data.list, "buddy") };
 }
 

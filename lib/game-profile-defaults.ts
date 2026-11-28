@@ -35,8 +35,8 @@ export function createGameProfileDefaults(directory: string, profiles: Profiles,
   });
   async function readBinding(qq: string, id: number, game: Game) {
     const source = await profiles.requestSelectedContext(qq, id, game).catch(() => undefined);
-    const idValue = source && profileCookieAccountId(source.account);
-    if (idValue && source.role.uid) {
+    const idValue = source?.international ? `os:${source.international.realm}:${source.international.accountId}` : source && profileCookieAccountId(source.account);
+    if (source && idValue && source.role.uid) {
       const account = gameProfileAccountFingerprint(qq, game, idValue);
       return { account, revision: source.revision, uid: source.role.uid };
     }

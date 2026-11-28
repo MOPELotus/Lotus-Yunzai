@@ -187,7 +187,7 @@ export function normalizeZzzZenkov(input: unknown, identity: Identity, kind: Zzz
   for (const key of ["region", "server"]) {
     if (data[key] !== undefined && data[key] !== identity.region) invalid($t("zzz-zenkov.text_e6dcb75782"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-zenkov.text_a81ce382a1"));
+  if (data.game_biz !== undefined && data.game_biz !== (identity.region.endsWith("_cn") ? "nap_cn" : "nap_global")) invalid($t("zzz-zenkov.text_a81ce382a1"));
   const maps = list(data.map_list, $t("zzz-zenkov.text_41ab2e0ecb"));
   const shared = { ...identity, rank: rank(data), hiddenMaps: Math.max(0, maps.length - 24), maps: maps.slice(0, 24).map(entry => {
     const row = object(entry, $t("zzz-zenkov.text_8013070a16")) ?? invalid($t("zzz-zenkov.text_8013070a16"));

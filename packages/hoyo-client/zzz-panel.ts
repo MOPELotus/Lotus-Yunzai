@@ -70,7 +70,7 @@ function identity(data: Json, uid: string, region: string) {
   for (const field of ["server", "region"]) {
     if (data[field] !== undefined && data[field] !== region) invalid($t("zzz-panel.text_970b9652e1"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-panel.text_aa52ab4a54"));
+  if (data.game_biz !== undefined && data.game_biz !== (region.endsWith("_cn") ? "nap_cn" : "nap_global")) invalid($t("zzz-panel.text_aa52ab4a54"));
 }
 
 export function normalizeZzzPanelAvatar(input: unknown): ZzzPanelAvatar {

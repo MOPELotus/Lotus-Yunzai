@@ -109,7 +109,7 @@ function verifyIdentity(data: Json, { uid, region, scheduleType }: Pick<ZzzShiyu
   for (const key of ["server", "region"]) {
     if (data[key] !== undefined && data[key] !== region) invalid($t("zzz-shiyu.text_2772c022fb"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-shiyu.text_67314fa4cb"));
+  if (data.game_biz !== undefined && data.game_biz !== (region.endsWith("_cn") ? "nap_cn" : "nap_global")) invalid($t("zzz-shiyu.text_67314fa4cb"));
   if (data.schedule_type !== undefined && whole(data.schedule_type) !== scheduleType) {
     invalid($t("zzz-shiyu.text_51d100b94e"));
   }

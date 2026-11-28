@@ -77,7 +77,7 @@ function verifyIdentity(data: Json, expected: Identity) {
   for (const key of ["region", "server"]) {
     if (data[key] !== undefined && data[key] !== expected.region) invalid($t("zzz-climbing-tower.text_e6dcb75782"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-climbing-tower.text_a81ce382a1"));
+  if (data.game_biz !== undefined && data.game_biz !== (expected.region.endsWith("_cn") ? "nap_cn" : "nap_global")) invalid($t("zzz-climbing-tower.text_a81ce382a1"));
 }
 
 export function normalizeZzzClimbingTower(input: unknown, identity: Identity): ZzzClimbingTowerSnapshot {

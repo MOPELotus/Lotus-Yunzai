@@ -3,5 +3,18 @@
   "commit": "3439939acb91d59875288e875689595667ec87bd",
   "license": "MIT",
   "licenseFile": "LICENSE-genshin-py",
-  "files": ["genshin/client/components/auth/subclients/app.py", "genshin/client/manager/cookie.py", "genshin/utility/auth.py", "genshin/utility/ds.py", "genshin/constants.py", "genshin/models/auth/geetest.py", "genshin/models/auth/verification.py"]
+  "files": [
+    "genshin/client/components/auth/subclients/app.py",
+    "genshin/client/manager/cookie.py",
+    "genshin/utility/auth.py",
+    "genshin/utility/ds.py",
+    "genshin/constants.py",
+    "genshin/models/auth/geetest.py",
+    "genshin/models/auth/verification.py",
+    "genshin/client/components/chronicle/base.py",
+    "genshin/client/components/chronicle/genshin.py",
+    "genshin/client/components/chronicle/starrail.py",
+    "genshin/client/components/chronicle/zzz.py",
+    "genshin/client/components/diary.py"
+  ]
 }

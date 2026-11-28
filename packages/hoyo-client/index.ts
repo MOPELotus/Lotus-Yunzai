@@ -141,7 +141,7 @@ function isGenshinPersonalRecordCookieExpired(error: unknown) {
 
 interface CookieRecovery {
   readonly profiles: Pick<ReturnType<typeof createProfileStore>, "accountContext" | "saveRefreshedCredentials" | "saveRoles">
-    & Partial<Pick<ReturnType<typeof createProfileStore>, "requestSelectedContext" | "requestContexts">>;
+    & Partial<Pick<ReturnType<typeof createProfileStore>, "requestSelectedContext" | "requestContexts" | "requestContext">>;
   readonly exchange: (profile: ProfileAccountContext, options?: { readonly verifyProfile?: () => Promise<void> }) => Promise<RefreshedCredentials>;
   readonly scope?: () => Promise<string>;
   readonly syncRoles?: boolean;
@@ -323,6 +323,13 @@ export function createHoyoClient(
   async function ensureCurrentProfile(profile: ProfileAccountContext) {
     if (!recovery) return;
     const changed = new HoyoRequestError("profile-changed", $t("index.text_819bb9ded1"));
+    const overseas = profile as ProfileAccountContext & Partial<ProfileRequestContext>;
+    if (overseas.international && overseas.game && overseas.role) {
+      const latest = await recovery.profiles.requestContext?.(profile.qq, profile.profileId, overseas.game, overseas.role.uid).catch(() => { throw changed; });
+      if (!latest?.international || latest.revision !== profile.revision || latest.international.accountId !== overseas.international.accountId ||
+        latest.international.realm !== overseas.international.realm || latest.role.region !== overseas.role.region) throw changed;
+      return;
+    }
     const latest = await recovery.profiles.accountContext(profile.qq, profile.profileId).catch(() => { throw changed; });
     if (latest.revision !== profile.revision) throw changed;
   }
@@ -340,6 +347,26 @@ export function createHoyoClient(
     isExpired?: (error: unknown) => boolean,
     onAttempt?: (profile: ProfileAccountContext) => void,
   ) {
+    const internationalSource = source as Source & Partial<ProfileRequestContext>;
+    if (internationalSource.international) {
+      const guard = async () => {
+        options.signal?.throwIfAborted();
+        if (!recovery) return;
+        const current = await recovery.profiles.requestContext?.(source.qq, source.profileId, internationalSource.game!, internationalSource.role?.uid);
+        if (!current?.international || current.revision !== source.revision ||
+          current.international.accountId !== internationalSource.international!.accountId ||
+          current.international.realm !== internationalSource.international!.realm ||
+          current.role.region !== internationalSource.role?.region) {
+          throw new HoyoRequestError("profile-changed", $t("index.text_819bb9ded1"));
+        }
+      };
+      await guard();
+      const data = await withMiyousheCaptcha(transport, request => reader(source, request, options, guard), {
+        signal: options.signal, verify: guard, context: { qq: source.qq, profileId: source.profileId }, game: internationalSource.game,
+      });
+      await guard();
+      return { ...data, revision: source.revision, refreshedCookie: false };
+    }
     const { context, data } = await retrieve(source, async (profile) => {
       onAttempt?.(profile);
       const guard = recovery && (() => ensureCurrentProfile(profile));
@@ -581,6 +608,8 @@ export function createHoyoClient(
       function readWithCurrentRole<Data extends object>(source: ProfileRequestContext,
         reader: (source: ProfileRequestContext, transport: HoyoTransport, options: DailyNoteOptions,
           guard?: () => Promise<void>) => Promise<Data>) {
+        if (source.international) return retainedSource({ ...source, revision: current.revision }, source)
+          .then(candidate => readForProfile(candidate, options, reader, canRefresh));
         return readForProfile({ ...current, game: source.game, role: source.role }, options, async (candidate, request, opts, guard) =>
           reader(await retainedSource(candidate, source), request, opts, guard), canRefresh, onAttempt);
       }
@@ -588,13 +617,13 @@ export function createHoyoClient(
         const { game, role } = source;
         options.signal?.throwIfAborted();
         try {
-          verifyCookieIdentity(source);
+          if (!source.international) verifyCookieIdentity(source);
           const note = options.verifyReadOnly ? await withMiyousheCaptcha(transport, request => readDailyNote(source, request, options, verify), {
             signal: options.signal, verify, context: { qq: source.qq, profileId: source.profileId }, game: source.game,
           })
             : await readWithCurrentRole(source, readDailyNote);
           let starRailCheckin: DailyNoteSnapshot["starRailCheckin"];
-          if (game === "sr" && options.includeStarRailCheckin) {
+          if (game === "sr" && options.includeStarRailCheckin && !source.international) {
             try {
               const signRole = { ...role, region: note.region };
               const status = options.verifyReadOnly ? await readCnGameCheckinInfo({ ...source, role: signRole }, transport, options, verify)

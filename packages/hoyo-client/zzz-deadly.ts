@@ -87,7 +87,7 @@ function verifyIdentity(data: Json, identity: Identity) {
   for (const field of ["server", "region"]) {
     if (data[field] !== undefined && data[field] !== identity.region) invalid($t("zzz-deadly.text_24baf7e1a7"));
   }
-  if (data.game_biz !== undefined && data.game_biz !== "nap_cn") invalid($t("zzz-deadly.text_d450f51e89"));
+  if (data.game_biz !== undefined && data.game_biz !== (identity.region.endsWith("_cn") ? "nap_cn" : "nap_global")) invalid($t("zzz-deadly.text_d450f51e89"));
   if (data.schedule_type !== undefined && count(data.schedule_type, 2) !== identity.scheduleType) {
     invalid($t("zzz-deadly.text_d1b8410c6a"));
   }

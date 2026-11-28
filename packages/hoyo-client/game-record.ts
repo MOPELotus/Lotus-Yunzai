@@ -87,8 +87,20 @@ function whole(value: unknown): number | undefined {
   if (typeof parsed === "number" && Number.isSafeInteger(parsed)) return parsed;
 }
 
-function requestHeaders(source: ProfileRequestContext, query: string, body?: string): Headers {
+export function gameRecordHeaders(source: ProfileRequestContext, query: string, body?: string, includePassport = false): Headers {
   const { account, device } = source;
+  if (source.international) {
+    const { cookie, language, deviceId } = source.international;
+    if (!cookie || /[^\x20-\x7e]/u.test(cookie) || !/^[A-Za-z_-]{1,32}$/u.test(language) || /[^A-Za-z0-9_-]/u.test(deviceId)) {
+      throw new HoyoRequestError("invalid-input", $t("game-record.text_aea96e3b9b"));
+    }
+    const time = Math.floor(Date.now() / 1000), nonce = randomInt(100000, 1000000).toString();
+    const hash = createHash("md5").update(`salt=6s25p5ox5y14umn1p61aqyyvbvvl3lrt&t=${time}&r=${nonce}`).digest("hex");
+    return new Headers({ Accept: "application/json", Cookie: includePassport ? `${cookie}; ${source.international.passportCookie}` : cookie, Origin: "https://act.hoyolab.com", Referer: "https://act.hoyolab.com/",
+      "User-Agent": "Mozilla/5.0 HoYoLAB/1.5.0", "x-rpc-app_version": "1.5.0", "x-rpc-client_type": "5",
+      "x-rpc-language": language, "x-rpc-lang": language, ...(deviceId && { "x-rpc-device_id": deviceId }),
+      DS: `${time},${nonce},${hash}`, ...(body !== undefined && { "Content-Type": "application/json" }) });
+  }
   const cookie = account.cookie.trim();
   const valid = (value: string) => !/[^\x20-\x7E]/u.test(value);
   if (!cookie.includes("=") || !valid(account.cookie) || !valid(device.id ?? "") || !valid(device.fp ?? "")) {
@@ -149,17 +161,17 @@ export async function readGameRecordPayload(response: Response, limit: number, s
   }
 }
 
-function apiError(payload: Json | undefined, status: number, retcode: number | undefined, label: string): HoyoRequestError {
+function apiError(payload: Json | undefined, status: number, retcode: number | undefined, label: string, overseas = false): HoyoRequestError {
   const message = [payload?.message, payload?.msg, object(payload?.data)?.message].find((item) => typeof item === "string") ?? "";
   const code = status === 401 || status === 429 ? "http" : "api";
   const subject = $t("game-record.text_7c6d31e82d", { "label": label });
-  if (status === 429) return new GameRecordRequestError(subject, "rate-limited", code, status, retcode);
+  if (status === 429 || overseas && retcode === 10101) return new GameRecordRequestError(subject, "rate-limited", code, status, retcode);
   if (retcode === 10041) return new GameRecordRequestError(subject, "account", code, status, retcode);
   if ((retcode !== undefined && riskCodes.has(retcode)) || /验证码|captcha|geetest|challenge|风控/iu.test(String(message))) {
     return new GameRecordRequestError(subject, "risk", code, status, retcode);
   }
   if (/visit too frequently|too frequent|rate limit|频繁/iu.test(String(message))) return new GameRecordRequestError(subject, "rate-limited", code, status, retcode);
-  if (status === 401 || (retcode !== undefined && expiredCodes.has(retcode))) return new GameRecordRequestError(subject, "expired", code, status, retcode);
+  if (status === 401 || (retcode !== undefined && (overseas ? [-100, 10001, 10103].includes(retcode) : expiredCodes.has(retcode)))) return new GameRecordRequestError(subject, "expired", code, status, retcode);
   return new HoyoRequestError("api", $t("game-record.text_b28f638e75", { "label": label }), status, retcode);
 }
 
@@ -207,18 +219,25 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     hollow ? (hollowLost ? $t("game-record.text_fc57224a51") : $t("game-record.text_e865364b94")) : zenkov ? $t("game-record.text_0a991a8e6c") : exploration ? $t("game-record.text_ad3b2b17cf") : zzzMonthly ? $t("game-record.text_2551c3eb77") : kind === "zzz-owned-buddy" ? $t("game-record.text_42a387e33f") : forZzz ? $t("game-record.text_341ac2816f") :
     starRailRogue ? $t("game-record.text_c0ef333bd0") : starRailGridFight ? $t("game-record.text_6bb5243e98") : starRailMonthly ? $t("game-record.text_92f4941f67") : starRailRoster ? $t("game-record.text_f61cd5e41f") : starRailPanel ? $t("game-record.text_6ce5363a7d") : hardChallenge ? $t("game-record.text_c3354e0ec8") : forGenshinChallenge ? (kind === "genshin-abyss" ? $t("game-record.text_82f72c6585") : $t("game-record.text_8cb870ae6a")) : forGenshinPanel ? $t("game-record.text_0b3ee04b94") : forDeck ? $t("game-record.text_fa0be28724") : forGcgCards ? $t("game-record.text_b25bca67a8") : $t("game-record.text_a2a4c50077");
   const subject = $t("game-record.text_7c6d31e82d", { "label": label });
-  const route = Object.hasOwn(records, game) ? records[game] : undefined;
+  const overseas = source.international;
+  const overseasRoutes = {
+    gs: { path: "/event/game_record/genshin/api/dailyNote", gameBiz: "hk4e_global", regions: ["os_usa", "os_euro", "os_asia", "os_cht"], uid: /^[1-9]\d{8,9}$/u },
+    sr: { path: "/game_record/hkrpg/api/note", gameBiz: "hkrpg_global", regions: ["prod_official_usa", "prod_official_eur", "prod_official_asia", "prod_official_cht"], uid: /^[1-9]\d{8,9}$/u },
+    zzz: { path: "/event/game_record_zzz/api/zzz/note", gameBiz: "nap_global", regions: ["prod_gf_us", "prod_gf_eu", "prod_gf_jp", "prod_gf_sg"], uid: /^[1-9]\d{7,9}$/u },
+  };
+  const routes = overseas ? overseasRoutes : records;
+  const route = Object.hasOwn(routes, game) ? routes[game] : undefined;
   const savedRegion = isUnspecifiedCnRecordRegion(source.role.region) ? "" : source.role.region.trim();
-  const region = game === "gs" ? genshinCnRecordRegion(source.role) :
+  const region = overseas ? savedRegion : game === "gs" ? genshinCnRecordRegion(source.role) :
     savedRegion || route?.regions[game !== "zzz" && uid.startsWith("5") ? 1 : 0];
   if ((!forNote && game !== (forZzz ? "zzz" : forStarRail ? "sr" : "gs")) || !route?.uid.test(uid) || !region || !route.regions.includes(region) || (gameBiz && gameBiz !== route.gameBiz) ||
-      (game !== "zzz" && uid.startsWith("5") !== (region === route.regions[1]))) {
+      (!overseas && game !== "zzz" && uid.startsWith("5") !== (region === route.regions[1]))) {
     throw new HoyoRequestError("invalid-input", $t("game-record.text_e03f7c80cf", { "subject": subject }));
   }
   if ((starRailMonthly || starRailGridFight || starRailRogue) && (!savedRegion || !gameBiz.trim())) {
     throw new HoyoRequestError("invalid-input", $t("game-record.text_9a2fe7ac88", { "label": label }));
   }
-  if ((starRailMonthly || starRailGridFight || starRailRogue) && !source.device.id?.trim()) {
+  if ((starRailMonthly || starRailGridFight || starRailRogue) && !source.device.id?.trim() && !overseas?.deviceId) {
     throw new HoyoRequestError("invalid-input", $t("game-record.text_20c322406a", { "label": label }));
   }
   if (options.kind === "genshin-panel-detail" && (!Array.isArray(options.characterIds) || !options.characterIds.length ||
@@ -259,15 +278,20 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     : hardChallenge ? `/game_record/app/genshin/api/hard_challenge${kind === "genshin-hard-popularity" ? "/popularity" : ""}`
     : forGenshinChallenge ? `/game_record/app/genshin/api/${kind === "genshin-abyss" ? "spiralAbyss" : "role_combat"}`
     : "/game_record/app/genshin/api/index";
-  const endpoint = new URL(path, genshinMonthly ? "https://hk4e-api.mihoyo.com" : monthly ? "https://api-takumi.mihoyo.com" : origin);
+  const overseasOrigin = game === "gs" ? "https://sg-public-api.hoyolab.com" : game === "sr" ? "https://bbs-api-os.hoyolab.com" : "https://sg-act-public-api.hoyolab.com";
+  const overseasPath = genshinMonthly ? "/event/ysledgeros/month_info" : path.replace("/game_record/app/genshin/api/", "/event/game_record/genshin/api/").replace("/game_record/app/hkrpg/api/", "/game_record/hkrpg/api/");
+  const endpoint = new URL(overseas ? overseasPath : path, overseas
+    ? genshinMonthly ? "https://sg-hk4e-api.hoyolab.com" : monthly ? "https://sg-public-api.hoyolab.com" : overseasOrigin
+    : genshinMonthly ? "https://hk4e-api.mihoyo.com" : monthly ? "https://api-takumi.mihoyo.com" : origin);
   let body: string | undefined;
   if (forGenshinPanel) {
     body = JSON.stringify({ role_id: uid, server: region,
       ...(options.kind === "genshin-panel-detail" && { character_ids: options.characterIds }) });
   } else if (genshinMonthly) {
     endpoint.searchParams.set("month", String(options.month));
-    endpoint.searchParams.set("bind_uid", uid);
-    endpoint.searchParams.set("bind_region", region);
+    endpoint.searchParams.set(overseas ? "uid" : "bind_uid", uid);
+    endpoint.searchParams.set(overseas ? "region" : "bind_region", region);
+    if (overseas) endpoint.searchParams.set("lang", overseas.language);
   } else {
     if ((forZzz && !exploration && !zzzMonthly && kind !== "zzz-owned-buddy") || starRailMonthly) endpoint.searchParams.set("lang", "zh-cn");
     if (starRailPanel) endpoint.searchParams.set("need_wiki", "true");
@@ -288,16 +312,17 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
     if (hollowDetail) endpoint.searchParams.set("type", "3");
     if (options.kind === "starrail-monthly") endpoint.searchParams.set("month", options.month ?? "");
   }
-  const headers = requestHeaders(source, endpoint.search.slice(1), body);
+  const headers = gameRecordHeaders(source, endpoint.search.slice(1), body, monthly);
   // The signed query for this route ends at need_wiki. The selected ID is appended afterward.
   if (zzzPanelDetail) endpoint.searchParams.set("id_list[]", String(options.characterId));
-  if (starRailMonthly) headers.set("Origin", "https://webstatic.mihoyo.com");
+  if (starRailMonthly && !overseas) headers.set("Origin", "https://webstatic.mihoyo.com");
   // The ZZZ ledger signs the role query before adding the selected month.
   if (zzzMonthly) {
     endpoint.searchParams.set("month", options.month);
-    headers.set("Origin", "https://act.mihoyo.com");
-    headers.set("Referer", "https://act.mihoyo.com/");
-    headers.set("x-requested-with", "com.mihoyo.hyperion");
+    if (!overseas) {
+      headers.set("Origin", "https://act.mihoyo.com"); headers.set("Referer", "https://act.mihoyo.com/");
+      headers.set("x-requested-with", "com.mihoyo.hyperion");
+    }
   }
 
   async function guard() {
@@ -309,7 +334,7 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   await guard();
   const timeout = AbortSignal.timeout(15_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
-  await addRecordFingerprint(headers, transport, deadline, guard);
+  if (!overseas) await addRecordFingerprint(headers, transport, deadline, guard);
   const method = body === undefined ? "GET" : "POST";
   const diagnostics = observeCnRead(path, method, signal, timeout);
   let response: Response | undefined;
@@ -357,10 +382,10 @@ export async function readCnGameRecord(source: ProfileRequestContext, transport:
   await guard();
   if (deadline.aborted) throw new HoyoRequestError("transport", $t("game-record.text_c0f09da0e9", { "subject": subject }));
   const retcode = whole(payload?.retcode);
-  if (response.status === 401) throw apiError(payload, response.status, retcode, label);
+  if (response.status === 401) throw apiError(payload, response.status, retcode, label, !!overseas);
   if (retcode === undefined) throw new HoyoRequestError("response", $t("game-record.text_656c331127", { "label": label }));
   if (starRailPanel && retcode === 10102) throw new HoyoRequestError("api", $t("game-record.text_5a0e5f08d5"), response.status, retcode);
-  if (retcode !== 0) throw apiError(payload, response.status, retcode, label);
+  if (retcode !== 0) throw apiError(payload, response.status, retcode, label, !!overseas);
   const data = (starRailGridFight || starRailRogue || climbingTower || hollow || zenkov || exploration || monthly || kind === "genshin-gcg-collection-summary") && payload?.data === null ? {} : object(payload?.data);
   if (!data) throw new HoyoRequestError("response", $t("game-record.text_7dbba95ad1", { "label": label }));
   return { data, region };

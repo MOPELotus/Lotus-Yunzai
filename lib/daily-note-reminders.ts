@@ -80,13 +80,14 @@ function gameOf(name?: string): Game {
 
 export function dailyNoteReminderBinding(source: ProfileRequestContext) {
   const { account, qq, profileId, game, role } = source;
-  const id = profileCookieAccountId(account);
+  const id = source.international ? `os:${source.international.realm}:${source.international.accountId}` : profileCookieAccountId(account);
   const channel = role.uid.startsWith("5");
-  const validRole = game === "zzz"
+  const validRole = source.international ? /^[1-9]\d{7,9}$/u.test(role.uid) && (game === "gs" ? /^os_(?:usa|euro|asia|cht)$/u.test(role.region) : game === "sr" ? /^prod_official_(?:usa|eur|asia|cht)$/u.test(role.region) : /^prod_gf_(?:us|eu|jp|sg)$/u.test(role.region))
+    : game === "zzz"
     ? /^[1-9]\d{7,8}$/u.test(role.uid) && /^prod_(?:gf|qd)_cn$/u.test(role.region)
     : /^[1-5]\d{8}$/u.test(role.uid) && role.region === (game === "gs"
       ? (channel ? "cn_qd01" : "cn_gf01") : (channel ? "prod_qd_cn" : "prod_gf_cn"));
-  if (id && validRole && role.gameBiz === gameBusiness[game]) {
+  if (id && validRole && role.gameBiz === (source.international ? gameBusiness[game].replace("_cn", "_global") : gameBusiness[game])) {
     return createHash("sha256").update(JSON.stringify([qq, profileId, id, game, role.uid, role.region, role.gameBiz])).digest("hex");
   }
 }

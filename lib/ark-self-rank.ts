@@ -144,7 +144,7 @@ export function createArkSelfRankCommand(profiles: ProfileStore,
     running.add(key);
     try {
       const selected = await profiles.requestSelectedContext(qq, profileId, game);
-      const account = previewRedeemIdentity(selected);
+      const account = selected.international ? `os:${selected.international.realm}:${selected.international.accountId}` : previewRedeemIdentity(selected);
       const { uid, region, gameBiz } = selected.role;
       if (!active()) return;
       if (!account || !uidPattern.test(uid) || !region || !gameBiz) return $t("lib.ark-self-rank.text_5a10697d75", { "gameName": gameName });
@@ -154,7 +154,7 @@ export function createArkSelfRankCommand(profiles: ProfileStore,
         if (!active()) return false;
         const latest = await profiles.requestSelectedContext(qq, profileId, game).catch(() => undefined);
         return active() && latest?.revision === selected.revision && latest.role.uid === uid && latest.role.region === region &&
-          latest.role.gameBiz === gameBiz && previewRedeemIdentity(latest) === account;
+          latest.role.gameBiz === gameBiz && (latest.international ? `os:${latest.international.realm}:${latest.international.accountId}` : previewRedeemIdentity(latest)) === account;
       };
       const changed = $t("lib.ark-self-rank.text_1f49cbffeb");
       if (!await verify()) return active() ? changed : undefined;

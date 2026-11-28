@@ -55,7 +55,7 @@ function registered(url: URL, game?: Game): { kind: "bbs" | "record" | "tool" | 
   if (url.origin === "https://bbs-api.miyoushe.com" && /^\/apihub\/(?:app\/api\/signIn|wapi\/getUserMissionsState)$/u.test(url.pathname)) return { kind: "bbs", overseas: false };
   if (url.origin === "https://sg-act-public-api.hoyolab.com" && /^\/event\/(?:sol|luna\/(?:hkrpg|zzz)\/os)\/sign$/u.test(url.pathname)) return { kind: "inline", overseas: true };
   const hosts = new Set(["api-takumi.mihoyo.com", "api-takumi-record.mihoyo.com", "act-nap-api.mihoyo.com", "sg-public-api.hoyolab.com", "sg-act-nap-api.hoyolab.com", "sg-act-public-api.hoyolab.com", "bbs-api-os.hoyolab.com"]);
-  if (!hosts.has(url.hostname) || !/^\/(?:game_record\/|event\/game_record_zzz\/api\/)/u.test(url.pathname)) return;
+  if (!hosts.has(url.hostname) || !/^\/(?:game_record\/|event\/game_record\/|event\/game_record_zzz\/api\/)/u.test(url.pathname)) return;
   const resolved = game ?? (/\/genshin\//u.test(url.pathname) ? "gs" : /\/hkrpg\//u.test(url.pathname) ? "sr" : /game_record_zzz/u.test(url.pathname) ? "zzz" : undefined);
   if (!resolved) return;
   return { kind: "record", overseas: url.hostname.endsWith("hoyolab.com"), game: resolved };
