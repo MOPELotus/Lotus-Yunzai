@@ -73,6 +73,16 @@
         "src/protocols/v3/client.ts",
         "src/protocols/v4/adapter.ts"
       ]
+    },
+    {
+      "repository": "https://github.com/gfriendyelin/captcha-tools-go",
+      "commit": "f7eeb37ac3fb55694fdce64134abb2ae57825e03",
+      "scope": "v4-config-maintenance-script",
+      "sourceFile": "scripts/extract-config.mjs",
+      "adaptedFile": "../../scripts/update-captcha-config.mjs",
+      "license": "MIT",
+      "originalAuthor": "wulu007",
+      "licenseFile": "third_party/wulu-geetest-bypass/LICENSE"
     }
   ]
 }

@@ -1,0 +1,36 @@
+name: Update Captcha Config
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: captcha-config-update
+  cancel-in-progress: false
+
+jobs:
+  update-captcha-config:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node --test scripts/update-captcha-config.node.mjs
+      - id: config
+        run: node scripts/update-captcha-config.mjs
+      - if: steps.config.outputs.CHANGED == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- packages/captcha/resources/*-config.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "chore(captcha): 自动更新验证码配置"
+          git push origin HEAD:main

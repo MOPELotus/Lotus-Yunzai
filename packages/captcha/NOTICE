@@ -122,3 +122,5 @@ production defaults.
 ## captcha-tools-go request retries
 
 This project incorporates portions of gfriendyelin/captcha-tools-go (commit f7eeb37, retry logic referencing b0bcaa5), copyright (c) 2026 gfriendyelin, used under the full NSL license for the adapted request retry logic.
+
+The maintenance script scripts/update-captcha-config.mjs is derived from scripts/extract-config.mjs, copyright (c) 2026 wulu007, and is provided as an explicit MIT License exception.
