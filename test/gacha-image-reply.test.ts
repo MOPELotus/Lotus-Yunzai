@@ -49,7 +49,7 @@ test("only the 99-image node limit splits a merged forward", async () => {
   });
   expect(reply).toEqual([]);
   expect(groups).toEqual([Array.from({length:99},(_,i)=>i+1),[100,101]]);
-  expect(headings).toEqual(["合成样本，共 3 页（第 1/2 段）", "合成样本，共 3 页（第 2/2 段）"]);
+  expect(headings).toEqual([base.title, base.title]);
 });
 
 test("rejected and ambiguous forward attempts stop without repeating or sending later pages", async () => {
@@ -63,7 +63,8 @@ test("rejected and ambiguous forward attempts stop without repeating or sending 
       },
     });
     expect(sent).toEqual([[1,2,3]]);
-    expect(reply).toEqual([]);
+    if (uncertain) expect(reply).toEqual([]);
+    else expect(reply).toContain("被协议端拒绝");
   }
 });
 

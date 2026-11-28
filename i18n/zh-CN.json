@@ -2295,11 +2295,7 @@
     "lib.gacha-expectation-commands.text_f56a049fcc": "张",
     "lib.gacha-expectation-commands.text_fa096062df": "25% 分位 {p25} 个 · 50% 分位 {p50} 个 · 75% 分位 {p75} 个",
     "lib.gacha-expectation-commands.text_fa172bf96e": "平均 {value1} 个",
-    "lib.gacha-image-reply.text_0f1a420ea5": "第 {value1} 段合并转发未发送，其余段落已停止。",
-    "lib.gacha-image-reply.text_11d4132897": "{title}（第 {value2}/{length} 段）",
-    "lib.gacha-image-reply.text_49c0fbd8bf": "当前会话无法分段合并转发抽卡记录。",
-    "lib.gacha-image-reply.text_5af9e46976": "第 {value1} 段合并转发结果未确认，请在聊天中核对。",
-    "lib.gacha-image-reply.text_5b90ea75d3": "抽卡记录已读取，但单页图片仍超过当前会话的图片大小上限。",
+    "lib.gacha-image-reply.text_49c0fbd8bf": "当前会话无法合并转发抽卡记录。",
     "lib.game-character-aliases.text_0462c6f2f5": "暂无权限修改角色别名。",
     "lib.game-character-aliases.text_3124f2ce30": "删除{role}别名成功：{value2}",
     "lib.game-character-aliases.text_371030e3c7": "旧星铁设置文件应为 YAML 映射。",
@@ -5048,7 +5044,8 @@
     "lib.hoyolab-profile-commands.stoken-usage": "私聊格式：#绑定国际服SToken[档案号] stuid=账号ID; stoken=v2_...; mid=...; ma_passport_region=SG（默认档案1，region可选SG/US/EU）",
     "lib.hoyolab-profile-commands.stoken-invalid": "需要提供有效的v2 SToken及对应的账号ID和mid",
     "lib.hoyolab-profile-commands.stoken-failed": "导入失败，请检查凭据完整性或稍后重试",
-    "lib.redeem-code-runner.international-scan-failed": "[{game}]国际服兑换码扫描未完成"
+    "lib.redeem-code-runner.international-scan-failed": "[{game}]国际服兑换码扫描未完成",
+    "lib.gacha-image-reply.send-failed": "抽卡记录合并转发被协议端拒绝，请稍后重试"
   },
   "parameters": {
     "lib.update-checkout.git-failed": {"step": "执行失败的 Git 命令步骤名称", "code": "Git 命令返回的进程退出码", "details": "经脱敏处理的 Git 失败诊断信息"},
@@ -5919,17 +5916,6 @@
       "p25": "25% 分位返还数量",
       "p50": "50% 分位返还数量",
       "p75": "75% 分位返还数量"
-    },
-    "lib.gacha-image-reply.text_11d4132897": {
-      "title": "消息标题",
-      "value2": "当前分段序号",
-      "length": "总分段数"
-    },
-    "lib.gacha-image-reply.text_0f1a420ea5": {
-      "value1": "当前分段序号"
-    },
-    "lib.gacha-image-reply.text_5af9e46976": {
-      "value1": "当前分段序号"
     },
     "lib.game-character-aliases.text_dcfecf941d": {
       "value1": "游戏名称",

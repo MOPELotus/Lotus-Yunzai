@@ -45,10 +45,12 @@ export async function gachaImageReply({
   for (const [index, pages] of batches.entries()) {
     if (index && !await roleIsCurrent()) return signal.aborted ? undefined : changedRoleMessage;
     try {
-      if (!await forward([batches.length === 1 ? title : $t("lib.gacha-image-reply.text_11d4132897", { "title": title, "value2": index + 1, "length": batches.length }), ...pages])) {
-        return [];
+      if (!await forward([title, ...pages])) {
+        console.warn({ component: "GachaDelivery", state: "rejected", images: pages.length, bytes: pages.reduce((total, page) => total + page.file.byteLength, 0) });
+        return $t("lib.gacha-image-reply.send-failed");
       }
     } catch {
+      console.warn({ component: "GachaDelivery", state: "unknown", images: pages.length });
       return [];
     }
   }

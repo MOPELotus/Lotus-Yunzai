@@ -105,6 +105,32 @@ for (const rendering of [false, true]) test.skipIf(rendering && !gpu.available)(
     const local = await simulateAck(milky, "send_private_message", 10);
     expect(local).toContain(rendering ? "base64://" : "原版详情图暂时无法生成");
     if (rendering) {
+    const multi = JSON.parse(saved);
+    // No ordinary character pool: the all-records path must still include both collab pools.
+    multi.pools = {
+      GachaType_CollabAvatarUp: { totalDraws: 4, fiveStars: [{ id: "collab-role", item: { item_id: 1003, name: "姬子", item_type: "ItemType_Avatar" }, gacha_count: 4 }] },
+      GachaType_CollabEquipmentUp: { totalDraws: 7, fiveStars: [{ id: "collab-cone", item: { name: "只需等待", item_type: "ItemType_Equipment" }, gacha_count: 7 }] },
+    };
+    await put(root, current, JSON.stringify(multi));
+    sendOneBot("*抽卡记录");
+    const frame = await onebot.next("send_private_forward_msg");
+    const nodes = frame.params.messages as { data: { content: unknown } }[];
+    expect(nodes).toHaveLength(3);
+    expect(JSON.stringify(nodes[0])).not.toMatch(/分\d+张图/u);
+    const images = nodes.slice(1).map(node => /base64:\/\/([A-Za-z0-9+/=]+)/u.exec(JSON.stringify(node))?.[1]);
+    expect(images.every(Boolean)).toBe(true);
+    frame.respond({ message_id: 11 });
+    for (const [index, image] of images.entries()) {
+      if (image && Bun.env.LOTUS_SR_UPDATE_EVIDENCE) await Bun.write(join(Bun.env.LOTUS_SR_UPDATE_EVIDENCE, `miao-collab-${index + 1}.png`), Buffer.from(image, "base64"));
+    }
+    sendOneBot("*联动角色记录");
+    await png(12);
+    sendOneBot("*联动光锥记录");
+    await png(13);
+    multi.pools = { GachaType_Newbie: { totalDraws: 10, fiveStars: [{ id: "newbie", item: { item_id: 1003, name: "姬子", item_type: "ItemType_Avatar" }, gacha_count: 10 }] } };
+    await put(root, current, JSON.stringify(multi));
+    sendOneBot("*全部记录");
+    await png(14);
     const engines = (await readFile(join(root, "renderers.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line));
     expect(engines.length).toBeGreaterThan(0);
     if (Bun.env.LOTUS_SR_UPDATE_EVIDENCE) {

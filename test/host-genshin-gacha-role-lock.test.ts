@@ -1,4 +1,4 @@
-import { linkHostPackages } from "./host-fixture.ts";
+import { linkHostPackages, linkHostBuiltinResources } from "./host-fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -37,6 +37,10 @@ async function waitForRelease(file) {
 globalThis.fetch = Object.assign(async (input, options) => {
   const url = new URL(input instanceof Request ? input.url : input);
   if (url.hostname === "127.0.0.1") return native(input, options);
+  if (url.origin === "https://public-data-api.mihoyo.com" && url.pathname === "/device-fp/api/getFp") {
+    if (options.method !== "POST" || new Headers(options.headers).has("Cookie")) throw Error("invalid public fingerprint fixture");
+    return Response.json({ retcode: 0, data: { code: 200, device_fp: "0123456789" } });
+  }
   if (url.hostname === "api-takumi.mihoyo.com" && url.pathname === "/binding/api/genAuthKey") {
     const account = /(?:^|;)\\s*stuid=(\\d+)/u.exec(new Headers(options.headers).get("Cookie"))?.[1];
     trace("auth " + account);
@@ -68,6 +72,7 @@ async function prepare(root: string) {
   await cp(source, target, { recursive: true, filter: file => ![".git", "node_modules"].includes(basename(file)) });
   await symlink(join(source, "node_modules"), join(target, "node_modules"), "dir");
   await linkHostPackages(root);
+  await linkHostBuiltinResources(root);
   await mkdir(join(root, "profiles"));
   for (const [qq, id, account, uid] of accounts) {
     await writeFile(join(root, "profiles", `${qq}-${id}.yaml`), Bun.YAML.stringify({
@@ -142,6 +147,21 @@ test("原神同 QQ 和 UID 的两档案按来源避免重复换票，失败后�
       "external fixture-4302", "auth 4204", "external fixture-4204", "auth 4203",
     ]);
     expect(calls.filter(line => line.startsWith("pool"))).toEqual(Array(4).fill("pool fixture-4203"));
+    const roleDirectory = join(root, "data/gachaJson/42", uid);
+    await mkdir(roleDirectory, { recursive: true });
+    for (const [pool, name, itemType] of [[301, "夜兰", "角色"], [302, "若水", "武器"]] as const) {
+      await Bun.write(join(roleDirectory, `${pool}.json`), JSON.stringify([{ uid, id: String(1800000000000000000n + BigInt(pool)),
+        gacha_type: String(pool), name, item_type: itemType, rank_type: "5", time: "2026-11-28 12:00:00" }]));
+    }
+    sendOneBot("#抽卡记录3");
+    const forward = await onebot.next("send_private_forward_msg");
+    const nodes = forward.params.messages as { data: { content: unknown } }[];
+    expect(nodes).toHaveLength(3);
+    expect(JSON.stringify(nodes[0])).not.toMatch(/分\d+张图/u);
+    const images = nodes.slice(1).map(node => /base64:\/\/([A-Za-z0-9+/=]+)/u.exec(JSON.stringify(node))?.[1]);
+    expect(images.every(Boolean)).toBe(true);
+    forward.respond({ message_id: seq++ });
+    if (proof && images[0]) await Bun.write(proof + ".miao.png", Buffer.from(images[0], "base64"));
     if (proof) {
       const engine = await Bun.file(join(root, "engine.json")).json();
       expect(engine).toMatchObject({ renderer: "GPU", api: "Vulkan" });
