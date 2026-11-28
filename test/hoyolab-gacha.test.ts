@@ -6,7 +6,7 @@ import { createProfileStore } from '../packages/account/index.ts';
 import { createProfileHoyoClient } from '../packages/hoyo-client/index.ts';
 import { readHoYoLabAuthKey } from '../packages/hoyo-client/hoyolab-authkey.ts';
 import { createStarRailGachaRecordArchive } from '../plugins/starrail/gacha-record-archive.ts';
-import { syncHoYoLabStarRailGacha } from '../plugins/starrail/hoyolab-gacha-sync.ts';
+import { syncHoYoLabStarRailGacha, HoYoLabStarRailAuthKeyRejected } from '../plugins/starrail/hoyolab-gacha-sync.ts';
 import { lockFile } from '../lib/file-lock.ts';
 const credentials = { accountId:'4202',realm:'SG' as const,mid:'fixture-mid',stoken:'v2_fixture-stoken',deviceId:'fixture-device',cookie:'account_id_v2=4202; cookie_token_v2=fixture-cookie; account_mid_v2=fixture-mid',activityCookie:'ltuid_v2=4202; ltoken_v2=fixture-ltoken; ltmid_v2=fixture-mid' };
 const roles = { gs:[{uid:'800000001',region:'os_asia',gameBiz:'hk4e_global',nickname:'',chosen:true}],sr:[{uid:'800000002',region:'prod_official_asia',gameBiz:'hkrpg_global',nickname:'',chosen:true}],zzz:[{uid:'1300000001',region:'prod_gf_jp',gameBiz:'nap_global',nickname:'',chosen:true}] };
@@ -24,3 +24,33 @@ test('Genshin overseas native sync archives US server timestamps in the existing
  expect(result.uid).toBe('600000001');expect(result.records[301][0]?.time).toBe('2026-11-28 07:00:00');
  const{exportGenshinUigf,selectGenshinUigf}=await import('../plugins/genshin/gacha-uigf.ts');const resolveItem=()=>({itemId:'11301',name:'fixture',itemType:'武器' as const,rank:3 as const});const doc=exportGenshinUigf(result.records,{uid:result.uid,exportedAt:new Date('2026-11-28T00:00:00Z'),app:{name:'fixture',version:'1'},resolveItem});const imported=selectGenshinUigf(doc,{uid:result.uid,resolveItem});expect(imported.region).toBe('os_usa');expect(imported.pools[0]?.records[0]?.time).toBe('2026-11-28 07:00:00');
 }finally{await rm(f.root,{recursive:true,force:true});}});
+
+test('HoYoLAB authorization rejects unsupported key versions or signing modes before the record request',async()=>{
+ const f=await fixture();try{
+  const source=await f.profiles.requestSelectedContext('42',1,'sr');
+  for(const metadata of [{authkey_ver:2},{authkey_ver:'2'},{sign_type:1},{sign_type:'1'},{authkey_ver:{}},{sign_type:null}]){
+   let calls=0;
+   const transport=async()=>{calls++;return Response.json({retcode:0,data:{authkey:'fixture-key',...metadata}})};
+   await expect(readHoYoLabAuthKey(source,transport)).rejects.toThrow();expect(calls).toBe(1);
+  }
+  const result=await readHoYoLabAuthKey(source,async()=>Response.json({retcode:0,data:{authkey:'fixture-key',authkey_ver:'1',sign_type:'2'}}));
+  expect(result.authkey).toBe('fixture-key');
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test('Star Rail successful authorization followed by rejected authkey preserves existing gacha history',async()=>{
+ const f=await fixture();try{
+  const source=await f.profiles.requestSelectedContext('42',1,'sr');let recordRequests=0;
+  const transport=async(url:URL)=>{
+   if(url.pathname.endsWith('genAuthKeyByCookieToken'))return Response.json({retcode:0,data:{authkey:'fixture-key',authkey_ver:1,sign_type:2}});
+   recordRequests++;return Response.json({retcode:-100,message:'authkey error',data:null});
+  };
+  const client=createProfileHoyoClient(f.profiles,transport);
+  const archive=createStarRailGachaRecordArchive({directory:join(f.root,'raw'),legacyDirectory:join(f.root,'legacy')},lockFile);
+  await archive.merge({qq:'42',uid:source.role.uid},{uid:source.role.uid,timezone:8,records:[{uid:source.role.uid,id:'100000000000000001',gacha_id:'1001',gacha_type:'11',item_id:'1001',time:'2026-11-01 00:00:00',rank_type:'5',count:'1',name:'fixture',item_type:'角色'}]},async()=>{}, {legacyTimezone:8});
+  const before=await archive.read({qq:'42',uid:source.role.uid},{legacyTimezone:8});
+  await expect(syncHoYoLabStarRailGacha(source,f.profiles,client,archive,{intervalMs:0},transport)).rejects.toBeInstanceOf(HoYoLabStarRailAuthKeyRejected);
+  expect(recordRequests).toBe(1);
+  expect(await archive.read({qq:'42',uid:source.role.uid},{legacyTimezone:8})).toEqual(before);
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});

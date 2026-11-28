@@ -43,3 +43,23 @@ test("绝区零卡片只访问固定 QQ 头像和受信图标地址，失败图�
     "https://act-webstatic.mihoyo.com/recovered.webp",
   ]);
 });
+
+
+test("official artwork retries transient connection and stream failures within one budget", async () => {
+  let calls = 0;
+  const record = { itemId: "999991", name: "fixture", icon: "https://act-webstatic.hoyoverse.com/portrait.png",
+    itemType: "CHARACTER", rarity: "S", isUp: false, upTag: "", count: 1, time: null, sort: "1", version: "3.3" };
+  const stats = { pools: [{ type: "GACHA_TYPE_CHARACTER_UP", records: [record] }] } as unknown as ZzzTuningSnapshot;
+  const { resolveIcon, loadArtwork } = createZzzTuningArtwork(stats, "42", undefined, async () => {
+    calls++;
+    if (calls === 1) throw Object.assign(new Error("reset"), { code: "ECONNRESET" });
+    if (calls === 2) return new Response(new ReadableStream({ start(controller) {
+      controller.error(Object.assign(new Error("stream reset"), { code: "ECONNRESET" }));
+    } }), { headers: { "Content-Type": "image/png" } });
+    return new Response(new Uint8Array([1, 2, 3]), { headers: { "Content-Type": "image/png" } });
+  });
+  expect(await loadArtwork(resolveIcon(record)!)).toEqual(Buffer.from([1, 2, 3]));
+  expect(calls).toBe(3);
+  expect(await loadArtwork(resolveIcon(record)!)).toEqual(Buffer.from([1, 2, 3]));
+  expect(calls).toBe(3);
+});

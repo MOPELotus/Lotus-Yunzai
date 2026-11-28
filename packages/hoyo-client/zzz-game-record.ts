@@ -97,7 +97,7 @@ function entries(value: unknown, kind: "avatar" | "buddy") {
     const sub = whole(item.sub_element_type) ?? 0;
     return {
       ...base,
-      icon: cleanText(item.square_icon, 1024) ?? cleanText(item.role_square_avatar_url, 1024) ?? cleanText(item.group_icon_path, 1024),
+      icon: cleanText(item.square_icon, 1024) ?? cleanText(item.role_square_avatar_url, 1024) ?? cleanText(item.role_square_url, 1024),
       element: subElements[`${element}:${sub}`] ?? elements[element],
     };
   });

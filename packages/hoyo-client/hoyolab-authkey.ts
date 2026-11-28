@@ -55,6 +55,8 @@ export async function readHoYoLabAuthKey(source: ProfileRequestContext, transpor
   let authkey: string | undefined;
   try { if (typeof data?.authkey === "string") authkey = decodeURIComponent(data.authkey); } catch {}
   if (!authkey || !/^[\x21-\x7e]{1,4096}$/u.test(authkey) ||
+      data?.authkey_ver !== undefined && ![1, "1"].includes(data.authkey_ver as number | string) ||
+      data?.sign_type !== undefined && ![2, "2"].includes(data.sign_type as number | string) ||
       ["game_uid", "uid"].some(key => data?.[key] !== undefined && String(data[key]) !== role.uid) ||
       data?.region !== undefined && data.region !== role.region || data?.game_biz !== undefined && data.game_biz !== role.gameBiz) {
     throw new HoyoRequestError("response", $t("hoyolab-authkey.response"));

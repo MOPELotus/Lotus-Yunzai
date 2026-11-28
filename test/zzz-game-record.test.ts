@@ -193,3 +193,14 @@ test("独立邦布拒绝海外档案所携带的国服凭据和错区回包", as
   await expect(client.fetchZzzOwnedBuddyRoster(source)).rejects.toMatchObject({ code: "response" });
   expect(queries).toBe(1);
 });
+
+
+test('角色头像采用官方方形头像字段，阵营图标不能充当角色头像', async () => {
+  const face = "https://act-webstatic.hoyoverse.com/fixture-character.png";
+  const faction = "https://act-webstatic.hoyoverse.com/fixture-faction.png";
+  for (const icon of [face, undefined]) {
+    const rows = [index, { avatar_list: [{ ...avatar, role_square_url: icon, group_icon_path: faction }] }, { list: [buddy] }];
+    const value = await readZzzGameRecord(source, async () => payload(rows.shift()));
+    expect(value.avatars[0]?.icon).toBe(icon);
+  }
+});

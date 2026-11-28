@@ -140,7 +140,7 @@ function verifyIdentity(input: Json, identity: Identity) {
   for (const key of ["region", "server"]) {
     if (input[key] !== undefined && input[key] !== identity.region) invalid($t("zzz-void-front.text_e6dcb75782"));
   }
-  if (input.game_biz !== undefined && input.game_biz !== "nap_cn") invalid($t("zzz-void-front.text_a81ce382a1"));
+  if (input.game_biz !== undefined && input.game_biz !== (identity.region.endsWith("_cn") ? "nap_cn" : "nap_global")) invalid($t("zzz-void-front.text_a81ce382a1"));
   if (input.schedule_type !== undefined && count(input.schedule_type, 2, $t("zzz-void-front.text_4a703a03f5")) !== identity.scheduleType) invalid($t("zzz-void-front.text_4a703a03f5"));
 }
 
