@@ -7,7 +7,7 @@ import { transientReadResponse } from "@lotus-yunzai/http";
 import type { Game } from "@lotus-yunzai/account";
 import { captchaManualAllowed, getDefaultCaptchaSolver, type CaptchaChallenge, type CaptchaEvent, type CaptchaProof } from "./captcha.ts";
 import type { HoyoTransport } from "./credentials.ts";
-import { CaptchaBusinessRejectedError, HoyoRequestError } from "./errors.ts";
+import { CaptchaBusinessRejectedError, CaptchaResourceBusyError, HoyoRequestError } from "./errors.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 
 type Json = Record<string, unknown>;
@@ -261,6 +261,12 @@ export async function withMiyousheCaptcha<T>(transport: HoyoTransport, operation
   }
   await guard();
   if (solved.ok) return solved.value;
+  if (solved.reason === "local_busy") {
+    const busy = new CaptchaResourceBusyError(originalError);
+    if (rejectedWrite && lastBusinessState === "rejected")
+      throw new CaptchaBusinessRejectedError(code(target.payload.retcode)!, stage, busy);
+    throw busy;
+  }
   if (rejectedWrite && lastBusinessState === "rejected") {
     throw new CaptchaBusinessRejectedError(code(target.payload.retcode)!, stage, originalError);
   }

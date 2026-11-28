@@ -1060,7 +1060,8 @@
     "hoyolab-authkey.transport": "国际服授权请求失败，请稍后重试",
     "hoyolab-authkey.response": "国际服授权响应无效",
     "hoyolab-authkey.failed": "国际服授权失败，请重新登录后重试",
-    "hoyolab-authkey.privacy": "HoYoLAB未公开{subject}数据，请前往HoYoLAB隐私设置开启后重试。"
+    "hoyolab-authkey.privacy": "HoYoLAB未公开{subject}数据，请前往HoYoLAB隐私设置开启后重试。",
+    "errors.captcha-local-busy": "本地验证码处理器繁忙，请稍后再试。"
   },
   "parameters": {
     "cloud-genshin-wallet.text_fc172384f6": {

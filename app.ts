@@ -4268,13 +4268,13 @@ if (import.meta.main) {
       },
       panelCacheRuntime: probingUpdate ? undefined : {
         disconnect: handoffSession.signal,
-        register: (game, run) => registerModuleTask($t(game === "gs" ? "app.gs-panel-cache-task" : "app.sr-panel-cache-task"), "0 0 * * * *",
+        register: (game, run) => registerModuleTask($t(game === "gs" ? "app.gs-panel-cache-task" : "app.sr-panel-cache-task"), game === "gs" ? "0 0 * * * *" : "0 20 * * * *",
           tracePanelCacheTask(game === 'gs' ? 'gs-panel-cache' : 'sr-panel-cache', run,
-            entry => console.info($t('app.panel-cache-trace', entry))), true),
+            entry => console.info($t('app.panel-cache-trace', { ...entry })), handoffSession.signal), true),
       },
       zzzReminderRuntime: probingUpdate ? undefined : {
-        registerPanelCacheTask: run => registerModuleTask($t("app.zzz-panel-cache-task"), "0 0 * * * *",
-          tracePanelCacheTask('zzz-panel-cache', run, entry => console.info($t('app.panel-cache-trace', entry))), true),
+        registerPanelCacheTask: run => registerModuleTask($t("app.zzz-panel-cache-task"), "0 40 * * * *",
+          tracePanelCacheTask('zzz-panel-cache', run, entry => console.info($t('app.panel-cache-trace', { ...entry })), handoffSession.signal), true),
         disconnect: handoffSession.signal,
         registerTask: run => registerModuleTask($t("app.text_0e17df94d9"), "0 * * * * *", run, true),
         route: (userId, botId, signal) => resolvePrivateFriendRoute(subscriptionTransport, userId, botId,

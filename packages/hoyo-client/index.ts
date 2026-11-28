@@ -70,7 +70,7 @@ export { needsLegacyCookieRepair } from "./credentials.ts";
 export { CloudGenshinWalletError, normalizeCloudGenshinComboToken, readCloudGenshinWallet } from "./cloud-genshin-wallet.ts";
 export { CloudZzzWalletError, normalizeCloudZzzComboToken, readCloudZzzWallet } from "./cloud-zzz-wallet.ts";
 export { HoyoRequestError };
-export { CaptchaBusinessRejectedError } from "./errors.ts";
+export { CaptchaBusinessRejectedError, CaptchaResourceBusyError, isCaptchaResourceBusy } from "./errors.ts";
 export { verifyHoYoLabCookie, type HoYoLabPassportRealm } from "./hoyolab-cookie.ts";
 export { BbsCheckinRequestError, bbsCheckinForums, type BbsCheckinForum, type BbsMissionState } from "./bbs-checkin.ts";
 export { readBbsForumPosts, type BbsForumPost } from "./bbs-forum-posts.ts";

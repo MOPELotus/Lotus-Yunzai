@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { CaptchaBusinessRejectedError, createProfileHoyoClient, getDefaultCaptchaSolver, setDefaultCaptchaSolver, type CaptchaRun, type CaptchaSolver } from "@lotus-yunzai/hoyo-client";
+import { CaptchaBusinessRejectedError, isCaptchaResourceBusy, createProfileHoyoClient, getDefaultCaptchaSolver, setDefaultCaptchaSolver, type CaptchaRun, type CaptchaSolver } from "@lotus-yunzai/hoyo-client";
 import { submitBbsCheckin } from "../packages/hoyo-client/bbs-checkin.ts";
 import type { ProfileAccountContext } from "@lotus-yunzai/account";
 import { gameCheckinCommands } from "../lib/game-checkin-commands.ts";
@@ -124,3 +124,14 @@ for (const dispatched of [false, true]) {
     } finally { controller.abort(); await rm(root, { recursive: true, force: true }); }
   }));
 }
+
+
+test("local resource exhaustion preserves explicit rejection proof without reporting bad captcha answers", async () => scoped(async () => {
+  let writes = 0;
+  let caught: unknown;
+  try { await submitBbsCheckin(profile, async () => { writes++; return Response.json({ retcode: 1034 }); }, "2"); }
+  catch (error) { caught = error; }
+  expect(caught).toBeInstanceOf(CaptchaBusinessRejectedError);
+  expect(isCaptchaResourceBusy(caught)).toBe(true);
+  expect(writes).toBe(1);
+}, { async run() { return { ok: false, reason: "local_busy" }; } }));

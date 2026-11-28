@@ -2,6 +2,7 @@ import { captchaManualAllowed } from "../../packages/hoyo-client/captcha.ts";
 import { CaptchaError } from "@lotus-yunzai/captcha";
 import { randomUUID } from "node:crypto";
 import { runtimeTraceId } from "../runtime-trace.ts";
+import { createTaskQueue } from "../task-queue.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { CaptchaChallenge, CaptchaEvent, CaptchaProof, CaptchaRun, CaptchaSolver } from "@lotus-yunzai/hoyo-client";
 import type { createManualCaptchaRelay } from "./manual-relay.ts";
@@ -10,7 +11,7 @@ import { captchaConfig, createAutomaticProviders, normalizeCaptchaProof, Provide
 type Relay = Pick<ReturnType<typeof createManualCaptchaRelay>, "register" | "readResult">;
 export interface CaptchaFailureReport {
   provider: ProviderId; round: number; attempt: number; reason: string;
-  stage: 'solve' | 'normalize' | 'accept'; code?: string; runId: string; taskId?: string;
+  stage: 'queue' | 'solve' | 'normalize' | 'accept'; code?: string; runId: string; taskId?: string;
 }
 const localErrorCodes = new Set([
   'local_worker_failed', 'local_worker_exited', 'invalid_worker_result', 'timeout', 'recognition_failed',
@@ -40,6 +41,7 @@ export function createCaptchaService(options: CaptchaServiceOptions = {}): Captc
   const now = options.now ?? Date.now;
   const wait = options.wait ?? ((ms, signal) => sleep(ms, undefined, { signal }));
   const providers = options.providers ?? createAutomaticProviders(config, { fetchImpl: options.fetchImpl, now, wait });
+  const localQueue = createTaskQueue();
   const closed = new AbortController();
   const lifecycle = options.signal ? AbortSignal.any([closed.signal, options.signal]) : closed.signal;
   options.signal?.addEventListener("abort", () => { void providers.close?.(); }, { once: true });
@@ -100,62 +102,85 @@ export function createCaptchaService(options: CaptchaServiceOptions = {}): Captc
             for (let attempt = 1; attempt <= attempts; attempt++) {
               await guard();
               if (provider !== "manual" && !providers.available(provider)) break;
-              const next = await input.challenge();
-              await guard();
-              if ("completed" in next) {
-                await notify({ type: "accepted" });
-                return { ok: true, value: next.completed };
+              let release: (() => void) | undefined;
+              if (provider === "local") {
+                try {
+                  release = await localQueue.acquire(AbortSignal.any([signal, AbortSignal.timeout(config.local.timeoutMs)]));
+                  await guard();
+                } catch (error) {
+                  release?.();
+                  signal.throwIfAborted();
+                  if (guardFailed) throw error;
+                  reason = "local_busy";
+                  disabled.add(provider);
+                  report({ provider, round, attempt, reason, stage: 'queue', code: 'captcha_busy' });
+                  break;
+                }
               }
-              const challengeKey = next.captchaVersion === 3 ? `${next.gt}:${next.challenge}` : undefined;
-              if (challengeKey && usedChallenges.has(challengeKey)) {
-                reason = "challenge_reused";
-                await notify({ type: "failed" });
-                return { ok: false, reason };
-              }
-              if (challengeKey) usedChallenges.add(challengeKey);
-              let proof: CaptchaProof | undefined;
               try {
-                proof = provider === "manual" ? await manual(next) : await providers.solve(provider, next, signal);
+                const next = await input.challenge();
                 await guard();
-              } catch (error) {
-                signal.throwIfAborted();
-                if (guardFailed || (provider === "manual" && input.manualProof)) throw error;
-                // Guard errors are not provider failures and must stop the business.
+                if ("completed" in next) {
+                  await notify({ type: "accepted" });
+                  return { ok: true, value: next.completed };
+                }
+                const challengeKey = next.captchaVersion === 3 ? `${next.gt}:${next.challenge}` : undefined;
+                if (challengeKey && usedChallenges.has(challengeKey)) {
+                  reason = "challenge_reused";
+                  await notify({ type: "failed" });
+                  return { ok: false, reason };
+                }
+                if (challengeKey) usedChallenges.add(challengeKey);
+                let proof: CaptchaProof | undefined;
+                try {
+                  proof = provider === "manual" ? await manual(next) : await providers.solve(provider, next, signal);
+                  await guard();
+                } catch (error) {
+                  signal.throwIfAborted();
+                  if (guardFailed || (provider === "manual" && input.manualProof)) throw error;
+                  // Guard errors are not provider failures and must stop the business.
+                  await guard();
+                  if (provider === "local" && error instanceof CaptchaError && error.code === "captcha_busy") {
+                    reason = "local_busy";
+                    disabled.add(provider);
+                    report({ provider, round, attempt, reason, stage: 'solve', code: 'captcha_busy' });
+                    break;
+                  }
+                  reason = error instanceof ProviderFailure ? error.reason : "provider_request_failed";
+                  if (error instanceof ProviderFailure && !error.retryable) disabled.add(provider);
+                  report({ provider, round, attempt, reason, stage: 'solve', code: safeErrorCode(error) });
+                  if (disabled.has(provider)) break;
+                  continue;
+                }
+                const normalized = normalizeCaptchaProof(proof, next);
+                if (!normalized) {
+                  reason = "invalid_proof";
+                  report({ provider, round, attempt, reason, stage: 'normalize' });
+                  continue;
+                }
+                const proofKey = "validate" in normalized ? `v3:${normalized.validate}` : `v4:${normalized.lotNumber}`;
+                if (usedProofs.has(proofKey)) {
+                  reason = "proof_reused";
+                  report({ provider, round, attempt, reason, stage: 'normalize' });
+                  continue;
+                }
+                usedProofs.add(proofKey);
+                if ("validate" in normalized && next.captchaVersion === 3) {
+                  const returnedKey = `${next.gt}:${normalized.challenge}`;
+                  if (returnedKey !== challengeKey && usedChallenges.has(returnedKey)) { reason = "challenge_reused"; continue; }
+                  usedChallenges.add(returnedKey);
+                }
                 await guard();
-                reason = error instanceof ProviderFailure ? error.reason : "provider_request_failed";
-                if (error instanceof ProviderFailure && !error.retryable) disabled.add(provider);
-                report({ provider, round, attempt, reason, stage: 'solve', code: safeErrorCode(error) });
-                if (disabled.has(provider)) break;
-                continue;
-              }
-              const normalized = normalizeCaptchaProof(proof, next);
-              if (!normalized) {
-                reason = "invalid_proof";
-                report({ provider, round, attempt, reason, stage: 'normalize' });
-                continue;
-              }
-              const proofKey = "validate" in normalized ? `v3:${normalized.validate}` : `v4:${normalized.lotNumber}`;
-              if (usedProofs.has(proofKey)) {
-                reason = "proof_reused";
-                report({ provider, round, attempt, reason, stage: 'normalize' });
-                continue;
-              }
-              usedProofs.add(proofKey);
-              if ("validate" in normalized && next.captchaVersion === 3) {
-                const returnedKey = `${next.gt}:${normalized.challenge}`;
-                if (returnedKey !== challengeKey && usedChallenges.has(returnedKey)) { reason = "challenge_reused"; continue; }
-                usedChallenges.add(returnedKey);
-              }
-              await guard();
-              // Only explicit rejection advances the chain. Errors escape without replay.
-              const accepted = await input.accept(normalized, next);
-              await guard();
-              if (accepted.accepted) {
-                await notify({ type: "accepted" });
-                return { ok: true, value: accepted.value };
-              }
-              reason = "business_rejected";
-              report({ provider, round, attempt, reason, stage: 'accept' });
+                // Only explicit rejection advances the chain. Errors escape without replay.
+                const accepted = await input.accept(normalized, next);
+                await guard();
+                if (accepted.accepted) {
+                  await notify({ type: "accepted" });
+                  return { ok: true, value: accepted.value };
+                }
+                reason = "business_rejected";
+                report({ provider, round, attempt, reason, stage: 'accept' });
+              } finally { release?.(); }
             }
           }
         }

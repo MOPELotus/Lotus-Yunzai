@@ -18,10 +18,23 @@ export class HoyoRequestError extends Error {
 export class CaptchaBusinessRejectedError extends HoyoRequestError {
   readonly originalRequestRejected = true;
   constructor(retcode: number, readonly stage: "challenge" | "verification" | "business", cause?: unknown) {
-    super("api", $t("errors.text_c8677c2a97"), 200, retcode,
+    super("api", cause instanceof CaptchaResourceBusyError ? cause.message : $t("errors.text_c8677c2a97"), 200, retcode,
       cause === undefined ? undefined : { cause });
     this.name = "CaptchaBusinessRejectedError";
   }
+}
+
+/** Local capacity exhaustion is not a rejected captcha proof. */
+export class CaptchaResourceBusyError extends HoyoRequestError {
+  constructor(cause?: unknown) {
+    super("transport", $t("errors.captcha-local-busy"), undefined, undefined, { cause });
+    this.name = "CaptchaResourceBusyError";
+  }
+}
+
+export function isCaptchaResourceBusy(error: unknown): boolean {
+  return error instanceof CaptchaResourceBusyError ||
+    error instanceof CaptchaBusinessRejectedError && error.cause instanceof CaptchaResourceBusyError;
 }
 
 export function requiresServiceVerification(value: { msg?: unknown; message?: unknown }, header?: string | null) {

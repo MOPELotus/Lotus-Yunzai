@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { createProfileStore } from "@lotus-yunzai/account";
+import { CaptchaResourceBusyError } from "@lotus-yunzai/hoyo-client";
 import type { createProfileHoyoClient } from "@lotus-yunzai/hoyo-client";
 import { lockFile } from "../lib/file-lock.ts";
 import { createGroupPanelCacheRefresh } from "../lib/group-panel-cache.ts";
@@ -15,14 +16,14 @@ test("GS/SR hourly refresh persists checkpoints; ranking reads owned cache witho
  const signal = new AbortController().signal;
  try {
   for (const game of ["gs", "sr"] as const) {
-   let clock = 1_000_000, calls = 0, requests = 0, loggedIn = true, fail = false, changed = false;
+   let clock = 1_000_000, calls = 0, requests = 0, loggedIn = true, fail = false, busy = false, changed = false;
    const role = () => ({ uid: changed ? "100000043" : "100000042", region: "cn_gf01", gameBiz: game === "gs" ? "hk4e_cn" : "hkrpg_cn" });
    const profiles = {
     async listCheckinProfiles() { return [{ qq: "42", profileId: 1, loggedIn }, { qq: "42", profileId: 2, loggedIn }]; },
     async savedRole() { return role(); },
     async requestContext() { requests++; return { role: role(), revision: "first" }; },
    } as unknown as ReturnType<typeof createProfileStore>;
-   const fetchPanel = async () => { calls++; await Bun.sleep(1); if (fail) throw Error("offline"); return { revision: "first", avatars: [] }; };
+   const fetchPanel = async () => { calls++; await Bun.sleep(1); if (busy) throw new CaptchaResourceBusyError(); if (fail) throw Error("offline"); return { revision: "first", avatars: [] }; };
    const client = { fetchGenshinPanel: fetchPanel, fetchStarRailPanel: fetchPanel } as unknown as ReturnType<typeof createProfileHoyoClient>;
    const theme = await readPanelTheme();
    const dir = join(root, game);
@@ -36,6 +37,11 @@ test("GS/SR hourly refresh persists checkpoints; ranking reads owned cache witho
     await refresh(); expect(calls).toBe(1);
     clock += 3_600_000; fail = true; await refresh(); expect(calls).toBe(2);
     await create()(); expect(calls).toBe(2);
+    clock += 3_600_000; fail = false; busy = true;
+    expect(await create()()).toEqual({ refreshed: 0, failed: 0, busy: 1, skipped: 0 });
+    busy = false;
+    expect(await create()()).toEqual({ refreshed: 1, failed: 0, busy: 0, skipped: 0 });
+    expect(calls).toBe(4);
     const entries = await cached.list(new Set([42]), signal); expect(entries.length).toBe(1);
     loggedIn = false;
     const before = { calls, requests };
