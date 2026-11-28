@@ -15,11 +15,12 @@ export async function readRegistrationTime(source: ProfileRequestContext, transp
   const global = role.gameBiz?.endsWith("_global") === true;
   const biz = { gs: "hk4e", sr: "hkrpg", zzz: "nap" }[game] + (global ? "_global" : "_cn");
   const regions = global ? { gs: ["os_usa", "os_euro", "os_asia", "os_cht"],
-    sr: ["prod_official_usa", "prod_official_euro", "prod_official_asia", "prod_official_cht"],
+    sr: ["prod_official_usa", "prod_official_eur", "prod_official_asia", "prod_official_cht"],
     zzz: ["prod_gf_us", "prod_gf_eu", "prod_gf_jp", "prod_gf_sg"] } :
     { gs: ["cn_gf01", "cn_qd01"], sr: ["prod_gf_cn", "prod_qd_cn"], zzz: ["prod_gf_cn"] };
+  const cookie = global ? source.international?.cookie : source.account.cookie;
   if (!role.region || !regions[game].includes(role.region) || role.gameBiz && role.gameBiz !== biz ||
-      !/^\d{5,12}$/u.test(role.uid) || !source.account.cookie.trim() || /[\r\n\0]/u.test(source.account.cookie)) {
+      !/^\d{5,12}$/u.test(role.uid) || !cookie?.trim() || /[\r\n\0]/u.test(cookie)) {
     throw new HoyoRequestError("invalid-input", $t("registration-time.text_66bf6927cf"));
   }
   const loginOrigin = global ? "https://sg-public-api.hoyoverse.com" : "https://api-takumi.mihoyo.com";
@@ -43,7 +44,7 @@ export async function readRegistrationTime(source: ProfileRequestContext, transp
     return { response, data: object(payload.data)! };
   }
   const login = await request(new URL("/common/badge/v1/login/account", loginOrigin), {
-    method: "POST", headers: { Cookie: source.account.cookie, "Content-Type": "application/json" },
+    method: "POST", headers: { Cookie: cookie, "Content-Type": "application/json" },
     body: JSON.stringify({ game_biz: biz, lang: "zh-cn", region: role.region, uid: role.uid }),
   });
   const info = login.data;

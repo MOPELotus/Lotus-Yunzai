@@ -234,3 +234,10 @@ test("国际服提交风控、非零回执与未知状态均不重发", async ()
     expect(posts).toBe(1);
   }
 });
+
+test('account-wide info accepts the official empty region sentinel without accepting conflicting identities',async()=>{
+ let state:Record<string,unknown>={is_sign:false,region:'',total_sign_day:0};
+ const reader=await openHoYoLabGenshinCheckin(profile,async url=>url.pathname.endsWith('getUserGameRolesByCookieToken')?confirmed({list:[asia,europe]}):confirmed(state),{verifyProfile});
+ expect(await reader.readInfo()).toMatchObject({signed:false,totalSignDays:0});
+ for(const invalid of[{game_biz:'hk4e_cn'},{uid:'800000001'},{role:{region:''}},{region:'os_cht'}]){state={is_sign:false,region:'',...invalid};await expect(reader.readInfo()).rejects.toMatchObject({code:'response'});}
+});

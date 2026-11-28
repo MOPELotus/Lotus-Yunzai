@@ -49,11 +49,13 @@ function invalidSelection(name: string): never {
   throw new HoyoRequestError("invalid-input", $t("hoyolab-role-checkin.text_7eb2cbbb20", { "name": name }));
 }
 
-function verifyRole<G extends Game>(data: Json, { uid, region, gameBiz }: HoYoLabBoundRole<G>, subject: string) {
+function verifyRole<G extends Game>(data: Json, { uid, region, gameBiz }: HoYoLabBoundRole<G>, subject: string, allowEmptyRegion = false) {
   const nested = data.role == null ? undefined : object(data.role) ?? invalidResponse(subject);
   for (const row of nested ? [data, nested] : [data]) {
     if (["uid", "game_uid", "role_id"].some(key => Object.hasOwn(row, key) && uidOf(row[key]) !== uid) ||
-        ["region", "server"].some(key => Object.hasOwn(row, key) && row[key] !== region) ||
+        ["region", "server"].some(key => Object.hasOwn(row, key) && row[key] !== region &&
+          !(allowEmptyRegion && key === "region" && row === data && row.region === "" && !nested &&
+            !["uid", "game_uid", "role_id"].some(name => Object.hasOwn(row, name)))) ||
         (Object.hasOwn(row, "game_biz") && row.game_biz !== gameBiz)) invalidResponse(subject);
   }
 }
@@ -113,7 +115,7 @@ export async function openHoYoLabRoleCheckin<G extends Game>(
           const url = new URL(`${endpoint}/info`);
           url.search = new URLSearchParams(params).toString();
           const data = await client.request(url, readHeaders, subject);
-          verifyRole(data, role, subject);
+          verifyRole(data, role, subject, true);
           verifyRiskFields(data, subject);
           const { is_sign: signed, first_bind: firstBind, total_sign_day: days } = data;
           const totalSignDays = typeof days === "string" && /^\d{1,2}$/u.test(days) ? Number(days) : days;

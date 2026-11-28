@@ -6,6 +6,7 @@ import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { gachaAuthHeaders, gachaStokenCookie } from "./gacha-auth-request.ts";
 import { resolveZzzGachaLinkRole } from "./zzz-gacha-link.ts";
+import { readHoYoLabAuthKey } from "./hoyolab-authkey.ts";
 
 const authorizationEndpoint = "https://api-takumi.mihoyo.com/binding/api/genAuthKey";
 const historyEndpoint = "https://public-operation-common.mihoyo.com/common/gacha_record/api/getGachaLog";
@@ -17,8 +18,8 @@ const maxResponseBytes = 32 * 1024;
 
 export interface ZzzGachaAuthKey {
   readonly uid: string;
-  readonly region: "prod_gf_cn" | "prod_qd_cn";
-  readonly gameBiz: typeof gameBiz;
+  readonly region: ReturnType<typeof resolveZzzGachaLinkRole>["region"];
+  readonly gameBiz: "nap_cn" | "nap_global";
   readonly url: URL;
 }
 
@@ -84,6 +85,13 @@ function signedLink(authkey: string, region: ZzzGachaAuthKey["region"]) {
 export async function readZzzGachaAuthKey(source: ProfileRequestContext, transport: HoyoTransport,
   { signal }: { readonly signal?: AbortSignal } = {}, verifyProfile?: () => Promise<void>): Promise<ZzzGachaAuthKey> {
   const { uid, region } = resolveZzzGachaLinkRole(source.role);
+  if (source.international && source.game === "zzz") {
+    const { authkey } = await readHoYoLabAuthKey(source, transport, { signal }, verifyProfile);
+    const url = signedLink(authkey, region);
+    url.hostname = "public-operation-common-sg.hoyoverse.com";
+    url.searchParams.set("game_biz", "nap_global");
+    return { uid, region, gameBiz: "nap_global", url };
+  }
   if (source.game !== "zzz" || (region !== "prod_gf_cn" && region !== "prod_qd_cn")) {
     throw new HoyoRequestError("invalid-input", $t("zzz-gacha-auth.text_4ee30b6ced"));
   }

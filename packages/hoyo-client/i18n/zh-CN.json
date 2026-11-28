@@ -271,6 +271,10 @@
     "zzz-zenkov": {
       "description": "绝区零迷宫诡域战绩与图鉴响应校验及数据规范化",
       "source": "packages/hoyo-client/zzz-zenkov.ts"
+    },
+    "hoyolab-authkey": {
+      "description": "HoYoLAB 游戏授权与功能提示",
+      "source": "packages/hoyo-client/hoyolab-authkey.ts"
     }
   },
   "messages": {
@@ -1050,7 +1054,13 @@
     "zzz-zenkov.text_e9cbb10b0e": "收藏数",
     "zzz-zenkov.text_ecf4fa6e6c": "赛季剩余时间",
     "zzz-zenkov.text_f4f3c06250": "开始时刻",
-    "zzz-zenkov.text_f9558d1121": "本周剩余时间"
+    "zzz-zenkov.text_f9558d1121": "本周剩余时间",
+    "hoyolab-authkey.unsupported": "国际服暂不支持此功能",
+    "hoyolab-authkey.invalid": "国际服授权信息无效，请重新登录",
+    "hoyolab-authkey.transport": "国际服授权请求失败，请稍后重试",
+    "hoyolab-authkey.response": "国际服授权响应无效",
+    "hoyolab-authkey.failed": "国际服授权失败，请重新登录后重试",
+    "hoyolab-authkey.privacy": "HoYoLAB未公开{subject}数据，请前往HoYoLAB隐私设置开启后重试。"
   },
   "parameters": {
     "cloud-genshin-wallet.text_fc172384f6": {

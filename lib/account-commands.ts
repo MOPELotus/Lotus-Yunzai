@@ -102,7 +102,11 @@ export function accountCommands(
       let refreshed = 0;
       for (const id of ids) {
         try {
-          const { rolesSynced } = await client.refreshProfile(await profiles.accountContext(qq, id));
+          const account = await profiles.checkinAccountContext(qq, id);
+          const overseas = await profiles.internationalCredentials(qq, id);
+          const domestic = Boolean(account.account.cookie && (account.account.stoken || account.account.stokenCookie));
+          let rolesSynced = domestic || !overseas ? (await client.refreshProfile(account)).rolesSynced : false;
+          if (overseas) rolesSynced = (await client.refreshInternationalProfile(await profiles.checkinAccountContext(qq, id))).rolesSynced && (!domestic || rolesSynced);
           refreshed++;
           outcomes.push({ id, message: rolesSynced ? $t("lib.account-commands.text_83913e71fc") : $t("lib.account-commands.text_d5c4322221") });
         } catch {
@@ -133,8 +137,15 @@ export function accountCommands(
       if (context.user_id === undefined) return $t("lib.account-commands.text_41980a91d3");
 
       try {
-        const profile = await profiles.accountContext(String(context.user_id), id);
-        const roles = await client.syncRoles(profile, canRefresh(context));
+        const qq = String(context.user_id);
+        const profile = await profiles.checkinAccountContext(qq, id);
+        const overseas = await profiles.internationalCredentials(qq, id);
+        const domestic = Boolean(profile.account.cookie && (profile.account.stoken || profile.account.stokenCookie));
+        const roles = domestic || !overseas ? await client.syncRoles(profile, canRefresh(context)) : { gs: [], sr: [], zzz: [] };
+        if (overseas) {
+          const international = await client.syncInternationalRoles(await profiles.checkinAccountContext(qq, id));
+          for (const game of profileGames) roles[game] = [...roles[game], ...international[game]];
+        }
         return $t("lib.account-commands.text_e623664c82", { "id": id, "length": roles.gs.length, "value3": roles.sr.length, "value4": roles.zzz.length });
       } catch {
         return $t("lib.account-commands.text_7b5c090f79", { "id": id });

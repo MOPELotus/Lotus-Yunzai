@@ -4,8 +4,7 @@ const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { normalizeProfileRoleArtworkUrl, type ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
-import { genshinCnRecordRegion } from "./game-record.ts";
-import { requestGenshinCalculator } from "./genshin-backpack.ts";
+import { genshinCalculatorRegion, requestGenshinCalculator } from "./genshin-backpack.ts";
 
 const kind = "尘歌壶模数";
 type Json = Record<string, unknown>;
@@ -60,7 +59,7 @@ export function createGenshinBlueprintReader() {
   return async (source: ProfileRequestContext, transport: HoyoTransport, { code, signal }: GenshinBlueprintOptions,
     verifyProfile?: () => Promise<void>): Promise<GenshinBlueprint> => {
     const { uid } = source.role;
-    const region = genshinCnRecordRegion(source.role);
+    const region = genshinCalculatorRegion(source);
     if (source.game !== "gs" || !region) {
       throw new HoyoRequestError("invalid-input", $t("genshin-blueprint.text_8552020fa7"));
     }

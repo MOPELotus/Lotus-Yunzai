@@ -116,3 +116,10 @@ test("绝区零顶层风险回执终止写链，未确认的提交只回读当�
     expect(sent).toEqual(reads === 1 ? ["GET", "POST"] : ["GET", "POST", "GET"]);
   }
 });
+
+test('ZZZ official info accepts an unreported empty region while retaining role and game checks',async()=>{
+ let state:Record<string,unknown>={is_sign:false,region:'',total_sign_day:0};
+ const reader=await openHoYoLabZzzCheckin(profile,async url=>url.pathname.includes('getUserGameRolesByLtoken')?ok({list:rows}):ok(state),{verifyProfile});
+ const selected=reader.forRole(japan,[]);expect(await selected.readInfo()).toMatchObject({signed:false,totalSignDays:0});
+ for(const invalid of[{uid:'1300000009'},{game_biz:'nap_cn'},{role:{region:''}},{region:'prod_gf_sg'}]){state={is_sign:false,region:'',...invalid};await expect(selected.readInfo()).rejects.toMatchObject({code:'response'});}
+});

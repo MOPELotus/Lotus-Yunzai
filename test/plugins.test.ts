@@ -212,8 +212,8 @@ test("V3 的 index.js、apps 和单文件经过同一 OneBot 派发，保留规�
             ], true);
           }
           quote() { return this.reply([segment.reply(456), segment.text("已引用")], true); }
-          invalidSegment() {
-            const sent = this.reply(["不应发送", { type: "image", data: {} }]);
+          async invalidSegment() {
+            const sent = await this.reply(["不应发送", { type: "image", data: {} }]);
             return this.reply(sent ? "异常发送" : "已拒绝无效消息");
           }
           startStep() {

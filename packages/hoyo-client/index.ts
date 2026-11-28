@@ -1,5 +1,8 @@
 import { createTranslator as createTextTranslator } from "../i18n/index.ts";
 import messageCatalog from "./i18n/zh-CN.json";
+import { readHoYoLabAuthKey, unsupportedHoYoLab } from "./hoyolab-authkey.ts";
+import { createHoYoLabLogin, fetchHoYoLabLoginRoles, HoYoLabLoginError } from "./hoyolab-login.ts";
+import { verifyHoYoLabCookie } from "./hoyolab-cookie.ts";
 const $t = createTextTranslator("hoyo-client", messageCatalog.messages);
 import { readRegistrationTime } from "./registration-time.ts";
 export { readRegistrationTime } from "./registration-time.ts";
@@ -141,7 +144,8 @@ function isGenshinPersonalRecordCookieExpired(error: unknown) {
 
 interface CookieRecovery {
   readonly profiles: Pick<ReturnType<typeof createProfileStore>, "accountContext" | "saveRefreshedCredentials" | "saveRoles">
-    & Partial<Pick<ReturnType<typeof createProfileStore>, "requestSelectedContext" | "requestContexts" | "requestContext">>;
+    & Partial<Pick<ReturnType<typeof createProfileStore>, "requestSelectedContext" | "requestContexts" | "requestContext" |
+      "internationalCredentials" | "saveInternationalRefreshed" | "saveInternationalRoles" | "checkinAccountContext">>;
   readonly exchange: (profile: ProfileAccountContext, options?: { readonly verifyProfile?: () => Promise<void> }) => Promise<RefreshedCredentials>;
   readonly scope?: () => Promise<string>;
   readonly syncRoles?: boolean;
@@ -330,7 +334,12 @@ export function createHoyoClient(
         latest.international.realm !== overseas.international.realm || latest.role.region !== overseas.role.region) throw changed;
       return;
     }
-    const latest = await recovery.profiles.accountContext(profile.qq, profile.profileId).catch(() => { throw changed; });
+    const latest = await recovery.profiles.accountContext(profile.qq, profile.profileId).catch(async () => {
+      if (!profile.account.cookie && recovery.profiles.checkinAccountContext) {
+        return recovery.profiles.checkinAccountContext(profile.qq, profile.profileId).catch(() => { throw changed; });
+      }
+      throw changed;
+    });
     if (latest.revision !== profile.revision) throw changed;
   }
 
@@ -361,7 +370,11 @@ export function createHoyoClient(
         }
       };
       await guard();
-      const data = await withMiyousheCaptcha(transport, request => reader(source, request, options, guard), {
+      const overseasTransport: HoyoTransport = (url, init) => {
+        if (url.protocol !== "https:" || !/(?:^|\.)hoyo(?:lab|verse)\.com$/u.test(url.hostname)) unsupportedHoYoLab();
+        return transport(url, { ...init, readRetryGuard: guard });
+      };
+      const data = await withMiyousheCaptcha(overseasTransport, request => reader(source, request, options, guard), {
         signal: options.signal, verify: guard, context: { qq: source.qq, profileId: source.profileId }, game: internationalSource.game,
       });
       await guard();
@@ -470,11 +483,25 @@ export function createHoyoClient(
     async refreshCredentials(context: ProfileAccountContext) {
       return (await recover(context)).profile;
     },
-    async checkLoginCookie(context: ProfileAccountContext, options: {
+    async checkLoginCookie(context: ProfileAccountContext & { readonly internationalCookie?: {
+      readonly cookie: string; readonly activityCookie: string; readonly accountId: string; readonly realm: "SG" | "US" | "EU";
+    } }, options: {
       readonly signal: AbortSignal;
       readonly verifyReadOnly?: () => Promise<void>;
     }) {
       let revision = context.revision;
+      if (context.internationalCookie) {
+        const saved = context.internationalCookie;
+        try {
+          const result = await verifyHoYoLabCookie(`${saved.cookie}; ${saved.activityCookie}; ma_passport_region=${saved.realm}`, transport,
+            { signal: options.signal, verifyProfile: options.verifyReadOnly ?? (() => ensureCurrentProfile(context)) });
+          if (result.accountId !== saved.accountId || result.realm !== saved.realm) throw new HoyoRequestError("profile-changed", $t("index.text_819bb9ded1"));
+          return { state: "valid" as const, revision };
+        } catch (error) {
+          options.signal.throwIfAborted();
+          return { state: error instanceof HoyoRequestError && [-100, 10001, 10103].includes(error.retcode ?? 0) ? "expired" as const : "unknown" as const, revision };
+        }
+      }
       if (!profileCookieAccountId(context.account)) return { state: "unknown" as const, revision };
       const attempt = (profile: ProfileAccountContext) => {
         revision = profile.revision;
@@ -515,6 +542,34 @@ export function createHoyoClient(
         await verifyBinding?.();
         await ensureCurrentProfile(source);
       }, manual, firstDispatchAllowed);
+    },
+    async syncInternationalRoles(context: ProfileAccountContext, signal?: AbortSignal) {
+      const profiles = recovery?.profiles;
+      const saved = await profiles?.internationalCredentials?.(context.qq, context.profileId);
+      if (!saved || !profiles?.saveInternationalRoles || saved.revision !== context.revision) {
+        throw new HoyoRequestError("profile-changed", $t("index.text_819bb9ded1"));
+      }
+      const roles = await fetchHoYoLabLoginRoles(saved, transport, signal);
+      await ensureCurrentProfile(context);
+      await profiles.saveInternationalRoles(context.qq, context.profileId, context.revision, roles, signal);
+      return roles;
+    },
+    async refreshInternationalProfile(context: ProfileAccountContext, signal?: AbortSignal) {
+      const profiles = recovery?.profiles;
+      const saved = await profiles?.internationalCredentials?.(context.qq, context.profileId);
+      if (!saved || !profiles?.saveInternationalRefreshed || saved.revision !== context.revision) {
+        throw new HoyoRequestError("profile-changed", $t("index.text_819bb9ded1"));
+      }
+      const login = createHoYoLabLogin(transport);
+      let result: Awaited<ReturnType<typeof login.exchange>> | undefined;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try { result = await login.exchange(saved, signal); break; }
+        catch (error) { if (signal?.aborted || !(error instanceof HoYoLabLoginError) || error.kind !== "network" || attempt === 2) throw error; }
+      }
+      const roles = await fetchHoYoLabLoginRoles(result!, transport, signal);
+      await ensureCurrentProfile(context);
+      const { revision } = await profiles.saveInternationalRefreshed(context.qq, context.profileId, context.revision, result!, signal, roles);
+      return { roles, revision, rolesSynced: true };
     },
     async refreshProfile(context: ProfileAccountContext, signal?: AbortSignal): Promise<{ rolesSynced: boolean; revision?: string }> {
       signal?.throwIfAborted();
@@ -732,6 +787,7 @@ export function createHoyoClient(
       return readCloudZzzWallet(token, transport, options);
     },
     fetchGenshinMiniapp(source: ProfileRequestContext, options: GenshinMiniappOptions = {}) {
+      if (source.international) unsupportedHoYoLab();
       return readForGenshinGacha(source, options, readGenshinMiniapp);
     },
     fetchGenshinMonthly(source: ProfileRequestContext, options: GenshinMonthlyOptions) {
@@ -771,6 +827,7 @@ export function createHoyoClient(
       return readForProfile(source, options, readGenshinTarotCollection, isGenshinPersonalRecordCookieExpired);
     },
     fetchStarRailGrowth(source: ProfileRequestContext, options: StarRailGrowthOptions) {
+      if (source.international) unsupportedHoYoLab();
       return readForProfile(source, options, readStarRailGrowth, isGameRecordCookieExpired);
     },
     fetchStarRailGridFight(source: ProfileRequestContext, options: StarRailGridFightOptions = {}) {
@@ -793,10 +850,12 @@ export function createHoyoClient(
       }, isGameRecordCookieExpired);
     },
     fetchStarRailLedger(source: ProfileRequestContext, options: StarRailLedgerOptions) {
+      if (source.international) unsupportedHoYoLab();
       // This service mints a ticket with the SToken. Exchanging a Cookie cannot replace it.
       return readForProfile(source, options, readStarRailLedger, () => false);
     },
     fetchStarRailOnline(source: ProfileRequestContext, options: StarRailOnlineOptions = {}) {
+      if (source.international) unsupportedHoYoLab();
       return readForProfile(source, options, readStarRailOnline, () => false);
     },
     fetchStarRailMonthly(source: ProfileRequestContext, options: StarRailMonthlyOptions = {}) {
@@ -812,6 +871,7 @@ export function createHoyoClient(
       return readForProfile(source, options, readStarRailPanel, isGameRecordCookieExpired);
     },
     fetchStarRailGacha(source: ProfileRequestContext, options: StarRailGachaOptions = {}) {
+      if (source.international) unsupportedHoYoLab();
       return readForProfile(source, options, async (current, request, sameOptions, guard) => {
         const profiles = recovery?.profiles;
         if (current.revision === source.revision || !profiles?.requestContexts) {
@@ -825,7 +885,17 @@ export function createHoyoClient(
         return readStarRailGacha(role, request, sameOptions, guard);
       }, error => error instanceof GameRecordRequestError ? isGameRecordCookieExpired(error) : isCookieExpired(error));
     },
+    fetchHoYoLabGachaLink(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
+      return readForProfile(source, options, async (current, request, sameOptions, guard) => {
+        if (!current.international || current.game !== "sr") unsupportedHoYoLab();
+        const { uid, region, gameBiz, authkey } = await readHoYoLabAuthKey(current, request, sameOptions, guard);
+        const url = new URL("https://public-operation-hkrpg-sg.hoyoverse.com/common/gacha_record/api/getGachaLog");
+        url.search = new URLSearchParams({ authkey, authkey_ver: "1", game_biz: gameBiz, region, lang: "zh-cn" }).toString();
+        return { uid, region, url };
+      });
+    },
     fetchZzzTuning(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
+      if (source.international) unsupportedHoYoLab();
       return readForZzzTuning(source, options, readZzzTuning);
     },
     fetchZzzGachaAuthKey(source: ProfileRequestContext, options: { readonly signal?: AbortSignal } = {}) {
@@ -915,6 +985,7 @@ export function createHoyoClient(
       return readForProfile(source, options, readZzzPanel, isGameRecordCookieExpired);
     },
     fetchZzzTuningInventory(source: ProfileRequestContext, options: ZzzTuningOptions = {}) {
+      if (source.international) unsupportedHoYoLab();
       return readForZzzTuning(source, options, readZzzTuningInventory);
     },
   };

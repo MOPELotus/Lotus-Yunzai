@@ -50,6 +50,7 @@ function invalidResponse(subject: string): never {
 
 function checkinRole<Biz extends string, Region extends string>(
   data: Json, roles: readonly HoYoLabDefaultRole<Biz, Region>[], game: DefaultCheckinGame<Biz, Region>, subject: string,
+  allowEmptyRegion = false,
 ) {
   let uid: string | undefined;
   let region: Region | undefined;
@@ -61,7 +62,8 @@ function checkinRole<Biz extends string, Region extends string>(
       if (!value || (uid !== undefined && uid !== value)) invalidResponse(subject);
       uid = value;
     }
-    if (Object.hasOwn(row, "region")) {
+    if (Object.hasOwn(row, "region") && !(allowEmptyRegion && row === data && row.region === "" && !nested &&
+        !["uid", "game_uid", "role_id"].some(key => Object.hasOwn(row, key)))) {
       const value = game.regions.find(valid => valid === row.region);
       if (!value || (region !== undefined && region !== value)) invalidResponse(subject);
       region = value;
@@ -116,7 +118,7 @@ export async function openHoYoLabDefaultCheckin<Biz extends string, Region exten
       const totalSignDays = typeof days === "string" && /^\d{1,2}$/u.test(days) ? Number(days) : days;
       if (totalSignDays !== undefined && (typeof totalSignDays !== "number" ||
           !Number.isInteger(totalSignDays) || totalSignDays < 0 || totalSignDays > 31)) invalidResponse(subject);
-      const role = checkinRole(state, roles, game, subject);
+      const role = checkinRole(state, roles, game, subject, true);
       if (read === infoRead) canSubmit = !state.is_sign && state.first_bind !== true;
       return { signed: state.is_sign, firstBind: state.first_bind === true,
         ...(totalSignDays !== undefined && { totalSignDays }), ...(role && { role }) };

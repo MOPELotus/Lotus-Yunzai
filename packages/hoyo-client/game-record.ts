@@ -162,6 +162,7 @@ export async function readGameRecordPayload(response: Response, limit: number, s
 }
 
 function apiError(payload: Json | undefined, status: number, retcode: number | undefined, label: string, overseas = false): HoyoRequestError {
+  if (overseas && retcode === 10102) return new HoyoRequestError("api", $t("hoyolab-authkey.privacy", { subject: label }), status, retcode);
   const message = [payload?.message, payload?.msg, object(payload?.data)?.message].find((item) => typeof item === "string") ?? "";
   const code = status === 401 || status === 429 ? "http" : "api";
   const subject = $t("game-record.text_7c6d31e82d", { "label": label });

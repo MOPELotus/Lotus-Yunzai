@@ -6,6 +6,7 @@ import type { ProfileRequestContext } from "@lotus-yunzai/account";
 import type { HoyoTransport } from "./credentials.ts";
 import { HoyoRequestError } from "./errors.ts";
 import { gachaAuthHeaders, gachaStokenCookie } from "./gacha-auth-request.ts";
+import { readHoYoLabAuthKey } from "./hoyolab-authkey.ts";
 
 export const genshinGachaPools = [
   { type: 301, name: $t("genshin-gacha.text_c47b54e84e") }, { type: 302, name: $t("genshin-gacha.text_4fe131173e") }, { type: 500, name: $t("genshin-gacha.text_8f161c1237") }, { type: 200, name: $t("genshin-gacha.text_300b6634fe") },
@@ -112,6 +113,14 @@ export async function readGenshinAuthKey(
   { signal }: Pick<GenshinGachaOptions, "signal"> = {},
   verifyProfile?: () => Promise<void>,
 ) {
+  if (source.international) {
+    if (source.game !== "gs") throw new HoyoRequestError("invalid-input", $t("genshin-gacha.text_a1797bcbe4"));
+    const { uid, region, gameBiz, authkey } = await readHoYoLabAuthKey(source, transport, { signal }, verifyProfile);
+    const url = new URL("https://public-operation-hk4e-sg.hoyoverse.com/gacha_info/api/getGachaLog");
+    url.search = new URLSearchParams({ authkey_ver: "1", sign_type: "2", auth_appid: authApp, authkey,
+      region, game_biz: gameBiz, lang: "zh-cn", gacha_type: "301", page: "1", size: "20", end_id: "0" }).toString();
+    return { uid, region, url };
+  }
   const region = cnRegion(source);
   const uid = source.role.uid;
   const cookie = gachaStokenCookie(source, $t("genshin-gacha.text_d1597c51ed"));

@@ -78,9 +78,9 @@ test("固定重建所有国服和海外六频段请求，以精确游标追到�
     for (const name of ["Authorization", "Cookie", "Referer"]) expect(headers.has(name)).toBe(false);
     const query = endpoint.searchParams;
     const type = query.get("gacha_type")!;
-    const band = bands.find(([requestType]) => requestType === type)!;
+    const band = bands.find(([, base]) => base === type)!;
     expect(Object.fromEntries(query)).toEqual({ authkey_ver: "1", sign_type: "2", auth_appid: "webview_gacha",
-      init_log_gacha_type: type, init_log_gacha_base_type: band[1], gacha_id: "2c1f5692fdfbb733a08733f9eb69d32aed1d37",
+      init_log_gacha_type: band[0], init_log_gacha_base_type: band[1], gacha_id: "2c1f5692fdfbb733a08733f9eb69d32aed1d37",
       timestamp: "1725000000", lang: "zh-cn", device_type: "mobile", plat_type: "ios", region: role.region, authkey: token,
       game_biz: "nap_global", gacha_type: type, real_gacha_type: band[1], page: query.get("page")!, size: "20",
       end_id: query.get("end_id")!,
@@ -88,18 +88,18 @@ test("固定重建所有国服和海外六频段请求，以精确游标追到�
     const currentPage = query.get("page")!;
     const endId = query.get("end_id")!;
     calls.push([type, currentPage, endId]);
-    if (type === "13001" && currentPage === "1") return page([
+    if (type === "103" && currentPage === "1") return page([
       row(newest, "13001"), row(previous, "3", { real_gacha_type: "103" }),
     ]);
-    if (type === "13001" && currentPage === "2") return page([row(older, "103")]);
-    if (type === "12001" && currentPage === "1") return page([row("9223372036854775701", "102")]);
+    if (type === "103" && currentPage === "2") return page([row(older, "103")]);
+    if (type === "102" && currentPage === "1") return page([row("9223372036854775701", "102")]);
     return page([]);
   };
   const result = await readZzzGachaLink(link, transport, options, async () => { guarded++; });
   expect(calls).toEqual([
-    ["3001", "1", "0"], ["13001", "1", "0"], ["13001", "2", previous], ["13001", "3", older],
-    ["2001", "1", "0"], ["12001", "1", "0"], ["12001", "2", "9223372036854775701"],
-    ["1001", "1", "0"], ["5001", "1", "0"],
+    ["3", "1", "0"], ["103", "1", "0"], ["103", "2", previous], ["103", "3", older],
+    ["2", "1", "0"], ["102", "1", "0"], ["102", "2", "9223372036854775701"],
+    ["1", "1", "0"], ["5", "1", "0"],
   ]);
   expect(guarded).toBe(calls.length * 2 + 1);
   expect(result).toMatchObject({ ...role, timezone: 8 });
@@ -204,4 +204,13 @@ test("档案换绑或退出在边界取消已取得的分页数据", async () =>
     if (++verified === 2) throw new HoyoRequestError("profile-changed", "档案角色已变化。");
   })).rejects.toMatchObject({ code: "profile-changed" });
   expect(verified).toBe(2);
+});
+
+test('official overseas history accepts event ID zero and preserves the selected pool',async()=>{
+ const link=parseZzzGachaLink(url(),role);let returned=false;
+ const result=await readZzzGachaLink(link,async endpoint=>{
+  if(!returned&&endpoint.searchParams.get('gacha_type')==='2'){returned=true;return page([row('9223372036854775807','2',{gacha_id:'0'})]);}
+  return page([]);
+ },options);
+ expect(result.pools.find(pool=>pool.gachaType==='2')?.records[0]?.gachaId).toBe('0');
 });

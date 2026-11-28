@@ -98,3 +98,10 @@ test("旧档视图联合保留旧独有墙钟时间，兼容同号 Cookie 项的
   expect(() => mergeZzzLegacyWithLinked({ ...legacy, uid: "1300000003" }, linked)).toThrow("UID");
   expect(() => mergeZzzLegacyWithLinked(legacy, snapshot({ [character]: [draw(ids[1]!)] }))).toThrow("所属频段");
 });
+
+test('zero official event IDs survive archive merge and reload',()=>fixture(async(store)=>{
+ const input=snapshot({[character]:[draw(ids[0]!,{gachaId:'0'})]});
+ await store.merge(role,input,noChange);const saved=await store.read(role.qq,role);
+ expect(saved?.pools.find(pool=>pool.type===character)?.records[0]?.gachaId).toBe('0');
+ expect((await store.merge(role,input,noChange)).addedTotal).toBe(0);
+}));

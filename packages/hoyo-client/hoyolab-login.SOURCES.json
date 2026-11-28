@@ -15,6 +15,9 @@
     "genshin/client/components/chronicle/genshin.py",
     "genshin/client/components/chronicle/starrail.py",
     "genshin/client/components/chronicle/zzz.py",
-    "genshin/client/components/diary.py"
+    "genshin/client/components/diary.py",
+    "genshin/client/components/gacha.py",
+    "genshin/client/routes.py",
+    "genshin/client/components/calculator/client.py"
   ]
 }

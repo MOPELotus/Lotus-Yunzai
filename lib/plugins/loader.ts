@@ -488,7 +488,8 @@ export async function loadPlugins(
           ...(guidesSchedule && { guidesSchedule }),
           ...(memeRuntime && { memeRuntime }),
           ...(mediaRuntime && { mediaRuntime }),
-          ...(zzz && options.hoyoTransport && { hoyoTransport: options.hoyoTransport }),
+          ...(builtIn && ["@lotus-yunzai/zzz", "@lotus-yunzai/starrail", "@lotus-yunzai/genshin"].includes(moduleName) &&
+            options.hoyoTransport && { hoyoTransport: options.hoyoTransport }),
           ...(zzzPanelRankRoles && { zzzPanelRankRoles }),
           ...(zzzReminderRuntime && { zzzReminderRuntime }),
           ...(panelCacheRuntime && { panelCacheRuntime }),

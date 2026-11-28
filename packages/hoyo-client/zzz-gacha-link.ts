@@ -157,7 +157,7 @@ function requestUrl(link: ZzzGachaLink, key: string, band: Band, page: number, c
     authkey_ver: "1", sign_type: "2", auth_appid: "webview_gacha", authkey: key, region: link.region, game_biz: link.gameBiz,
     init_log_gacha_type: band.requestType, init_log_gacha_base_type: band.gachaType,
     gacha_id: "2c1f5692fdfbb733a08733f9eb69d32aed1d37", timestamp: String(timestamp), lang: "zh-cn", device_type: "mobile",
-    plat_type: "ios", gacha_type: band.requestType, real_gacha_type: band.gachaType, page: String(page),
+    plat_type: "ios", gacha_type: link.gameBiz === "nap_global" ? band.gachaType : band.requestType, real_gacha_type: band.gachaType, page: String(page),
     size: String(pageSize), end_id: cursor,
   }).toString();
   return url;
@@ -167,7 +167,7 @@ function draw(value: unknown, uid: string, band: Band, key: string, encodedKey: 
   if (!object(value) || decimal(value.uid) !== uid) badResponse($t("zzz-gacha-link.text_7053782a77"));
   const id = decimal(value.id);
   const itemId = decimal(value.item_id);
-  const gachaId = decimal(value.gacha_id);
+  const gachaId = value.gacha_id === "0" || value.gacha_id === 0 ? "0" : decimal(value.gacha_id);
   const count = whole(value.count);
   const raw = decimal(value.gacha_type);
   const declared = decimal(value.real_gacha_type);

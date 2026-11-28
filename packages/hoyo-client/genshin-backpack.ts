@@ -8,7 +8,7 @@ import { normalizeProfileRoleArtworkUrl, type ProfileRequestContext } from "@lot
 import type { HoyoTransport } from "./credentials.ts";
 import { observeCnRead } from "./cn-read-diagnostics.ts";
 import { HoyoRequestError } from "./errors.ts";
-import { GameRecordRequestError, genshinCnRecordRegion } from "./game-record.ts";
+import { GameRecordRequestError, genshinCnRecordRegion, gameRecordHeaders } from "./game-record.ts";
 
 interface GrowthTarget {
   readonly id: number;
@@ -55,7 +55,7 @@ export interface GenshinBackpackItem {
 
 export interface GenshinBackpackSnapshot {
   readonly uid: string;
-  readonly region: "cn_gf01" | "cn_qd01";
+  readonly region: "cn_gf01" | "cn_qd01" | "os_usa" | "os_euro" | "os_asia" | "os_cht";
   readonly items: readonly GenshinBackpackItem[];
 }
 
@@ -64,6 +64,13 @@ export interface GenshinGrowthSnapshot {
   readonly region: GenshinBackpackSnapshot["region"];
   readonly items: readonly (Pick<GenshinBackpackItem, "id" | "gameId" | "name" | "icon"> &
     { readonly total: number; readonly lack: number })[];
+}
+
+export function genshinCalculatorRegion(source: ProfileRequestContext): GenshinBackpackSnapshot["region"] | undefined {
+  if (!source.international) return genshinCnRecordRegion(source.role);
+  const { region, gameBiz } = source.role;
+  return source.game === "gs" && gameBiz === "hk4e_global" && /^os_(?:usa|euro|asia|cht)$/u.test(region)
+    ? region as GenshinBackpackSnapshot["region"] : undefined;
 }
 
 type Json = Record<string, unknown>;
@@ -166,6 +173,7 @@ function normalizeGrowthItem(value: GenshinGrowthItem): GenshinGrowthItem {
 }
 
 function requestHeaders(source: ProfileRequestContext, query: string, body: string | undefined, kind: Calculation): Headers {
+  if (source.international) return gameRecordHeaders(source, query, body, true);
   const { account, device } = source;
   const cookie = account.cookie.trim();
   const validDeviceField = (value: string | undefined): value is string =>
@@ -241,7 +249,7 @@ function verifyIdentity(record: Json, uid: string, region: GenshinBackpackSnapsh
   for (const field of ["server", "region"] as const) {
     if (Object.hasOwn(record, field) && record[field] !== region) responseError(kind);
   }
-  if (Object.hasOwn(record, "game_biz") && record.game_biz !== "hk4e_cn") responseError(kind);
+  if (Object.hasOwn(record, "game_biz") && record.game_biz !== (region.startsWith("os_") ? "hk4e_global" : "hk4e_cn")) responseError(kind);
 }
 
 function normalize(data: Json, uid: string, region: GenshinBackpackSnapshot["region"], kind: Calculation): GenshinGrowthSnapshot {
@@ -272,7 +280,8 @@ function normalize(data: Json, uid: string, region: GenshinBackpackSnapshot["reg
 
 export function requestGenshinCalculator(source: ProfileRequestContext, transport: HoyoTransport,
   kind: GenshinCalculation, path: CalculatorPath, options: CalculatorOptions): Promise<Json> {
-  return requestCalculator(source, transport, kind, new URL(path, calculator), options);
+  return requestCalculator(source, transport, kind, new URL(path, source.international
+    ? "https://sg-public-api.hoyolab.com/event/e20200928calculate/" : calculator), options);
 }
 
 export function requestStarRailCalculator(source: ProfileRequestContext, transport: HoyoTransport,
@@ -294,7 +303,7 @@ async function requestCalculator(source: ProfileRequestContext, transport: HoyoT
   await guard();
   const timeout = AbortSignal.timeout(15_000);
   const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
-  await addRecordFingerprint(headers, transport, deadline, guard);
+  if (!source.international) await addRecordFingerprint(headers, transport, deadline, guard);
   const method = body === undefined ? "GET" : "POST";
   const diagnostics = observeCnRead(endpoint.pathname, method, signal, timeout);
   let response: Response | undefined;
@@ -357,7 +366,7 @@ async function requestCalculator(source: ProfileRequestContext, transport: HoyoT
 async function calculate(source: ProfileRequestContext, transport: HoyoTransport, items: () => readonly GenshinGrowthItem[],
   kind: GenshinCalculation, signal?: AbortSignal, verifyProfile?: () => Promise<void>): Promise<GenshinGrowthSnapshot> {
   const uid = source.role.uid;
-  const region = genshinCnRecordRegion(source.role);
+  const region = genshinCalculatorRegion(source);
   if (source.game !== "gs" || !region) {
     throw new HoyoRequestError("invalid-input", $t("genshin-backpack.text_79836ab0b2", { "kind": calculationLabel(kind) }));
   }

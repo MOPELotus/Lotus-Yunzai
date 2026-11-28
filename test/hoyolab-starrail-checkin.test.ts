@@ -148,3 +148,10 @@ test("星铁国际服非零回执不推断已签到，风险或限流不回读�
     expect({ posts, reads }).toEqual({ posts: 1, reads: scenario.reads });
   }
 });
+
+test('official info may omit the bound region using an empty top-level string, but explicit mismatches still fail',async()=>{
+ let state:Record<string,unknown>={is_sign:false,region:'',total_sign_day:0};
+ const reader=await openHoYoLabStarRailCheckin(profile,async url=>url.pathname.includes('getUserGameRolesByLtoken')?ok({list:[asiaRow]}):ok(state),{verifyProfile});
+ const selected=reader.forRole(asia,[]);expect(await selected.readInfo()).toMatchObject({signed:false,totalSignDays:0});
+ for(const invalid of[{uid:'800000009'},{game_biz:'hkrpg_cn'},{role:{region:''}},{region:'prod_official_eur'}]){state={is_sign:false,region:'',...invalid};await expect(selected.readInfo()).rejects.toMatchObject({code:'response'});}
+});

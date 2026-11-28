@@ -62,11 +62,11 @@ function verifyIdentity(data: Json, role: { readonly uid: string; readonly regio
     }
   }
   for (const key of ["server", "region"]) {
-    if (Object.hasOwn(data, key) && genshinResponseRegion(data[key]) !== role.region) {
+    if (Object.hasOwn(data, key) && !(role.region.startsWith("os_") && data[key] === "") && genshinResponseRegion(data[key]) !== role.region) {
       invalid($t("genshin-world-boss.text_6cb61a9a3a"));
     }
   }
-  if (Object.hasOwn(data, "game_biz") && data.game_biz !== "hk4e_cn") {
+  if (Object.hasOwn(data, "game_biz") && data.game_biz !== (role.region.startsWith("os_") ? "hk4e_global" : "hk4e_cn")) {
     invalid($t("genshin-world-boss.text_be5a4d0107"));
   }
 }

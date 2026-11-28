@@ -1,6 +1,7 @@
 // Protocol adapted from seriaati/genshin.py (MIT), pinned in hoyolab-login.SOURCES.json.
 import { constants, createHash, publicEncrypt, randomBytes, randomUUID } from "node:crypto";
 import type { HoyoTransport } from "./credentials.ts";
+import { HoyoRequestError } from "./errors.ts";
 import { readGameRecordPayload } from "./game-record.ts";
 import { verifyHoYoLabCookie, type HoYoLabPassportRealm } from "./hoyolab-cookie.ts";
 
@@ -176,8 +177,15 @@ export function createHoYoLabLogin(transport: HoyoTransport) {
       if (!field(ltoken) || !field(cookieToken)) throw new HoYoLabLoginError("response");
       const cookie = `account_id_v2=${accountId}; cookie_token_v2=${cookieToken}; account_mid_v2=${mid}`;
       const activityCookie = `ltuid_v2=${accountId}; ltoken_v2=${ltoken}; ltmid_v2=${mid}`;
-      const verified = await verifyHoYoLabCookie(`${cookie}; ${activityCookie}; ma_passport_region=${realm}`, transport, { signal });
-      if (verified.accountId !== accountId || verified.realm !== realm || !verified.activityCookie) throw new HoYoLabLoginError("response");
+      let verified: Awaited<ReturnType<typeof verifyHoYoLabCookie>> | undefined;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try { verified = await verifyHoYoLabCookie(`${cookie}; ${activityCookie}; ma_passport_region=${realm}`, transport, { signal }); break; }
+        catch (error) {
+          if (signal?.aborted || !(error instanceof HoyoRequestError) ||
+              !(error.code === "transport" || error.code === "http" && (error.status ?? 0) >= 500) || attempt === 2) throw error;
+        }
+      }
+      if (!verified || verified.accountId !== accountId || verified.realm !== realm || !verified.activityCookie) throw new HoYoLabLoginError("response");
       return { ...credentials, cookie: verified.cookie, activityCookie: verified.activityCookie };
     },
   };

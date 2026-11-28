@@ -412,7 +412,9 @@ if (import.meta.main) {
     },
   });
   const roleProfiles = createProfileStore(Bun.env.LOTUS_PROFILE_DIR || undefined);
-  const accountCookieStatus = createAccountCookieStatus(roleProfiles);
+  let profileTransport: NonNullable<Parameters<typeof createProfileHoyoClient>[1]> = fetch;
+  const accountCookieStatus = createAccountCookieStatus(roleProfiles,
+    createProfileHoyoClient(roleProfiles, (url, init) => profileTransport(url, init)));
   const gameProfileDefaults = createGameProfileDefaults(fileURLToPath(new URL(gameProfileDefaultsPath + "/", import.meta.url)), roleProfiles, lockFile);
   const publicUidQuery = createPublicUidQuery();
   const gameProfileCommands = createGameProfileCommands(roleProfiles, gameProfileDefaults);
@@ -3102,7 +3104,10 @@ if (import.meta.main) {
       })
       : undefined;
     if (legacyPause) dispatchPower.restorePaused(legacyPause.pausedAt);
-    const accounts = accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh, undefined, async (...args) => {
+    const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
+    profileTransport = hoyoTransport;
+    const accounts = accountCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, canRefresh,
+      profiles => createProfileHoyoClient(profiles, hoyoTransport), async (...args) => {
       const { renderStatusCard } = await import("@lotus-yunzai/skia/status-card");
       if (args[0] === "登录列表") {
         const themeDirectory = Bun.env.LOTUS_ATLAS_THEME_DIR?.trim() || fileURLToPath(new URL("./data/atlas/theme/", root));
@@ -3118,7 +3123,6 @@ if (import.meta.main) {
       accounts.commands[`#配置${id === 1 ? "" : id}`]!("", {
         message_type, self_id, user_id, group_id, isMaster, inlineImageByteLimit, groupActivitySignal, privateCredentialSignal,
       });
-    const hoyoTransport = hoyoTransportForBot(botConfig.proxyAddress);
     commands.registerModule(deviceCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal,
       viewProfile, undefined, { transport: hoyoTransport }));
     commands.registerModule(dailyNoteCommands(Bun.env.LOTUS_PROFILE_DIR || undefined, lifecycle.signal, hoyoTransport));
@@ -3227,7 +3231,7 @@ if (import.meta.main) {
     if (probingUpdate) {
       commands.registerModule(redeemCodeCommands(previewOptions, publicPreview));
     } else {
-      const previewClient = createProfileHoyoClient(checkinProfiles);
+      const previewClient = createProfileHoyoClient(checkinProfiles, hoyoTransport);
       const preview = createPreviewRedeemRunner({
         journal: fileURLToPath(new URL("data/redeemCodes/auto.json", root)),
         legacyJournal: legacyLotusDirectories.map(name =>
@@ -3314,7 +3318,7 @@ if (import.meta.main) {
       const plans = checkinScheduleStore;
       const scheduler = globalConfig.scheduler as CheckinScheduleConfig | undefined;
       const catalog = createMiyousheShopCatalog({ profileDirectory });
-      const shopClient = createProfileHoyoClient(checkinProfiles);
+      const shopClient = createProfileHoyoClient(checkinProfiles, hoyoTransport);
       shopPlans = createMiyousheShopPlans({
         file: fileURLToPath(new URL("data/coinShop/plans.json", root)), profileDirectory,
         legacyFiles: legacyLotusDirectories.map(id => ({ id,
@@ -3592,7 +3596,7 @@ if (import.meta.main) {
     }));
     if (!probingUpdate) whenModuleTasksActive(() => {
       const active = AbortSignal.any([lifecycle.signal, handoffSession.signal]);
-      const client = createProfileHoyoClient(checkinProfiles);
+      const client = createProfileHoyoClient(checkinProfiles, hoyoTransport);
       scheduleLegacyPassportCookieRepair(active, async () => {
         const sweep = repairLegacyPassportCookies(checkinProfiles, client, nativeOperationSignal()).then(({ repaired, failed }) => {
           if (repaired || failed) console.info($t("app.text_9c150ffdff", { "repaired": repaired, "failed": failed }));

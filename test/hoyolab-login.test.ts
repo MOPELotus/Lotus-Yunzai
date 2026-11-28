@@ -282,3 +282,24 @@ test("a login taking longer than Bun's default idle limit still returns its comp
     expect(response.status).toBe(200);expect((await response.json()).state).toBe("complete");
   }finally{f.controller.abort();await server.stop(true);}
 },18_000);
+
+test('manual international refresh and role sync use overseas tokens and preserve registration, selected roles and domestic data',async()=>{
+ const {createProfileHoyoClient}=await import('../packages/hoyo-client/index.ts');
+ const path=await directory(),store=createProfileStore(path);await store.saveInternationalLogin(await store.openLoginSlot('42'),credentials,roles);
+ const first=await store.checkinSettings('42',1);const recorded=transportRecorder();const client=createProfileHoyoClient(store,recorded.transport);
+ const original=await store.internationalCredentials('42',1);const synced=await client.syncInternationalRoles(await store.checkinAccountContext('42',1));
+ expect(synced.gs[0]?.uid).toBe('800000001');expect(recorded.calls.some(x=>x.url.pathname.endsWith('getBySToken'))).toBe(false);
+ expect((await store.internationalCredentials('42',1))?.refreshedAt).toBe(original?.refreshedAt);
+ await client.refreshInternationalProfile(await store.checkinAccountContext('42',1));
+ expect(recorded.calls.filter(x=>x.url.pathname.endsWith('getBySToken'))).toHaveLength(1);
+ expect(recorded.calls.every(x=>x.url.hostname.endsWith('.hoyolab.com')||x.url.hostname.endsWith('.hoyoverse.com'))).toBe(true);
+ expect((await store.checkinSettings('42',1)).enabled).toBe(first.enabled);
+ expect((await store.savedRole('42',1,'gs')).uid).toBe('800000001');
+});
+
+test('overseas-only cookie status checks the international passport instead of reporting not logged in',async()=>{
+ const {createProfileHoyoClient}=await import('../packages/hoyo-client/index.ts');const path=await directory(),store=createProfileStore(path);await store.saveInternationalLogin(await store.openLoginSlot('42'),credentials,roles);
+ const {kind,context}=await store.cookieCheckContext('42',1);expect(kind).toBe('logged-in');const recorded=transportRecorder();const client=createProfileHoyoClient(store,recorded.transport);
+ expect(await client.checkLoginCookie(context,{signal:new AbortController().signal})).toMatchObject({state:'valid'});
+ expect(recorded.calls.length).toBe(2);expect(recorded.calls.every(x=>x.url.hostname==='passport-api-sg.hoyolab.com')).toBe(true);
+});

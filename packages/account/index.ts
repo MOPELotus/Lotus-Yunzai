@@ -742,18 +742,28 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const account = verifiedInternationalAccount(os, os.cookie);
       if (!account || !text(os.stoken) || !text(os.mid) || !text(os.device_id)) return;
       return { accountId: account.accountId, realm: account.realm, stoken: text(os.stoken), mid: text(os.mid),
-        deviceId: text(os.device_id), revision, refreshedAt: text(os.refreshed_at) };
+        deviceId: text(os.device_id), revision, refreshedAt: text(os.refreshed_at),
+        cookie: text(os.cookie), activityCookie: text(os.verified_activity_cookie) };
+    },
+    async saveInternationalRoles(qq: string, id: number, expected: string, roles: GameRoles, signal?: AbortSignal) {
+      return updateCheckinProfile(qq, id, expected, document => {
+        const games = record(document.games), os = record(games.os);
+        if (!verifiedInternationalAccount(os, os.verified_activity_cookie)) throw changedProfile();
+        return { ...document, games: { ...games, os: { ...os,
+          ...rolesForStorage(roles, { roles: record(os.game_roles), selected: record(os.current_uid) }) } } };
+      }, signal);
     },
     async saveInternationalRefreshed(qq: string, id: number, expectedRevision: string, result: {
       readonly cookie: string; readonly activityCookie: string; readonly accountId: string; readonly realm: "SG" | "US" | "EU";
       readonly stoken: string; readonly mid: string; readonly deviceId: string;
-    }, signal?: AbortSignal) {
+    }, signal?: AbortSignal, roles?: GameRoles) {
       if (![result.cookie, result.activityCookie].every(value => /^[\x20-\x7e]{1,16384}$/u.test(value))) invalidCheckinSettings();
       return updateCheckinProfile(qq, id, expectedRevision, document => {
         const games = record(document.games), os = record(games.os);
         if (os.verified_account_id !== result.accountId || os.verified_realm !== result.realm || os.stoken !== result.stoken ||
           os.mid !== result.mid || os.device_id !== result.deviceId) throw changedProfile();
-        return { ...document, games: { ...games, os: { ...os, cookie: result.cookie,
+        const roleState = roles ? rolesForStorage(roles, { roles: record(os.game_roles), selected: record(os.current_uid) }) : {};
+        return { ...document, games: { ...games, os: { ...os, ...roleState, cookie: result.cookie,
           verified_activity_cookie: result.activityCookie, refreshed_at: new Date().toISOString() } } };
       }, signal);
     },
@@ -1115,8 +1125,13 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       return { qq, profileId: id, account, device, revision };
     },
     async cookieCheckContext(qq: string, id: number) {
-      const { account, device, revision, summary } = await read(qq, id);
-      const context = { qq, profileId: id, account, device, revision };
+      const { document, state: { account, device, summary }, revision } = await readDocument(qq, id);
+      const os = record(record(document.games).os);
+      const verified = verifiedInternationalAccount(os, os.cookie);
+      const context = { qq, profileId: id, account, device, revision,
+        internationalCookie: !hasLegacyGameCookie(account) && verified ? { ...verified,
+          activityCookie: text(os.verified_activity_cookie) } : undefined };
+      if (context.internationalCookie) return { kind: "logged-in", context } as const;
       if (hasLegacyGameCookie(account) && profileCookieAccountId(account)) {
         return { kind: summary.loggedIn ? "logged-in" : "read-only", context } as const;
       }
