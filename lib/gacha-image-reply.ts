@@ -2,7 +2,6 @@ import { createTranslator as createTextTranslator } from "../packages/i18n/index
 import messageCatalog from "../i18n/zh-CN.json";
 const $t = createTextTranslator("core", messageCatalog.messages);
 import { nativeImageRasterScale } from "@lotus-yunzai/skia";
-import { batchInlineImagePages } from "@lotus-yunzai/skia/forward-images";
 import type { CommandReply } from "./commands.ts";
 import type { MessageEvent } from "./messages.ts";
 
@@ -44,7 +43,8 @@ export async function gachaImageReply({
     }
     high.push(card);
   }
-  const batches = batchInlineImagePages(high, limit, card => card.file.byteLength);
+  const batches: Image[][] = [];
+  for (let start = 0; start < high.length; start += 99) batches.push(high.slice(start, start + 99));
   if (!batches?.length) return total === 0 ? [] : tooLarge;
   if (!await roleIsCurrent()) return signal.aborted ? undefined : changedRoleMessage;
   if (total === 1) return batches[0]?.[0];

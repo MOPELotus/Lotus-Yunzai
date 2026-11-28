@@ -180,11 +180,9 @@ export function encodeMilkyReply(reply: MessageReply, quoteId?: number, mention?
 export function encodeMilkyForward(nodes: readonly MessageReply[], selfId: number, senderName = "Lotus-Yunzai"): ForwardNode[] | undefined {
   if (!Array.isArray(nodes) || nodes.length === 0 || nodes.length > maxForwardNodes) return;
   const messages: ForwardNode[] = [];
-  let remainingMediaBytes = maxPublicFileBytes;
   for (const node of nodes) {
-    const encoded = encodeSegments(node, remainingMediaBytes);
+    const encoded = encodeSegments(node, maxPublicFileBytes);
     if (!encoded) return;
-    remainingMediaBytes = encoded.remainingMediaBytes;
     messages.push({ user_id: selfId, sender_name: senderName, segments: encoded.message });
   }
   return messages;

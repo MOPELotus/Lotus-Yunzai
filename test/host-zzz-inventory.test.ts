@@ -101,6 +101,7 @@ test("国服统计仅当前登录可读，网关确认后才查实时库存，�
 
       sendOneBot("%抽卡记录2");
       const refused = await onebot.next("send_private_forward_msg");
+      expect([...JSON.stringify(refused.params).matchAll(/base64:\/\/[A-Za-z0-9+/=]+/gu)]).toHaveLength(6);
       const stats = imageBytes(refused.params);
       expect(stats.byteLength).toBeLessThanOrEqual(8 * 1024 * 1024);
       expect(refused.echo).toBeString();

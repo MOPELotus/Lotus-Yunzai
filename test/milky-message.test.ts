@@ -364,19 +364,20 @@ test("Milky 合并转发以登录 QQ 为节点发送者，按原顺序提交一�
   ]);
 });
 
-test("Milky 合并转发整体校验节点和共享媒体上限", async () => {
+test("Milky 合并转发校验节点并逐节点限制媒体体积", async () => {
   const { calls, call } = fixture();
   const event = milkyMessage(incoming(), selfId, call, undefined, call);
   expect(await event?.forward?.([])).toBe(false);
   expect(await event?.forward?.(["前一条", []])).toBe(false);
   expect(await event?.forward?.(["前一条", segment.image("/tmp/local.png")])).toBe(false);
   expect(await event?.forward?.(Array(101).fill("节点"))).toBe(false);
+  expect(await event?.forward?.([segment.image(new Uint8Array(maxPublicFileBytes + 1))])).toBe(false);
+  expect(calls).toEqual([]);
   expect(await event?.forward?.([
     segment.image(new Uint8Array(maxPublicFileBytes - 1)), segment.video("base64://AQI="),
-  ])).toBe(false);
-  expect(calls).toEqual([]);
+  ])).toBe(true);
   expect(await event?.forward?.(Array(100).fill("节点"))).toBe(true);
-  expect(calls).toHaveLength(1);
+  expect(calls).toHaveLength(2);
 });
 
 test("Milky 合并转发区分明确失败和发送结果未知", async () => {

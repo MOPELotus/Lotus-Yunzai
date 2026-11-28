@@ -28,21 +28,21 @@ test("keeps the exact budget ordinary forward at 4×", async () => {
   expect(render.calls).toEqual([[1, 4], [2, 4], [3, 4]]);
 });
 
-test("aggregate overflow splits the original images without lowering density", async () => {
+test("aggregate bytes do not split a merged forward", async () => {
   const render = pages(8, 4), groups: number[][] = [];
   const reply = await gachaImageReply({ ...base, ...render, inlineImageByteLimit: 13,
     async forward(nodes) { groups.push(pageOrder(nodes)); return true; },
   });
   expect(reply).toEqual([]);
-  expect(groups).toEqual([[1], [2], [3]]);
+  expect(groups).toEqual([[1, 2, 3]]);
   expect(render.calls).toEqual([[1, 4], [2, 4], [3, 4]]);
 });
 
-test("larger 2× replies split only the original pages, in order, with distinct headings", async () => {
+test("only the 99-image node limit splits a merged forward", async () => {
   const groups: number[][] = [];
   const headings: MessageReply[] = [];
   const reply = await gachaImageReply({
-    ...base, ...pages(8, 4), inlineImageByteLimit: 8,
+    ...base, total: 101, ...pages(8, 4), inlineImageByteLimit: 8,
     async forward(nodes) {
       groups.push(pageOrder(nodes));
       headings.push(nodes[0]!);
@@ -50,8 +50,8 @@ test("larger 2× replies split only the original pages, in order, with distinct 
     },
   });
   expect(reply).toEqual([]);
-  expect(groups).toEqual([[1], [2], [3]]);
-  expect(headings).toEqual(["合成样本，共 3 页（第 1/3 段）", "合成样本，共 3 页（第 2/3 段）", "合成样本，共 3 页（第 3/3 段）"]);
+  expect(groups).toEqual([Array.from({length:99},(_,i)=>i+1),[100,101]]);
+  expect(headings).toEqual(["合成样本，共 3 页（第 1/2 段）", "合成样本，共 3 页（第 2/2 段）"]);
 });
 
 test("rejected and ambiguous forward attempts stop without repeating or sending later pages", async () => {
@@ -65,7 +65,7 @@ test("rejected and ambiguous forward attempts stop without repeating or sending 
         return false;
       },
     });
-    expect(sent).toEqual([[1]]);
+    expect(sent).toEqual([[1,2,3]]);
     expect(reply).toContain(uncertain ? "结果未确认" : "未发送");
   }
 });
@@ -73,7 +73,7 @@ test("rejected and ambiguous forward attempts stop without repeating or sending 
 test("checks actual role again between confirmed split sends", async () => {
   let sends = 0;
   const reply = await gachaImageReply({
-    ...base, ...pages(8, 4), inlineImageByteLimit: 8, verifyRole: async () => sends === 0,
+    ...base, total:100, ...pages(8, 4), inlineImageByteLimit: 8, verifyRole: async () => sends === 0,
     async forward() { sends++; return true; },
   });
   expect(sends).toBe(1);
@@ -100,7 +100,7 @@ test("低配按原分页一次出图，单页超限时保留文字回执", async
       async forward(nodes) { sent.push(pageOrder(nodes)); return true; },
     });
     expect(reply).toEqual([]);
-    expect(sent).toEqual([[1, 2], [3]]);
+    expect(sent).toEqual([[1, 2, 3]]);
     expect(render.calls).toEqual([[1, 1], [2, 1], [3, 1]]);
     const oversized = pages(8, 9);
     expect(await gachaImageReply({ ...base, ...oversized, inlineImageByteLimit: 8 })).toContain("单页图片仍超过");
