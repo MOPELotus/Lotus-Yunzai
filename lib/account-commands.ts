@@ -192,6 +192,20 @@ export function accountCommands(
           avatar: role.avatar,
         })),
       }));
+      if (profile.international.hasCookie) {
+        for (const game of profileGames) {
+          const rows = profile.international.roles[game];
+          if (profile.domesticLoggedIn && rows.length) roleGroups.push({
+            label: $t("lib.account-international.internationalGroup", { game: roleLabels[game] }),
+            rows: rows.map(role => ({ uid: role.uid, name: role.nickname || gameRegionDisplayName(game, role.region, role.regionName),
+              level: role.level, active: role.uid === profile.international.activeRoles[game], avatar: role.avatar })),
+          });
+          else if (!profile.domesticLoggedIn) {
+            const group = roleGroups[profileGames.indexOf(game)];
+            if (group) group.label = $t("lib.account-international.internationalGroup", { game: roleLabels[game] });
+          }
+        }
+      }
       const account = [
         { label: $t("lib.account-commands.text_2f0a2b5a01"), value: profile.passport },
         { label: "Cookie", value: profile.hasCookie ? $t("lib.account-commands.text_1bd91a7d0c") : $t("lib.account-commands.text_6a1be012c9") },
@@ -203,7 +217,7 @@ export function accountCommands(
       const summary = $t("lib.account-commands.text_59c4758bd2", { "mode": mode, "value2": switchState(profile.notifications) });
       const warnings = [
         ...(profile.rolesPending ? [$t("lib.account-commands.text_27c634819b")] : []),
-        ...(!profile.device.hasFingerprint ? [$t("lib.account-commands.text_b177a3598a")] : []),
+        ...(profile.domesticLoggedIn && !profile.device.hasFingerprint ? [$t("lib.account-commands.text_b177a3598a")] : []),
       ];
       let image: Uint8Array | undefined;
       try {
@@ -314,6 +328,14 @@ export function accountCommands(
             const selected = $t("lib.account-commands.text_0c0b590627", { "value1": profile.activeRoles.gs || "-", "value2": profile.activeRoles.sr || "-", "value3": profile.activeRoles.zzz || "-" });
             items.push($t("lib.account-commands.text_265d0900d6", { "id": id, "status": status, "selected": selected }));
             lines.push($t("lib.account-commands.text_f5c8c4f5dc", { "id": id, "status": status }));
+            if (profile.international.hasCookie) {
+              const selectedOs = profile.international.activeRoles;
+              const international = $t("lib.account-international.internationalRoles", {
+                gs: selectedOs.gs || "-", sr: selectedOs.sr || "-", zzz: selectedOs.zzz || "-",
+              });
+              items[items.length - 1] += `\n${international}`;
+              lines.push(international);
+            }
           } catch (error) {
             if (!(error instanceof ProfileError)) throw error;
             items.push($t("lib.account-commands.text_a236b4e001", { "id": id }));

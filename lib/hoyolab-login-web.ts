@@ -82,9 +82,10 @@ export function createHoYoLabLoginWeb({ directory, signal, publicBase, transport
     },
   };
   return { commands, mount, close,
-    async handle(request: Request): Promise<Response | undefined> {
+    async handle(request: Request, server?: { timeout?(request: Request, seconds: number): void }): Promise<Response | undefined> {
       const url = new URL(request.url);
       if (url.pathname !== mount && !url.pathname.startsWith(`${mount}/`)) return;
+      if (request.method === "POST") server?.timeout?.(request, 120);
       if (signal.aborted) return error("expired", 503);
       if (request.method === "GET") {
         const files: Record<string, [string, string]> = { [mount]: ["index.html", "text/html"], [`${mount}/`]: ["index.html", "text/html"],

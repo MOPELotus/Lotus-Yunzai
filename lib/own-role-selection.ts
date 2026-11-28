@@ -57,10 +57,14 @@ export async function selectOwnRole(profiles: Roles, { game, slot, profileId: ex
       if (!role) return uid === undefined
         ? $t("lib.own-role-selection.text_e7571f382e", { "value1": $t("lib.own-role-selection.text_3f6fdc79bb", { "profileId": profileId }), "slot": slot, "label": gameLabel(game), "suffix": suffix })
         : $t("lib.own-role-selection.text_384d21e4ee", { "profileId": profileId, "value2": gameLabel(game), "value3": prefixes[game], "value4": profileId });
-      const source = await profiles.requestContext(qq, profileId, game, role.uid);
-      if (!isCurrent() || signal.aborted) return;
-      if (source.revision !== catalogue.revision) throw new ProfileError("changed", $t("lib.own-role-selection.text_8a1edc5158"));
-      await profiles.selectCatalogRole(qq, profileId, game, role.uid, source.revision, signal, isCurrent);
+      let revision = catalogue.revision;
+      if (!role.gameBiz.endsWith("_global")) {
+        const source = await profiles.requestContext(qq, profileId, game, role.uid);
+        if (!isCurrent() || signal.aborted) return;
+        if (source.revision !== catalogue.revision) throw new ProfileError("changed", $t("lib.own-role-selection.text_8a1edc5158"));
+        revision = source.revision;
+      }
+      await profiles.selectCatalogRole(qq, profileId, game, role.uid, revision, signal, isCurrent);
       if (!isCurrent() || signal.aborted) return;
       catalogue.active[game] = role.uid;
       confirmation = $t("lib.own-role-selection.text_34fe465cfa", { "id": profileId, "label": gameLabel(game), "value3": [role.uid, roleInfo(game, role)].filter(Boolean).join(" · ") });

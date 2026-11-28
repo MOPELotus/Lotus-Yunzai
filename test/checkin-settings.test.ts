@@ -193,7 +193,7 @@ test("国际服总开关和语言只更新本档原海外段", async () => {
     const before = await store.checkinSettings(qq, 2);
     const language = await store.setProfileCheckinSettings(qq, 2, before.revision,
       { type: "international-language", language: "ZH_TW" });
-    expect((await store.describe(qq, 2)).international).toEqual({ enabled: false, language: "ZH_TW", hasCookie: true });
+    expect((await store.describe(qq, 2)).international).toMatchObject({ enabled: false, language: "ZH_TW", hasCookie: true });
     const enabled = await store.setProfileCheckinSettings(qq, 2, language.revision, { type: "international", enabled: true });
     expect(Bun.YAML.parse(await readFile(path, "utf8"))).toEqual({
       ...fixture, games: { ...fixture.games, os: { ...os, lang: "ZH_TW", enable: true } },

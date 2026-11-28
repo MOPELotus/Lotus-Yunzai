@@ -3743,17 +3743,17 @@ if (import.meta.main) {
       }
     }
     // Plugins may create file links during initialization. Keep the bound listeners guarded until routes are ready.
-    let publicRoutes: ((request: Request, auth: Headers) => Promise<Response | undefined>) | undefined;
+    let publicRoutes: ((request: Request, auth: Headers, server?: { timeout?(request: Request, seconds: number): void }) => Promise<Response | undefined>) | undefined;
     const acceptingPublic = () => !stopping && handoff.accepting && publicRoutes !== undefined;
     const listenerMessages: string[] = [];
     let updateProbePort: number | undefined;
     function httpHandler(auth: Headers) {
       const statusRoute = httpStatus(auth, runtimeVersion);
-      return async (request: Request, server?: { requestIP(request: Request): { address: string } | null }) => {
+      return async (request: Request, server?: { requestIP(request: Request): { address: string } | null; timeout?(request: Request, seconds: number): void }) => {
         const publicConfigured = [...auth.keys()].length > 0 || network.publicUrl || network.panelPublicUrl || network.manualCaptchaUrl || network.https?.publicUrl;
         if (!publicConfigured && !isDirectInternalRequest(request, server?.requestIP(request)?.address)) return new Response(null, { status: 403 });
         if (stopping || !handoff.accepting || !publicRoutes) return new Response(null, { status: 503 });
-        return await publicRoutes(request, auth) ?? statusRoute(request);
+        return await publicRoutes(request, auth, server) ?? statusRoute(request);
       };
     }
     function listenOneBot(port: number, auth: Headers, fetch?: ReturnType<typeof httpHandler>, tls?: Bun.TLSOptions) {
@@ -4399,12 +4399,12 @@ if (import.meta.main) {
       const panel = !panelEnabled ? undefined : panelApi(panelToken, plugins.records,
         (path) => settingsRoutes.get(path) ?? guoba(path) ?? extensions?.api(path), runtimeVersion, panelOwnerSession);
       const assets = panel && panelAssets(fileURLToPath(new URL("panel/dist", root)));
-      publicRoutes = async (request, auth) => {
+      publicRoutes = async (request, auth, server) => {
         if (new URL(request.url).pathname === panelTransferPath) {
           return panelTransfer?.source.serve(request) ?? new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
         }
         return await manualCaptcha?.handlePublic(request) ?? publicFiles.handle(request) ?? mediaDelivery.handle(request) ??
-          await hoyolabLoginWeb?.handle(request) ?? await miyousheWeb?.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
+          await hoyolabLoginWeb?.handle(request, server) ?? await miyousheWeb?.handle(request) ?? await panel?.(request) ?? await extensions?.assets(request) ?? await assets?.(request) ??
           await milkyWebhook?.handle(request, auth) ?? await legacy.httpRoutes.handle(request, auth, acceptingPublic) ?? fallback?.(request);
       };
       if (updateProbeToken && updateProbePort !== undefined && process.connected === true && typeof process.send === "function") {

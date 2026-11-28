@@ -553,6 +553,14 @@ function verifiedInternationalAccount(os: Record<string, unknown>, credential: u
   return { cookie: credential, accountId, realm, language: text(os.lang) || "zh-cn" } as const;
 }
 
+function availableProfileRoles(document: Record<string, unknown>, state: ReturnType<typeof readIdentity>, game: Game) {
+  const os = record(record(document.games).os);
+  const domestic = normalizeGameRoles(record(record(document.account).game_roles)[game]);
+  const overseas = verifiedInternationalAccount(os, os.cookie) ? normalizeGameRoles(record(os.game_roles)[game]) : [];
+  const unique = new Map([...domestic, ...overseas].map(role => [`${role.gameBiz}:${role.region}:${role.uid}`, role]));
+  return unique.size ? [...unique.values()] : normalizeGameRoles(state.roles[game]);
+}
+
 export function createProfileStore(directory: string | URL = new URL("../../data/users/", import.meta.url)) {
   const root = typeof directory === "string" ? directory : fileURLToPath(directory);
   const loginSlots = new WeakSet<ProfileLoginSlot>();
@@ -613,6 +621,13 @@ export function createProfileStore(directory: string | URL = new URL("../../data
     const roles = normalizeGameRoles(profile.roles[game]);
     const selection = profile.selected[game];
     const activeUid = uid === undefined ? accountId(selection) : uid;
+    if (activeUid && !roles.some(role => role.uid === activeUid)) {
+      const { document } = await readDocument(qq, id);
+      const os = record(record(document.games).os);
+      if (verifiedInternationalAccount(os, os.cookie) && normalizeGameRoles(record(os.game_roles)[game]).some(role => role.uid === activeUid)) {
+        throw new ProfileError("role-missing", $t("index.text_8edebd665e"));
+      }
+    }
     const hasSelection = selection !== undefined && selection !== null && selection !== "";
     const allowFallback = uid === undefined && !(requireSelected && hasSelection);
     const role = roles.find((item) => item.uid === activeUid) ??
@@ -919,7 +934,9 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       const os = record(games.os);
       const community = record(document.mihoyobbs);
       const cloud = record(record(document.cloud_games).cn);
-      const aid = state.account.ltuid || state.account.stuid;
+      const domesticLoggedIn = Boolean(state.account.cookie && (state.account.stoken || state.account.stokenCookie));
+      const overseasAccount = verifiedInternationalAccount(os, os.cookie);
+      const aid = state.account.ltuid || state.account.stuid || overseasAccount?.accountId;
       const deviceSecrets = [state.device.id, state.device.fp].filter(Boolean).map((value) => value.toLowerCase());
       const deviceName = [state.device.name, state.device.model].find((value) =>
         value && !deviceSecrets.some((secret) => value.toLowerCase().includes(secret)));
@@ -933,8 +950,9 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       return {
         ...state.summary,
         nickname: text(record(document.user).nickname).slice(0, 80),
-        hasCookie: !!state.account.cookie,
-        hasStoken: !!(state.account.stoken || state.account.stokenCookie),
+        domesticLoggedIn,
+        hasCookie: !!state.account.cookie || !!overseasAccount,
+        hasStoken: !!(state.account.stoken || state.account.stokenCookie) || !!overseasAccount && !!text(os.stoken),
         legacyCookie: !state.summary.loggedIn && hasLegacyGameCookie(state.account),
         passport: aid ? (aid.length > 6 ? `${aid.slice(0, 2)}***${aid.slice(-2)}` : $t("index.text_f70c0007f3")) : $t("index.text_e026c6693d"),
         device: {
@@ -944,12 +962,14 @@ export function createProfileStore(directory: string | URL = new URL("../../data
         },
         schedule: { mode: text(schedule.mode), fixedTime: /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(dayTime) ? dayTime : "" },
         notifications: record(profile.notify).enable !== false,
-        gameCheckin: Object.fromEntries(Object.entries(configuredCnCheckins(cn)).map(([game, { enabled }]) => [game, enabled])),
+        gameCheckin: Object.fromEntries(Object.entries(configuredCnCheckins(domesticLoggedIn ? cn : { ...cn, enable: false })).map(([game, { enabled }]) => [game, enabled])),
         communityCheckin: configuredCommunityForums(community).map(Number),
         international: {
           enabled: os.enable === true,
           language: /^[A-Za-z_-]{1,32}$/u.test(text(os.lang)) ? text(os.lang) : "zh-cn",
           hasCookie: Boolean(text(os.cookie)),
+          roles: { gs: normalizeGameRoles(record(os.game_roles).gs), sr: normalizeGameRoles(record(os.game_roles).sr), zzz: normalizeGameRoles(record(os.game_roles).zzz) },
+          activeRoles: { gs: accountId(record(os.current_uid).gs), sr: accountId(record(os.current_uid).sr), zzz: accountId(record(os.current_uid).zzz) },
         },
         cloud: ["genshin", "zzz"].flatMap((game) => {
           const config = record(cloud[game]);
@@ -961,11 +981,11 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       };
     },
     async roleCatalog(qq: string, id: number) {
-      const { roles, selected, revision } = await read(qq, id);
+      const { document, state, revision } = await readDocument(qq, id);
       const catalog = {
-        gs: normalizeGameRoles(roles.gs), sr: normalizeGameRoles(roles.sr), zzz: normalizeGameRoles(roles.zzz),
+        gs: availableProfileRoles(document, state, "gs"), sr: availableProfileRoles(document, state, "sr"), zzz: availableProfileRoles(document, state, "zzz"),
       };
-      const active = { gs: accountId(selected.gs), sr: accountId(selected.sr), zzz: accountId(selected.zzz) };
+      const active = { gs: accountId(state.selected.gs), sr: accountId(state.selected.sr), zzz: accountId(state.selected.zzz) };
       return { revision, catalog, active };
     },
     async selectCatalogRole(qq: string, id: number, game: Game, uid: string, expected: string,
@@ -973,23 +993,25 @@ export function createProfileStore(directory: string | URL = new URL("../../data
       if (!profileGames.includes(game)) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
       return updateCheckinProfile(qq, id, expected, (document, state) => {
         if (!canCommit()) throw new DOMException($t("index.text_17a1fdaceb"), "AbortError");
-        if (!normalizeGameRoles(state.roles[game]).some(role => role.uid === uid)) {
+        if (!availableProfileRoles(document, state, game).some(role => role.uid === uid)) {
           throw new ProfileError("role-missing", $t("index.text_2e450055a3"));
         }
         if (accountId(state.selected[game]) === uid) return document;
         const account = record(document.account);
+        const games = record(document.games), os = record(games.os);
+        const overseas = normalizeGameRoles(record(os.game_roles)[game]).some(role => role.uid === uid);
         if (!state.account.cookie || !(state.account.stoken || state.account.stokenCookie)) {
-          const games = record(document.games), os = record(games.os);
-          return { ...document, games: { ...games, os: { ...os, current_uid: { ...state.selected, [game]: uid } } } };
+          return { ...document, games: { ...games, os: { ...os, current_uid: { ...record(os.current_uid), [game]: uid } } } };
         }
-        return { ...document, account: { ...account, current_uid: { ...state.selected, [game]: uid } } };
+        return { ...document, account: { ...account, current_uid: { ...state.selected, [game]: uid } },
+          ...(overseas && { games: { ...games, os: { ...os, current_uid: { ...record(os.current_uid), [game]: uid } } } }) };
       }, signal, undefined, canCommit);
     },
     async savedRole(qq: string, id: number, game: Game): Promise<GameRole> {
       if (!profileGames.includes(game)) throw new ProfileError("invalid", $t("index.text_eef3f07f3c"));
-      const { roles, selected } = await read(qq, id);
-      const list = normalizeGameRoles(roles[game]);
-      const uid = accountId(selected[game]);
+      const { document, state } = await readDocument(qq, id);
+      const list = availableProfileRoles(document, state, game);
+      const uid = accountId(state.selected[game]);
       const role = uid ? list.find((item) => item.uid === uid) ?? { uid, nickname: "", region: "", gameBiz: "", chosen: false } : list[0];
       if (!role) throw new ProfileError("role-missing", $t("index.text_8edebd665e"));
       return role;

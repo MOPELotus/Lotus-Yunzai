@@ -1156,6 +1156,10 @@
     "lib.hoyolab-login-web": {
       "description": "国际服网页登录（一次性网页登录、HoYoLAB 账密、极验与邮箱二次验证、国际服独立档案与 SToken 续期）",
       "source": "lib/hoyolab-login-web.ts"
+    },
+    "lib.account-international": {
+      "description": "国际服登录与角色信息展示",
+      "source": "lib/account-commands.ts"
     }
   },
   "messages": {
@@ -5036,7 +5040,9 @@
     "lib.hoyolab-login-web.secure": "为保障账号安全，请使用 HTTPS 或本机地址进行登录。",
     "lib.hoyolab-login-web.retryLimit": "尝试次数过多，请重新发起登录。",
     "lib.hoyolab-login-web.section": "国际服网页登录（一次性网页登录、HoYoLAB 账密、极验与邮箱二次验证、国际服独立档案与 SToken 续期）",
-    "lib.hoyolab-login-web.renewFailed": "国际服档案凭据续期失败，请重新登录。"
+    "lib.hoyolab-login-web.renewFailed": "国际服档案凭据续期失败，请重新登录。",
+    "lib.account-international.internationalRoles": "国际服UID：原神{gs}、星铁{sr}、绝区零{zzz}",
+    "lib.account-international.internationalGroup": "{game} 国际服"
   },
   "parameters": {
     "lib.update-checkout.git-failed": {"step": "执行失败的 Git 命令步骤名称", "code": "Git 命令返回的进程退出码", "details": "经脱敏处理的 Git 失败诊断信息"},

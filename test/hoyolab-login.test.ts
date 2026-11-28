@@ -20,7 +20,7 @@ const credentials = { accountId: "4202", mid: "fixture-mid", stoken: "v2_fixture
 const roles = { gs: [{uid:"800000001",region:"os_asia",nickname:"fixture",gameBiz:"hk4e_global",chosen:true}], sr:[],zzz:[] };
 const complete = () => Response.json({retcode:0,data:{token:{token:credentials.stoken},user_info:{aid:"4202",mid:"fixture-mid"}}});
 function proof() { return Response.json({retcode:0,data:{user_info:{aid:"4202",mid:"fixture-mid"}}}); }
-function transportRecorder(login: (headers: Headers, body: Record<string,unknown>) => Response = complete) {
+function transportRecorder(login: (headers: Headers, body: Record<string,unknown>) => Response | Promise<Response> = complete) {
   const calls: Array<{url:URL;headers:Headers;body:Record<string,unknown>}> = [];
   const transport: HoyoTransport = async (url, init) => {
     const headers = new Headers(init.headers), body = init.body ? JSON.parse(String(init.body)) : {};
@@ -112,13 +112,13 @@ test("overseas login preserves domestic account, unrelated settings and optimist
   expect(document.games.os.stoken).toBe(credentials.stoken);
 });
 
-async function webFixture() {
-  const path=await directory(),controller=new AbortController(),connection=new AbortController(),{calls,transport}=transportRecorder();
+async function webFixture(delayMs = 0) {
+  const path=await directory(),controller=new AbortController(),connection=new AbortController(),{calls,transport}=transportRecorder(async()=>{if(delayMs)await Bun.sleep(delayMs);return complete();});
   const web=createHoYoLabLoginWeb({directory:path,signal:controller.signal,publicBase:()=>new URL("https://bot.example.invalid"),transport,assetDirectory:new URL("../web/hoyolab-login/",import.meta.url)});
   const context={normalizedMessage:"#国际服登录2",message_type:"group",sub_type:"normal",user_id:42,self_id:99,group_id:91,message_id:1,sender:{user_id:42},groupActivitySignal:connection.signal,reply:()=>true,isMaster:false,isBotMaster:()=>false} as MessageFallbackContext;
   const reply=String(await web.commands.fallback?.("",context));const link=new URL(reply.match(/https:\/\/\S+/u)![0]);
   const request=(action:string,body:unknown={},headers:Record<string,string>={})=>web.handle(new Request(`https://bot.example.invalid/hoyolab-login/${action}`,{method:"POST",headers:{Origin:"https://bot.example.invalid","Content-Type":"application/json",Authorization:`Bearer ${link.hash.slice(1)}`,...headers},body:JSON.stringify(body)}));
-  return {web,path,controller,connection,context,request,calls};
+  return {web,path,controller,connection,context,request,calls,token:link.hash.slice(1)};
 }
 
 test("QQ-bound webpage commits a verified standalone profile, rejects CSRF and consumes the one-time session", async () => {
@@ -227,3 +227,56 @@ test("renewal defers while a checkin execution slot is held",async()=>{
     withIdleSlot:async()=>({acquired:false}),warn:()=>{throw Error("defer is not an error");}});
   try{await renewal.run();expect(recorded.calls).toHaveLength(0);}finally{controller.abort();}
 });
+
+test("mixed domestic and overseas login lists both regions and selects overseas roles without a domestic credential request", async () => {
+  const path=await directory(),store=createProfileStore(path);
+  await writeFile(join(path,"42.yaml"),Bun.YAML.stringify({version:1,user:{qq:"42"},profile:{id:1},account:{cookie:"domestic-cookie",stoken:"domestic-stoken",
+    game_roles:{gs:[{uid:"100000001",region:"cn_gf01",game_biz:"hk4e_cn",nickname:"domestic"}]},current_uid:{gs:"100000001"}}}));
+  await store.saveInternationalLogin(await store.openLoginSlot("42"),credentials,roles);
+  const catalog=await store.roleCatalog("42",1);
+  expect(catalog.catalog.gs.map(role=>role.uid)).toEqual(["100000001","800000001"]);
+  expect(catalog.active.gs).toBe("100000001");
+  const controller=new AbortController();
+  await store.selectCatalogRole("42",1,"gs","800000001",catalog.revision,controller.signal,()=>true);
+  expect((await store.savedRole("42",1,"gs")).region).toBe("os_asia");
+  await expect(store.requestSelectedContext("42",1,"gs")).rejects.toMatchObject({code:"role-missing"});
+  await expect(store.requestContext("42",1,"gs")).rejects.toMatchObject({code:"role-missing"});
+  expect((await store.accountContext("42",1)).account.cookie).toBe("domestic-cookie");
+  const view=await store.describe("42",1);
+  expect(view.international.roles.gs).toHaveLength(1);
+  expect(view.international.activeRoles.gs).toBe("800000001");
+});
+
+test("login endpoints extend Bun request timeout without changing other routes", async () => {
+  const f=await webFixture();let calls=0;
+  const server={timeout(_request:Request,seconds:number){expect(seconds).toBe(120);calls++;}};
+  try{
+    await f.web.handle(new Request("https://bot.example.invalid/hoyolab-login/status",{method:"POST"}),server);
+    expect(calls).toBe(1);
+    await f.web.handle(new Request("https://bot.example.invalid/status",{method:"POST"}),server);
+    await f.web.handle(new Request("https://bot.example.invalid/hoyolab-login/"),server);
+    expect(calls).toBe(1);
+  }finally{f.controller.abort();}
+});
+
+test("login list includes saved international UIDs alongside the domestic selection",async()=>{
+  const {accountCommands}=await import("../lib/account-commands.ts");
+  const path=await directory(),store=createProfileStore(path);
+  await writeFile(join(path,"42.yaml"),Bun.YAML.stringify({version:1,user:{qq:"42"},profile:{id:1},account:{cookie:"domestic-cookie",stoken:"domestic-stoken",current_uid:{gs:"100000001"}}}));
+  await store.saveInternationalLogin(await store.openLoginSlot("42"),credentials,roles);
+  const module=accountCommands(path,()=>true);
+  const result=await module.commands["#登录列表"]!("",{message_type:"private",user_id:42,isMaster:false,reply:()=>true});
+  expect(result).toContain("800000001");expect(result).toContain("国际服");
+  expect(result).not.toContain("fixture-stoken");
+});
+
+test("a login taking longer than Bun's default idle limit still returns its completed response",async()=>{
+  const f=await webFixture(11_000);
+  const server=Bun.serve({hostname:"127.0.0.1",port:0,async fetch(request,server){return await f.web.handle(request,server)??new Response(null,{status:404});}});
+  try{
+    const response=await fetch(new URL("/hoyolab-login/password",server.url),{method:"POST",signal:AbortSignal.timeout(16_000),
+      headers:{Origin:"https://bot.example.invalid","Content-Type":"application/json",Authorization:`Bearer ${f.token}`},
+      body:JSON.stringify({account:"test@example.invalid",password:"fixture-password"})});
+    expect(response.status).toBe(200);expect((await response.json()).state).toBe("complete");
+  }finally{f.controller.abort();await server.stop(true);}
+},18_000);
